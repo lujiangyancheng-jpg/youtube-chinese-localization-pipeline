@@ -1,0 +1,236 @@
+from __future__ import annotations
+
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+from ..errors import TranslationImportError
+from ..models import ProjectPaths, SubtitleCue
+from ..subtitles.bilingual import combine_bilingual
+from ..subtitles.parser import parse_subtitle, write_srt
+from ..subtitles.readability import readability_pass
+from ..subtitles.styling import write_ass
+from ..utils.files import atomic_write_json, atomic_write_text, load_json
+from ..utils.hashing import stable_hash
+from ..utils.text import ms_to_srt, timestamp_to_ms
+from .base import TranslationContext, TranslationProvider
+from .prompts import TRANSLATION_RULES, context_prompt
+
+FORMAT_MARKER = "YCLP_TRANSLATION_CHUNK_V1"
+
+
+def cue_payload(cue: SubtitleCue) -> dict[str, Any]:
+    return {
+        "id": cue.id,
+        "start": ms_to_srt(cue.start_ms),
+        "end": ms_to_srt(cue.end_ms),
+        "en": cue.text,
+        "zh": "",
+    }
+
+
+def serialize_translation_batch(cues: list[SubtitleCue]) -> str:
+    return "\n".join(json.dumps(cue_payload(cue), ensure_ascii=False) for cue in cues)
+
+
+class ManualExportProvider(TranslationProvider):
+    def translate_batch(
+        self, cues: list[SubtitleCue], context: TranslationContext
+    ) -> list[SubtitleCue]:
+        raise TranslationImportError(
+            "Manual translation does not make API calls. Export chunks, translate them in "
+            "ChatGPT, then import each returned file."
+        )
+
+    def export(
+        self,
+        cues: list[SubtitleCue],
+        context: TranslationContext,
+        output_dir: Path,
+        *,
+        batch_size: int = 40,
+    ) -> list[Path]:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for old in output_dir.glob("chunk_*.md"):
+            old.unlink()
+        exported: list[Path] = []
+        manifest_chunks: list[dict[str, Any]] = []
+        for number, offset in enumerate(range(0, len(cues), batch_size), start=1):
+            batch = cues[offset : offset + batch_size]
+            name = f"chunk_{number:03d}.md"
+            path = output_dir / name
+            content = (
+                f"<!-- {FORMAT_MARKER} -->\n"
+                f"# Translation chunk {number:03d}\n\n"
+                "## Instructions\n\n"
+                f"{TRANSLATION_RULES}\n\n"
+                "Keep the `en` text for validation and fill every `zh` value. "
+                "Return JSONL only; do not wrap it in prose.\n\n"
+                "## Video context\n\n"
+                f"{context_prompt(context)}\n\n"
+                "## JSONL payload\n\n"
+                "```jsonl\n"
+                f"{serialize_translation_batch(batch)}\n"
+                "```\n"
+            )
+            atomic_write_text(path, content)
+            exported.append(path)
+            manifest_chunks.append(
+                {
+                    "file": name,
+                    "cue_ids": [cue.id for cue in batch],
+                    "payload_hash": stable_hash([cue_payload(cue) for cue in batch]),
+                }
+            )
+        atomic_write_json(
+            output_dir / "manifest.json",
+            {
+                "version": 1,
+                "format": FORMAT_MARKER,
+                "cue_count": len(cues),
+                "english_hash": stable_hash([cue.model_dump() for cue in cues]),
+                "chunks": manifest_chunks,
+            },
+        )
+        return exported
+
+
+def _extract_json_records(content: str) -> list[dict[str, Any]]:
+    stripped = content.strip()
+    fenced = re.findall(r"```(?:jsonl|json)?\s*(.*?)```", stripped, re.DOTALL | re.IGNORECASE)
+    candidates = fenced or [stripped]
+    records: list[dict[str, Any]] = []
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, list):
+                records.extend(item for item in parsed if isinstance(item, dict))
+                continue
+            if isinstance(parsed, dict):
+                records.append(parsed)
+                continue
+        except json.JSONDecodeError:
+            pass
+        for line in candidate.splitlines():
+            line = line.strip().rstrip(",")
+            if not line.startswith("{"):
+                continue
+            try:
+                item = json.loads(line)
+            except json.JSONDecodeError as exc:
+                raise TranslationImportError(f"Invalid JSONL line: {line[:120]}") from exc
+            if isinstance(item, dict):
+                records.append(item)
+    if not records:
+        raise TranslationImportError(
+            "No JSON translation records found. Return one JSON object per cue with "
+            "id, start, end, en, and zh."
+        )
+    return records
+
+
+def parse_imported_translations(
+    content: str,
+    english_cues: list[SubtitleCue],
+) -> dict[int, SubtitleCue]:
+    source_by_id = {cue.id: cue for cue in english_cues}
+    output: dict[int, SubtitleCue] = {}
+    for item in _extract_json_records(content):
+        missing = {"id", "start", "end", "en", "zh"} - set(item)
+        if missing:
+            raise TranslationImportError(
+                f"Translation record is missing fields: {', '.join(sorted(missing))}"
+            )
+        try:
+            cue_id = int(item["id"])
+        except (TypeError, ValueError) as exc:
+            raise TranslationImportError(f"Invalid cue ID: {item['id']!r}") from exc
+        if cue_id in output:
+            raise TranslationImportError(f"Duplicate cue ID in import: {cue_id}")
+        source = source_by_id.get(cue_id)
+        if not source:
+            raise TranslationImportError(f"Unknown cue ID in import: {cue_id}")
+        try:
+            start_ms = timestamp_to_ms(str(item["start"]))
+            end_ms = timestamp_to_ms(str(item["end"]))
+        except ValueError as exc:
+            raise TranslationImportError(str(exc)) from exc
+        if start_ms != source.start_ms or end_ms != source.end_ms:
+            raise TranslationImportError(
+                f"Cue {cue_id} timestamps changed. Expected "
+                f"{ms_to_srt(source.start_ms)} --> {ms_to_srt(source.end_ms)}."
+            )
+        if str(item["en"]).strip() != source.text.strip():
+            raise TranslationImportError(f"Cue {cue_id} English source text changed.")
+        translated = str(item["zh"]).strip()
+        if not translated:
+            raise TranslationImportError(f"Cue {cue_id} has an empty Chinese translation.")
+        source_urls = re.findall(r'https?://[^\s<>"]+', source.text)
+        missing_urls = [url for url in source_urls if url not in translated]
+        if missing_urls:
+            raise TranslationImportError(
+                f"Cue {cue_id} changed or omitted URL(s): {', '.join(missing_urls)}"
+            )
+        output[cue_id] = source.model_copy(update={"text": translated})
+    return output
+
+
+def import_translation_file(
+    project: ProjectPaths,
+    translated_file: Path,
+    *,
+    width: int = 20,
+    max_lines: int = 2,
+    subtitle_mode: str = "chinese",
+    subtitle_config=None,
+) -> tuple[int, int, list[str]]:
+    if not translated_file.is_file():
+        raise TranslationImportError(f"Translated file does not exist: {translated_file}")
+    english = parse_subtitle(project.english_srt)
+    imported = parse_imported_translations(translated_file.read_text(encoding="utf-8-sig"), english)
+    store_path = project.temp / "manual_translations.json"
+    english_hash = stable_hash([cue.model_dump(mode="json") for cue in english])
+    payload = load_json(store_path) if store_path.is_file() else {}
+    if (
+        not isinstance(payload, dict)
+        or payload.get("english_hash") != english_hash
+        or not isinstance(payload.get("translations"), dict)
+    ):
+        payload = {"english_hash": english_hash, "translations": {}}
+    stored = payload["translations"]
+    for cue_id, cue in imported.items():
+        stored[str(cue_id)] = cue.model_dump(mode="json")
+    atomic_write_json(store_path, payload)
+
+    warnings: list[str] = []
+    if len(stored) == len(english):
+        ordered: list[SubtitleCue] = []
+        for source in english:
+            raw = stored.get(str(source.id))
+            if not raw:
+                raise TranslationImportError(
+                    f"Internal translation store is missing cue {source.id}."
+                )
+            translated = SubtitleCue.model_validate(raw)
+            if (
+                translated.start_ms != source.start_ms
+                or translated.end_ms != source.end_ms
+                or translated.id != source.id
+            ):
+                raise TranslationImportError(f"Stored translation for cue {source.id} is invalid.")
+            ordered.append(translated)
+        readable, issues = readability_pass(ordered, width=width, max_lines=max_lines)
+        warnings.extend(f"Cue {issue.cue_id}: {issue.message}" for issue in issues)
+        write_srt(project.chinese_srt, readable)
+        if subtitle_mode != "chinese":
+            bilingual = combine_bilingual(english, readable, mode=subtitle_mode)
+            write_srt(project.bilingual_srt, bilingual)
+            if subtitle_config is not None:
+                write_ass(
+                    project.bilingual_ass,
+                    bilingual,
+                    subtitle_config,
+                    bilingual_mode=subtitle_mode,
+                )
+    return len(stored), len(english), warnings

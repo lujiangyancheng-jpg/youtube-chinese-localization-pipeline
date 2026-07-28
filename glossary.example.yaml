@@ -1,0 +1,4 @@
+# Use exact, confirmed translations only. Uncertain names should remain in Latin script.
+terms:
+  GitHub: GitHub
+  Python: Python

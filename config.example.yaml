@@ -1,0 +1,54 @@
+output_directory: output
+subtitle_language: zh-CN
+subtitle_mode: chinese
+
+download:
+  format: bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best
+  prefer_mp4: true
+  download_thumbnail: true
+  download_metadata: true
+
+transcription:
+  model: medium
+  device: auto
+  compute_type: auto
+  beam_size: 5
+  vad_filter: true
+  word_timestamps: true
+
+translation:
+  provider: manual
+  model: ""
+  endpoint: ""
+  batch_size: 40
+  preserve_timestamps: true
+  glossary_file: glossary.yaml
+
+subtitles:
+  format: ass
+  font: Microsoft YaHei
+  font_size: 48
+  english_font_size: 34
+  outline: 3
+  shadow: 1
+  margin_v: 45
+  max_lines: 2
+  max_chinese_chars_per_line: 20
+  preserve_sound_descriptions: true
+
+render:
+  codec: libx264
+  crf: 18
+  preset: medium
+  audio_codec: aac
+  audio_bitrate: 192k
+  faststart: true
+  copy_audio_when_possible: true
+
+publishing:
+  generate_metadata: true
+  attribution_template: |
+    原视频作者：{channel}
+    原视频链接：{source_url}
+    本视频经授权或依据相应许可进行翻译与转载。
+  permission_note: "请在发布前填写实际授权或许可证信息。"
