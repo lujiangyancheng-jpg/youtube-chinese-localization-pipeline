@@ -8,6 +8,8 @@ validated hard-subtitled MP4.
 The pipeline is resumable, keeps intermediate files, never uploads content, and remains
 useful without an API key through its manual ChatGPT translation export/import workflow.
 
+> 中文用户：请阅读完整的[中文使用说明书](docs/USER_GUIDE.zh-CN.md)。
+
 ## Legal-use notice
 
 Use this tool only for:
