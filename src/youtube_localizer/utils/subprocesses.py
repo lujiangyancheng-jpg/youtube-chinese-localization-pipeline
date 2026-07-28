@@ -25,14 +25,26 @@ def resolve_executable(name: str) -> str | None:
         return str(Path(env_path).resolve())
     executable = f"{name}.exe" if os.name == "nt" and not name.endswith(".exe") else name
     project_root = Path(__file__).resolve().parents[3]
-    for directory in (
+    search_directories = [
         Path.cwd() / "tools" / "ffmpeg" / "bin",
         project_root / "tools" / "ffmpeg" / "bin",
         Path.cwd() / "ffmpeg" / "bin",
-    ):
+    ]
+    installed_binaries: list[Path] = []
+    if os.name == "nt" and (local_app_data := os.getenv("LOCALAPPDATA")):
+        local_root = Path(local_app_data)
+        search_directories.append(local_root / "Microsoft" / "WinGet" / "Links")
+        winget_packages = local_root / "Microsoft" / "WinGet" / "Packages"
+        installed_binaries = list(
+            winget_packages.glob(f"Gyan.FFmpeg_*/*/bin/{executable}"),
+        )
+    for directory in search_directories:
         local = directory / executable
         if local.is_file():
             return str(local.resolve())
+    if installed_binaries:
+        newest = max(installed_binaries, key=lambda path: path.stat().st_mtime_ns)
+        return str(newest.resolve())
     return None
 
 

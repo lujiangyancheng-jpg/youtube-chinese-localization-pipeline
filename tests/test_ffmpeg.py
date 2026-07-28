@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from unittest.mock import patch
 
 from youtube_localizer.config import RenderConfig
 from youtube_localizer.rendering.ffmpeg import build_hardsub_command
-from youtube_localizer.utils.subprocesses import run_command
+from youtube_localizer.utils.subprocesses import resolve_executable, run_command
 
 
 def test_ffmpeg_command_is_argument_array_and_escapes_windows_drive(tmp_path) -> None:
@@ -37,3 +38,23 @@ def test_subprocess_wrapper_never_uses_shell() -> None:
     assert result.stdout == "ok"
     assert run.call_args.kwargs["shell"] is False
     assert run.call_args.kwargs["check"] is False
+
+
+def test_resolve_executable_detects_winget_ffmpeg(tmp_path, monkeypatch) -> None:
+    if os.name != "nt":
+        return
+    ffmpeg = (
+        tmp_path
+        / "Microsoft"
+        / "WinGet"
+        / "Packages"
+        / "Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe"
+        / "ffmpeg-8.1.2-full_build"
+        / "bin"
+        / "ffmpeg.exe"
+    )
+    ffmpeg.parent.mkdir(parents=True)
+    ffmpeg.write_bytes(b"")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    with patch("youtube_localizer.utils.subprocesses.shutil.which", return_value=None):
+        assert resolve_executable("ffmpeg") == str(ffmpeg.resolve())

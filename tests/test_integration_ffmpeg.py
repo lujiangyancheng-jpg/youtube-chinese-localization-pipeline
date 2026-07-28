@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import shutil
-
 import pytest
 
 from youtube_localizer.config import RenderConfig, SubtitleConfig
@@ -9,13 +7,13 @@ from youtube_localizer.models import SubtitleCue
 from youtube_localizer.rendering.ffmpeg import render_hardsub
 from youtube_localizer.rendering.validation import validate_rendered_video
 from youtube_localizer.subtitles.styling import write_ass
-from youtube_localizer.utils.subprocesses import run_command
+from youtube_localizer.utils.subprocesses import resolve_executable, run_command
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.mark.skipif(
-    not shutil.which("ffmpeg") or not shutil.which("ffprobe"),
+    not resolve_executable("ffmpeg") or not resolve_executable("ffprobe"),
     reason="local FFmpeg/ffprobe are not installed",
 )
 def test_offline_synthetic_video_can_be_hardsubbed(tmp_path) -> None:
