@@ -108,6 +108,25 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
             False,
         )
     )
+    zh_en_model = Path(
+        "~/.youtube-chinese-localizer/models/translate-zh_en-1_9"
+    ).expanduser()
+    zh_en_model_ready = (
+        validate_offline_model(zh_en_model, source_code="zh", target_code="en")
+        is not None
+    )
+    checks.append(
+        DoctorCheck(
+            "Offline Chinese-to-English model",
+            "ok" if zh_en_model_ready else "optional",
+            (
+                str(zh_en_model)
+                if zh_en_model_ready
+                else "downloads automatically on first Chinese-to-English translation"
+            ),
+            False,
+        )
+    )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
     checks.append(
         DoctorCheck(
@@ -121,13 +140,13 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
     checks.append(
         DoctorCheck(
             "Translation configuration",
-            "ok" if api_key or model_ready else "optional",
+            "ok" if api_key or model_ready or zh_en_model_ready else "optional",
             (
                 "API key detected"
                 if api_key
                 else (
                     "offline translation ready; API is optional"
-                    if model_ready
+                    if model_ready or zh_en_model_ready
                     else "manual export/import available; ChatGPT Plus does not include API credits"
                 )
             ),

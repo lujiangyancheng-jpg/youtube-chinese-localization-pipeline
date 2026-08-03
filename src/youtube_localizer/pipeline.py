@@ -140,6 +140,7 @@ def prepare_project(
         project = ProjectPaths(existing)
         project.create()
         metadata = load_project_metadata(project)
+        save_project_config(project, config)
         return project, metadata, None
 
     metadata, raw_info = _inspect_input(value)
@@ -190,12 +191,52 @@ def _translation_context(metadata: SourceMetadata, glossary: dict[str, str]) -> 
     )
 
 
+def _language_pair(config: AppConfig) -> tuple[str, str]:
+    return ("zh", "en") if config.translation.direction == "zh-to-en" else ("en", "zh")
+
+
+def _source_subtitle(project: ProjectPaths, config: AppConfig) -> Path:
+    source_code, _ = _language_pair(config)
+    return project.chinese_srt if source_code == "zh" else project.english_srt
+
+
+def _target_subtitle(project: ProjectPaths, config: AppConfig) -> Path:
+    _, target_code = _language_pair(config)
+    return project.english_srt if target_code == "en" else project.chinese_srt
+
+
+def _target_ass(project: ProjectPaths, config: AppConfig) -> Path:
+    _, target_code = _language_pair(config)
+    return project.english_ass if target_code == "en" else project.chinese_ass
+
+
+def rendered_output(project: ProjectPaths, config: AppConfig) -> Path:
+    _, target_code = _language_pair(config)
+    return project.english_hardsub if target_code == "en" else project.chinese_hardsub
+
+
 def _write_localized_subtitles(
     project: ProjectPaths,
     english: list[SubtitleCue],
     chinese: list[SubtitleCue],
     config: AppConfig,
 ) -> tuple[list[Path], list[str]]:
+    if config.translation.direction == "zh-to-en":
+        write_srt(project.english_srt, english)
+        write_ass(project.english_ass, english, config.subtitles, bilingual_mode="english")
+        outputs = [project.english_srt, project.english_ass]
+        if config.subtitle_mode != "chinese":
+            bilingual = combine_bilingual(english, chinese, mode=config.subtitle_mode)
+            write_srt(project.bilingual_srt, bilingual)
+            write_ass(
+                project.bilingual_ass,
+                bilingual,
+                config.subtitles,
+                bilingual_mode=config.subtitle_mode,
+            )
+            outputs.extend([project.bilingual_srt, project.bilingual_ass])
+        return outputs, []
+
     readable, issues = readability_pass(
         chinese,
         width=config.subtitles.max_chinese_chars_per_line,
@@ -225,15 +266,16 @@ def export_manual_translation(
     metadata: SourceMetadata | None = None,
 ) -> list[Path]:
     metadata = metadata or load_project_metadata(project)
-    english = parse_subtitle(project.english_srt)
     glossary_path = Path(config.translation.glossary_file)
     if not glossary_path.is_absolute():
         candidates = [project.root / glossary_path, Path.cwd() / glossary_path]
         glossary_path = next((path for path in candidates if path.is_file()), candidates[0])
     glossary = load_glossary(glossary_path)
-    provider = ManualExportProvider()
+    source_code, target_code = _language_pair(config)
+    source_cues = parse_subtitle(_source_subtitle(project, config))
+    provider = ManualExportProvider(source_code=source_code, target_code=target_code)
     return provider.export(
-        english,
+        source_cues,
         _translation_context(metadata, glossary),
         project.translation_chunks,
         batch_size=config.translation.batch_size,
@@ -246,7 +288,8 @@ def translate_with_api(
     metadata: SourceMetadata | None = None,
 ) -> tuple[list[Path], list[str]]:
     metadata = metadata or load_project_metadata(project)
-    english = parse_subtitle(project.english_srt)
+    source_code, target_code = _language_pair(config)
+    source_cues = parse_subtitle(_source_subtitle(project, config))
     glossary_path = Path(config.translation.glossary_file)
     if not glossary_path.is_absolute():
         glossary_path = project.root / glossary_path
@@ -255,13 +298,15 @@ def translate_with_api(
         endpoint=config.translation.endpoint,
         model=config.translation.model,
         cache=TranslationCache(project.temp / "translation_cache"),
+        source_code=source_code,
+        target_code=target_code,
     )
     translated: list[SubtitleCue] = []
     batch_size = config.translation.batch_size
     base_context = _translation_context(metadata, glossary)
-    for offset in range(0, len(english), batch_size):
-        batch = english[offset : offset + batch_size]
-        nearby = " ".join(cue.text for cue in english[max(0, offset - 3) : offset])
+    for offset in range(0, len(source_cues), batch_size):
+        batch = source_cues[offset : offset + batch_size]
+        nearby = " ".join(cue.text for cue in source_cues[max(0, offset - 3) : offset])
         batch_context = TranslationContext(
             title=base_context.title,
             channel=base_context.channel,
@@ -273,7 +318,9 @@ def translate_with_api(
             glossary=base_context.glossary,
         )
         translated.extend(provider.translate_batch(batch, batch_context))
-    return _write_localized_subtitles(project, english, translated, config)
+    english = source_cues if source_code == "en" else translated
+    chinese = source_cues if source_code == "zh" else translated
+    return _write_localized_subtitles(project, english, chinese, config)
 
 
 def translate_with_offline(
@@ -282,45 +329,57 @@ def translate_with_offline(
     metadata: SourceMetadata | None = None,
 ) -> tuple[list[Path], list[str]]:
     metadata = metadata or load_project_metadata(project)
-    english = parse_subtitle(project.english_srt)
+    source_code, target_code = _language_pair(config)
+    source_cues = parse_subtitle(_source_subtitle(project, config))
     glossary_path = Path(config.translation.glossary_file)
     if not glossary_path.is_absolute():
         candidates = [project.root / glossary_path, Path.cwd() / glossary_path]
         glossary_path = next((path for path in candidates if path.is_file()), candidates[0])
     glossary = load_glossary(glossary_path)
-    model_directory = config.translation.offline_model_directory.expanduser()
+    if source_code == "zh":
+        configured_directory = config.translation.offline_zh_en_model_directory
+        model_url = config.translation.offline_zh_en_model_url
+    else:
+        configured_directory = config.translation.offline_model_directory
+        model_url = config.translation.offline_model_url
+    model_directory = configured_directory.expanduser()
     if not model_directory.is_absolute():
         model_directory = (Path.cwd() / model_directory).resolve()
     provider = LocalOfflineProvider(
         model_directory=model_directory,
-        model_url=config.translation.offline_model_url,
+        model_url=model_url,
         auto_download=config.translation.offline_auto_download,
         device=config.translation.offline_device,
         compute_type=config.translation.offline_compute_type,
         cache=TranslationCache(project.temp / "translation_cache"),
+        source_code=source_code,
+        target_code=target_code,
     )
     translated: list[SubtitleCue] = []
     batch_size = config.translation.batch_size
     context = _translation_context(metadata, glossary)
-    for offset in range(0, len(english), batch_size):
-        batch = english[offset : offset + batch_size]
+    for offset in range(0, len(source_cues), batch_size):
+        batch = source_cues[offset : offset + batch_size]
         LOGGER.info(
             "Offline translating subtitle batch %s/%s…",
             offset // batch_size + 1,
-            (len(english) + batch_size - 1) // batch_size,
+            (len(source_cues) + batch_size - 1) // batch_size,
         )
         translated.extend(provider.translate_batch(batch, context))
-    return _write_localized_subtitles(project, english, translated, config)
+    english = source_cues if source_code == "en" else translated
+    chinese = source_cues if source_code == "zh" else translated
+    return _write_localized_subtitles(project, english, chinese, config)
 
 
 def render_project(project: ProjectPaths, config: AppConfig) -> Path:
     metadata = load_project_metadata(project)
     source = find_source_video(project)
     if config.subtitle_mode == "chinese":
-        subtitle = project.subtitles / "chinese.ass"
+        subtitle = _target_ass(project, config)
         if not subtitle.is_file():
-            chinese = parse_subtitle(project.chinese_srt)
-            write_ass(subtitle, chinese, config.subtitles)
+            target = parse_subtitle(_target_subtitle(project, config))
+            target_mode = "english" if config.translation.direction == "zh-to-en" else "chinese"
+            write_ass(subtitle, target, config.subtitles, bilingual_mode=target_mode)
     else:
         subtitle = project.bilingual_ass
         if not subtitle.is_file():
@@ -333,7 +392,7 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
                 config.subtitles,
                 bilingual_mode=config.subtitle_mode,
             )
-    output = project.rendered / "chinese_hardsub.mp4"
+    output = rendered_output(project, config)
     render_hardsub(
         source,
         subtitle,
@@ -455,11 +514,14 @@ def process_pipeline(
                 *project.source.glob("source.zh.ass"),
             ]
         )
+        source_code, target_code = _language_pair(config)
+        chinese_to_english = source_code == "zh"
         use_provided_chinese = bool(
             config.download.prefer_youtube_chinese
             and source_chinese_subtitles
-            and "translate" not in force_steps
+            and (chinese_to_english or "translate" not in force_steps)
         )
+        provided_chinese_is_target = use_provided_chinese and not chinese_to_english
         if use_provided_chinese:
             chinese_source = source_chinese_subtitles[0]
             chinese_source_hash = hash_file(chinese_source)
@@ -494,7 +556,7 @@ def process_pipeline(
                     step_outputs.append(project.chinese_srt)
             subtitle_source = metadata.subtitle_kind or "YouTube Simplified Chinese subtitles"
 
-        needs_english = (
+        needs_english = not chinese_to_english and (
             not use_provided_chinese
             or config.subtitle_mode != "chinese"
             or "translate" in force_steps
@@ -561,27 +623,69 @@ def process_pipeline(
                             subtitle_source = "faster-whisper"
                         step_outputs.extend([audio, raw_transcription, project.english_srt])
 
-        if english_changed:
+        chinese_changed = False
+        if chinese_to_english and not use_provided_chinese:
+            chinese_hash_source = hash_file(source_video)
+            chinese_config_hash = stable_hash(
+                {"transcription": config.transcription, "language": "zh"}
+            )
+            chinese_changed = not state.can_skip(
+                "chinese_subtitles",
+                input_hash=chinese_hash_source,
+                config_hash=chinese_config_hash,
+                output_files=[project.chinese_srt],
+                force="chinese_subtitles" in force_steps or "transcribe" in force_steps,
+            )
+            if chinese_changed:
+                with state.step(
+                    "chinese_subtitles",
+                    input_hash=chinese_hash_source,
+                    config_hash=chinese_config_hash,
+                ) as step_outputs:
+                    audio = project.audio / "transcription_audio.wav"
+                    extract_transcription_audio(source_video, audio)
+                    raw_transcription = project.subtitles / "transcription.raw.json"
+                    cleanup = transcribe_audio(
+                        audio,
+                        raw_transcription,
+                        project.chinese_srt,
+                        config.transcription,
+                        language="zh",
+                    )
+                    warnings.extend(cleanup.warnings)
+                    flagged_cues.extend(cleanup.flagged_cue_ids)
+                    subtitle_source = "faster-whisper (Chinese)"
+                    step_outputs.extend([audio, raw_transcription, project.chinese_srt])
+
+        if english_changed or chinese_changed:
             stale_files = [
-                project.subtitles / "chinese.ass",
+                project.chinese_ass,
+                project.english_ass,
                 project.bilingual_srt,
                 project.bilingual_ass,
                 project.temp / "manual_translations.json",
-                project.rendered / "chinese_hardsub.mp4",
+                project.chinese_hardsub,
+                project.english_hardsub,
             ]
-            if not use_provided_chinese:
+            if english_changed and not use_provided_chinese:
                 stale_files.append(project.chinese_srt)
+            if chinese_changed:
+                stale_files.append(project.english_srt)
             for stale in stale_files:
                 stale.unlink(missing_ok=True)
 
         english = parse_subtitle(project.english_srt) if needs_english else []
-        chinese = parse_subtitle(project.chinese_srt) if use_provided_chinese else []
+        chinese = (
+            parse_subtitle(project.chinese_srt)
+            if use_provided_chinese or chinese_to_english
+            else []
+        )
         cue_count = len(chinese) if chinese else len(english)
 
-        translation_hash = (
-            hash_file(project.chinese_srt)
-            if use_provided_chinese
-            else hash_file(project.english_srt)
+        source_subtitle = _source_subtitle(project, config)
+        target_subtitle = _target_subtitle(project, config)
+        translation_hash = hash_file(
+            target_subtitle if provided_chinese_is_target else source_subtitle
         )
         translation_config_hash = stable_hash(
             {
@@ -594,11 +698,11 @@ def process_pipeline(
             "translate",
             input_hash=translation_hash,
             config_hash=translation_config_hash,
-            output_files=[project.chinese_srt],
+            output_files=[target_subtitle],
             force="translate" in force_steps,
         )
-        needs_translation = not use_provided_chinese and not project.chinese_srt.is_file()
-        if not use_provided_chinese and config.translation.provider != "manual":
+        needs_translation = not provided_chinese_is_target and not target_subtitle.is_file()
+        if not provided_chinese_is_target and config.translation.provider != "manual":
             needs_translation = not translation_current
         elif "translate" in force_steps:
             needs_translation = True
@@ -607,12 +711,12 @@ def process_pipeline(
             if config.translation.provider == "manual":
                 if "translate" in force_steps:
                     for stale in (
-                        project.chinese_srt,
-                        project.subtitles / "chinese.ass",
+                        target_subtitle,
+                        _target_ass(project, config),
                         project.bilingual_srt,
                         project.bilingual_ass,
                         project.temp / "manual_translations.json",
-                        project.rendered / "chinese_hardsub.mp4",
+                        rendered_output(project, config),
                     ):
                         stale.unlink(missing_ok=True)
                 manifest = project.translation_chunks / "manifest.json"
@@ -631,13 +735,15 @@ def process_pipeline(
                         step_outputs.extend(export_manual_translation(project, config, metadata))
                         step_outputs.append(manifest)
                 state.mark_status("awaiting_manual_translation")
-                outputs.extend([project.english_srt, manifest])
+                outputs.extend([source_subtitle, manifest])
                 report = build_report(
                     metadata,
                     state.data,
                     subtitle_source=subtitle_source,
                     whisper_model=(
-                        config.transcription.model if subtitle_source == "faster-whisper" else ""
+                        config.transcription.model
+                        if (subtitle_source or "").startswith("faster-whisper")
+                        else ""
                     ),
                     translation_provider="manual",
                     cue_count=cue_count,
@@ -674,7 +780,7 @@ def process_pipeline(
 
         localized_outputs, localized_warnings = _write_localized_subtitles(
             project,
-            english,
+            parse_subtitle(project.english_srt) if project.english_srt.is_file() else [],
             parse_subtitle(project.chinese_srt),
             config,
         )
@@ -691,13 +797,14 @@ def process_pipeline(
             {
                 "video": hash_file(source_video),
                 "subtitles": hash_file(
-                    project.subtitles
-                    / ("chinese.ass" if config.subtitle_mode == "chinese" else "bilingual.ass")
+                    _target_ass(project, config)
+                    if config.subtitle_mode == "chinese"
+                    else project.bilingual_ass
                 ),
             }
         )
         render_config_hash = stable_hash(config.render)
-        rendered = project.rendered / "chinese_hardsub.mp4"
+        rendered = rendered_output(project, config)
         if not state.can_skip(
             "render",
             input_hash=render_hash,
@@ -715,9 +822,15 @@ def process_pipeline(
             metadata,
             state.data,
             subtitle_source=subtitle_source,
-            whisper_model=config.transcription.model if subtitle_source == "faster-whisper" else "",
+            whisper_model=(
+                config.transcription.model
+                if (subtitle_source or "").startswith("faster-whisper")
+                else ""
+            ),
             translation_provider=(
-                "youtube-provided" if use_provided_chinese else config.translation.provider
+                "youtube-provided"
+                if provided_chinese_is_target
+                else config.translation.provider
             ),
             cue_count=cue_count,
             flagged_cues=flagged_cues,
@@ -734,7 +847,11 @@ def process_pipeline(
             metadata,
             state.data,
             subtitle_source=subtitle_source,
-            whisper_model=config.transcription.model if subtitle_source == "faster-whisper" else "",
+            whisper_model=(
+                config.transcription.model
+                if (subtitle_source or "").startswith("faster-whisper")
+                else ""
+            ),
             translation_provider=config.translation.provider,
             cue_count=cue_count,
             flagged_cues=flagged_cues,

@@ -28,7 +28,12 @@ MODEL_REQUIRED_PATHS = (
 )
 
 
-def validate_offline_model(model_directory: Path) -> dict[str, Any] | None:
+def validate_offline_model(
+    model_directory: Path,
+    *,
+    source_code: str = "en",
+    target_code: str = "zh",
+) -> dict[str, Any] | None:
     """Return validated model metadata, or None when the directory is incomplete."""
     if not model_directory.is_dir():
         return None
@@ -38,7 +43,7 @@ def validate_offline_model(model_directory: Path) -> dict[str, Any] | None:
         metadata = json.loads((model_directory / "metadata.json").read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None
-    if metadata.get("from_code") != "en" or metadata.get("to_code") != "zh":
+    if metadata.get("from_code") != source_code or metadata.get("to_code") != target_code:
         return None
     return metadata
 
@@ -57,9 +62,17 @@ def _validate_archive_members(archive: zipfile.ZipFile) -> None:
             raise LocalizerError("The offline translation model archive is unexpectedly large.")
 
 
-def install_offline_model_archive(archive_path: Path, destination: Path) -> Path:
-    """Validate and atomically install an Argos-compatible en→zh model archive."""
-    existing = validate_offline_model(destination)
+def install_offline_model_archive(
+    archive_path: Path,
+    destination: Path,
+    *,
+    source_code: str = "en",
+    target_code: str = "zh",
+) -> Path:
+    """Validate and atomically install an Argos-compatible translation model archive."""
+    existing = validate_offline_model(
+        destination, source_code=source_code, target_code=target_code
+    )
     if existing is not None:
         return destination
     if destination.exists():
@@ -81,11 +94,15 @@ def install_offline_model_archive(archive_path: Path, destination: Path) -> Path
         candidates = [
             path
             for path in temporary_root.rglob("metadata.json")
-            if validate_offline_model(path.parent) is not None
+            if validate_offline_model(
+                path.parent, source_code=source_code, target_code=target_code
+            )
+            is not None
         ]
         if len(candidates) != 1:
             raise LocalizerError(
-                "The offline translation archive does not contain exactly one valid en→zh model."
+                "The offline translation archive does not contain exactly one valid "
+                f"{source_code}-to-{target_code} model."
             )
         candidates[0].parent.replace(destination)
         return destination
@@ -93,7 +110,13 @@ def install_offline_model_archive(archive_path: Path, destination: Path) -> Path
         shutil.rmtree(temporary_root, ignore_errors=True)
 
 
-def _download_model_archive(url: str, destination_parent: Path) -> Path:
+def _download_model_archive(
+    url: str,
+    destination_parent: Path,
+    *,
+    source_code: str,
+    target_code: str,
+) -> Path:
     parsed = urlparse(url)
     if parsed.scheme != "https" or not parsed.netloc:
         raise LocalizerError("Offline model downloads require a valid HTTPS URL.")
@@ -103,7 +126,11 @@ def _download_model_archive(url: str, destination_parent: Path) -> Path:
     temporary_path = Path(temporary_name)
     downloaded = 0
     try:
-        LOGGER.info("Downloading the offline English→Chinese model for first-time use…")
+        LOGGER.info(
+            "Downloading the offline %s-to-%s model for first-time use…",
+            source_code,
+            target_code,
+        )
         timeout = httpx.Timeout(connect=30, read=600, write=30, pool=30)
         with (
             os.fdopen(descriptor, "wb") as output,
@@ -140,8 +167,12 @@ def ensure_offline_model(
     *,
     model_url: str,
     auto_download: bool,
+    source_code: str = "en",
+    target_code: str = "zh",
 ) -> Path:
-    if validate_offline_model(model_directory) is not None:
+    if validate_offline_model(
+        model_directory, source_code=source_code, target_code=target_code
+    ) is not None:
         return model_directory
     if model_directory.exists():
         raise LocalizerError(
@@ -149,13 +180,24 @@ def ensure_offline_model(
         )
     if not auto_download:
         raise LocalizerError(
-            f"Offline English→Chinese model is not installed at {model_directory}. "
+            f"Offline {source_code}-to-{target_code} model is not installed at "
+            f"{model_directory}. "
             "Enable translation.offline_auto_download or install the model there."
         )
     model_directory.parent.mkdir(parents=True, exist_ok=True)
-    archive = _download_model_archive(model_url, model_directory.parent)
+    archive = _download_model_archive(
+        model_url,
+        model_directory.parent,
+        source_code=source_code,
+        target_code=target_code,
+    )
     try:
-        installed = install_offline_model_archive(archive, model_directory)
+        installed = install_offline_model_archive(
+            archive,
+            model_directory,
+            source_code=source_code,
+            target_code=target_code,
+        )
     finally:
         archive.unlink(missing_ok=True)
     LOGGER.info("Offline translation model installed at %s", installed)
@@ -163,7 +205,7 @@ def ensure_offline_model(
 
 
 class LocalOfflineProvider(TranslationProvider):
-    """Translate English subtitle cues locally with CTranslate2 and SentencePiece."""
+    """Translate subtitle cues locally with CTranslate2 and SentencePiece."""
 
     def __init__(
         self,
@@ -174,6 +216,8 @@ class LocalOfflineProvider(TranslationProvider):
         device: str,
         compute_type: str,
         cache: TranslationCache,
+        source_code: str = "en",
+        target_code: str = "zh",
     ) -> None:
         try:
             import ctranslate2
@@ -188,8 +232,19 @@ class LocalOfflineProvider(TranslationProvider):
             model_directory,
             model_url=model_url,
             auto_download=auto_download,
+            source_code=source_code,
+            target_code=target_code,
         )
-        self.metadata = validate_offline_model(self.model_directory) or {}
+        self.metadata = (
+            validate_offline_model(
+                self.model_directory,
+                source_code=source_code,
+                target_code=target_code,
+            )
+            or {}
+        )
+        self.source_code = source_code
+        self.target_code = target_code
         self.cache = cache
         self._ctranslate2 = ctranslate2
         self._requested_device = device
@@ -275,6 +330,8 @@ class LocalOfflineProvider(TranslationProvider):
     ) -> list[SubtitleCue]:
         payload = {
             "provider": "offline-argos-opus",
+            "source_code": self.source_code,
+            "target_code": self.target_code,
             "model_version": self.metadata.get("package_version", "unknown"),
             "texts": [cue.text for cue in cues],
             "glossary": context.glossary,

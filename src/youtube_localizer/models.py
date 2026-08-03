@@ -120,12 +120,28 @@ class ProjectPaths:
         return self.subtitles / "chinese.srt"
 
     @property
+    def english_ass(self) -> Path:
+        return self.subtitles / "english.ass"
+
+    @property
+    def chinese_ass(self) -> Path:
+        return self.subtitles / "chinese.ass"
+
+    @property
     def bilingual_srt(self) -> Path:
         return self.subtitles / "bilingual.srt"
 
     @property
     def bilingual_ass(self) -> Path:
         return self.subtitles / "bilingual.ass"
+
+    @property
+    def chinese_hardsub(self) -> Path:
+        return self.rendered / "chinese_hardsub.mp4"
+
+    @property
+    def english_hardsub(self) -> Path:
+        return self.rendered / "english_hardsub.mp4"
 
     @property
     def state_file(self) -> Path:

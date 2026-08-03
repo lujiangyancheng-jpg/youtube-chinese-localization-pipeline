@@ -34,6 +34,7 @@ Style: English,{config.font},{config.english_font_size},&H00E8E8E8,&H000000FF,&H
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events: list[str] = []
+    default_style = "English" if bilingual_mode == "english" else "Chinese"
     for cue in cues:
         text = _escape_ass(cue.text)
         if bilingual_mode == "bilingual_en_zh":
@@ -43,6 +44,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             first, _, second = text.partition(r"\N")
             text = rf"{{\rChinese}}{first}\N{{\rEnglish}}{second}"
         events.append(
-            f"Dialogue: 0,{ms_to_ass(cue.start_ms)},{ms_to_ass(cue.end_ms)},Chinese,,0,0,0,,{text}"
+            f"Dialogue: 0,{ms_to_ass(cue.start_ms)},{ms_to_ass(cue.end_ms)},"
+            f"{default_style},,0,0,0,,{text}"
         )
     atomic_write_text(path, header + "\n".join(events) + "\n")

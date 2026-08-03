@@ -39,6 +39,8 @@ def transcribe_audio(
     output_json: Path,
     output_srt: Path,
     config: TranscriptionConfig,
+    *,
+    language: str = "en",
 ) -> CleanupResult:
     try:
         from faster_whisper import WhisperModel
@@ -58,7 +60,7 @@ def transcribe_audio(
         model = WhisperModel(config.model, device=device, compute_type=compute_type)
         segments_iterator, info = model.transcribe(
             str(audio_path),
-            language="en",
+            language=language,
             beam_size=config.beam_size,
             vad_filter=config.vad_filter,
             word_timestamps=config.word_timestamps,
@@ -105,19 +107,30 @@ def transcribe_audio(
             )
         if not cues:
             raise LocalizerError(
-                "Whisper found no English speech. Check the source audio stream and language."
+                f"Whisper found no {language} speech. Check the source audio stream and language."
             )
         raw = {
             "model": config.model,
             "device": device,
             "compute_type": compute_type,
-            "language": getattr(info, "language", "en"),
+            "language": getattr(info, "language", language),
             "language_probability": getattr(info, "language_probability", None),
             "duration": getattr(info, "duration", None),
             "segments": raw_segments,
         }
         atomic_write_json(output_json, raw)
-        cleanup = cleanup_english(cues)
+        if language == "en":
+            cleanup = cleanup_english(cues)
+        else:
+            warnings: list[str] = []
+            flagged: list[int] = []
+            for cue in cues:
+                if cue.confidence is not None and cue.confidence < 0.55:
+                    warnings.append(
+                        f"Cue {cue.id} has low ASR confidence ({cue.confidence:.2f})."
+                    )
+                    flagged.append(cue.id)
+            cleanup = CleanupResult(cues, warnings, flagged)
         write_srt(output_srt, cleanup.cues)
         return cleanup
     except LocalizerError:

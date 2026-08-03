@@ -13,9 +13,13 @@ from tkinter import messagebox, scrolledtext, ttk
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 SUBTITLE_MODES = {
-    "仅简体中文字幕": "chinese",
+    "仅目标语言字幕": "chinese",
     "英文在上，中文在下": "bilingual_en_zh",
     "中文在上，英文在下": "bilingual_zh_en",
+}
+TRANSLATION_DIRECTIONS = {
+    "英文 → 简体中文": "en-to-zh",
+    "简体中文 → 英文": "zh-to-en",
 }
 TRANSLATION_MODES = {
     "免费模式（处理到人工翻译）": "manual",
@@ -29,6 +33,7 @@ def build_process_command(
     *,
     subtitle_mode: str,
     translation_provider: str,
+    translation_direction: str = "en-to-zh",
     prefer_youtube_chinese: bool = True,
     resume: bool = True,
     python_executable: str | None = None,
@@ -42,6 +47,8 @@ def build_process_command(
         raise ValueError("未知的字幕模式。")
     if translation_provider not in TRANSLATION_MODES.values():
         raise ValueError("未知的翻译模式。")
+    if translation_direction not in TRANSLATION_DIRECTIONS.values():
+        raise ValueError("未知的翻译方向。")
     command = [
         python_executable or sys.executable,
         str(main_script or PROJECT_ROOT / "main.py"),
@@ -51,6 +58,8 @@ def build_process_command(
         subtitle_mode,
         "--translation-provider",
         translation_provider,
+        "--translation-direction",
+        translation_direction,
         (
             "--prefer-youtube-chinese"
             if prefer_youtube_chinese
@@ -89,7 +98,7 @@ def terminate_process_tree(process: subprocess.Popen[str]) -> None:
 class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("YouTube 中文本地化工具")
+        self.root.title("视频中英双向本地化工具")
         self.root.geometry("840x760")
         self.root.minsize(700, 620)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -98,12 +107,14 @@ class LocalizerWindow:
         self.process: subprocess.Popen[str] | None = None
         self.worker: threading.Thread | None = None
         self.stop_requested = False
+        self.active_direction = "en-to-zh"
 
         endpoint, model, api_key = api_configuration(os.environ)
         default_translation = "本地离线翻译并压制（无需 API）"
 
         self.input_value = tk.StringVar()
-        self.subtitle_label = tk.StringVar(value="仅简体中文字幕")
+        self.direction_label = tk.StringVar(value="英文 → 简体中文")
+        self.subtitle_label = tk.StringVar(value="仅目标语言字幕")
         self.translation_label = tk.StringVar(value=default_translation)
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
@@ -130,10 +141,10 @@ class LocalizerWindow:
         outer = ttk.Frame(self.root, padding=22)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(outer, text="YouTube 中文本地化工具", style="Title.TLabel").pack(anchor="w")
+        ttk.Label(outer, text="视频中英双向本地化工具", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             outer,
-            text="粘贴已获授权的公开 YouTube 视频链接，自动下载并生成字幕文件。",
+            text="粘贴已获授权的视频链接或选择本地视频，自动完成中英双向字幕本地化。",
             style="Subtitle.TLabel",
         ).pack(anchor="w", pady=(4, 18))
 
@@ -148,7 +159,16 @@ class LocalizerWindow:
 
         options = ttk.LabelFrame(outer, text="2. 输出设置", padding=12)
         options.pack(fill="x", pady=(12, 0))
-        ttk.Label(options, text="字幕样式：").grid(row=0, column=0, sticky="w", pady=4)
+        ttk.Label(options, text="翻译方向：").grid(row=0, column=0, sticky="w", pady=4)
+        direction_combo = ttk.Combobox(
+            options,
+            textvariable=self.direction_label,
+            values=list(TRANSLATION_DIRECTIONS),
+            state="readonly",
+            width=34,
+        )
+        direction_combo.grid(row=0, column=1, sticky="ew", pady=4)
+        ttk.Label(options, text="字幕样式：").grid(row=1, column=0, sticky="w", pady=4)
         subtitle_combo = ttk.Combobox(
             options,
             textvariable=self.subtitle_label,
@@ -156,8 +176,8 @@ class LocalizerWindow:
             state="readonly",
             width=34,
         )
-        subtitle_combo.grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Label(options, text="翻译方式：").grid(row=1, column=0, sticky="w", pady=4)
+        subtitle_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        ttk.Label(options, text="翻译方式：").grid(row=2, column=0, sticky="w", pady=4)
         translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
@@ -165,13 +185,13 @@ class LocalizerWindow:
             state="readonly",
             width=34,
         )
-        translation_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        translation_combo.grid(row=2, column=1, sticky="ew", pady=4)
         translation_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_translation_fields())
         ttk.Checkbutton(
             options,
-            text="优先直接使用 YouTube 提供的简体中文字幕（没有时再按上方方式翻译）",
+            text="优先使用 YouTube 提供的简体中文字幕（可作为中文成品或中文原文）",
             variable=self.prefer_youtube_chinese,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 2))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 2))
         options.columnconfigure(1, weight=1)
 
         self.api_frame = ttk.LabelFrame(outer, text="自动翻译 API（API Key 不会保存）", padding=12)
@@ -265,6 +285,7 @@ class LocalizerWindow:
             self.input_value.get(),
             subtitle_mode=SUBTITLE_MODES[self.subtitle_label.get()],
             translation_provider=provider,
+            translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
             prefer_youtube_chinese=self.prefer_youtube_chinese.get(),
             resume=self.resume.get(),
         )
@@ -290,17 +311,25 @@ class LocalizerWindow:
             return
 
         self._clear_log()
+        self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self._append_log("正在启动本地化处理……\n")
         if provider == "manual":
+            source_name = "中文" if self.active_direction == "zh-to-en" else "英文"
             self._append_log(
-                "当前为免费模式：程序会完成下载和英文字幕，然后导出等待翻译的文件。\n\n"
+                f"当前为免费模式：程序会完成下载和{source_name}字幕，然后导出等待翻译的文件。\n\n"
             )
         elif provider == "offline":
-            self._append_log(
-                "当前为本地离线模式：优先使用 YouTube 中文字幕；如需翻译，首次会下载本地模型。\n\n"
-            )
+            if self.active_direction == "zh-to-en":
+                self._append_log(
+                    "当前为中文转英文离线模式：优先读取中文字幕；没有时会用 Whisper 识别中文，首次会下载中译英模型。\n\n"
+                )
+            else:
+                self._append_log(
+                    "当前为英文转中文离线模式：优先使用 YouTube 中文字幕；如需翻译，首次会下载英译中模型。\n\n"
+                )
         else:
-            self._append_log("当前为自动模式：完成翻译后会继续压制中文字幕。\n\n")
+            target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
+            self._append_log(f"当前为自动模式：完成翻译后会继续压制{target_name}字幕。\n\n")
         self.status.set("正在处理，请保持窗口打开")
         self.stop_requested = False
         self.start_button.configure(state="disabled")
@@ -390,18 +419,27 @@ class LocalizerWindow:
             )
             return
         if provider == "manual":
-            self.status.set("下载和英文字幕已完成，等待人工翻译")
+            source_name = "中文" if self.active_direction == "zh-to-en" else "英文"
+            target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
+            self.status.set(f"下载和{source_name}字幕已完成，等待人工翻译")
             messagebox.showinfo(
                 "第一阶段完成",
-                "视频和英文字幕已经准备好。请在 output 项目的 subtitles\\translation_chunks "
-                "中处理翻译文件；导入翻译后即可压制中文字幕。",
+                f"视频和{source_name}字幕已经准备好。请在 output 项目的 "
+                "subtitles\\translation_chunks 中处理翻译文件；"
+                f"导入翻译后即可压制{target_name}字幕。",
                 parent=self.root,
             )
         else:
-            self.status.set("本地化完成，中文字幕视频已生成")
+            target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
+            output_name = (
+                "english_hardsub.mp4"
+                if self.active_direction == "zh-to-en"
+                else "chinese_hardsub.mp4"
+            )
+            self.status.set(f"本地化完成，{target_name}字幕视频已生成")
             messagebox.showinfo(
                 "本地化完成",
-                "最终视频位于 output 项目的 rendered\\chinese_hardsub.mp4。",
+                f"最终视频位于 output 项目的 rendered\\{output_name}。",
                 parent=self.root,
             )
 

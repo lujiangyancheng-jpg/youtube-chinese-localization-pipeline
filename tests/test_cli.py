@@ -13,8 +13,10 @@ def test_cli_configuration_supports_offline_and_youtube_chinese() -> None:
     config = _configured(
         None,
         translation_provider="offline",
+        translation_direction="zh-to-en",
         prefer_youtube_chinese=True,
     )
 
     assert config.translation.provider == "offline"
+    assert config.translation.direction == "zh-to-en"
     assert config.download.prefer_youtube_chinese is True

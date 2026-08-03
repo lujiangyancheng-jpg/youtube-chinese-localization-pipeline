@@ -36,6 +36,7 @@ class TranscriptionConfig(StrictModel):
 
 
 class TranslationConfig(StrictModel):
+    direction: Literal["en-to-zh", "zh-to-en"] = "en-to-zh"
     provider: Literal["manual", "offline", "openai-compatible"] = "manual"
     model: str = ""
     endpoint: str = ""
@@ -47,6 +48,12 @@ class TranslationConfig(StrictModel):
     )
     offline_model_url: str = (
         "https://argos-net.com/v1/translate-en_zh-1_9.argosmodel"
+    )
+    offline_zh_en_model_directory: Path = Path(
+        "~/.youtube-chinese-localizer/models/translate-zh_en-1_9"
+    )
+    offline_zh_en_model_url: str = (
+        "https://argos-net.com/v1/translate-zh_en-1_9.argosmodel"
     )
     offline_device: Literal["auto", "cpu", "cuda"] = "auto"
     offline_compute_type: str = "auto"

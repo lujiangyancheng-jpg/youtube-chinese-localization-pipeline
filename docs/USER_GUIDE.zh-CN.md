@@ -132,7 +132,8 @@ python main.py doctor
 - yt-dlp：`ok`
 - faster-whisper：`ok` 或 `optional`
 - Offline translation runtime：`ok`
-- Offline English→Chinese model：首次使用前可为 `optional`，下载后为 `ok`
+- Offline English→Chinese model：首次英译中前可为 `optional`，下载后为 `ok`
+- Offline Chinese-to-English model：首次中译英前可为 `optional`，下载后为 `ok`
 - 输出目录：`ok`
 - 中文字体：`ok` 或可接受的警告
 
@@ -147,24 +148,26 @@ Start Localizer.cmd
 打开窗口后：
 
 1. 复制并粘贴一个你有权处理的公开 YouTube 视频链接，也可以选择本地视频。
-2. 选择仅中文字幕或中英双语字幕。
-3. 选择翻译方式并确认授权。
-4. 点击“开始本地化”。
+2. 选择“英文 → 简体中文”或“简体中文 → 英文”。
+3. 选择仅目标语言字幕或中英双语字幕。
+4. 选择翻译方式并确认授权。
+5. 点击“开始本地化”。
 
-窗口会实时显示下载、字幕提取或 Whisper 转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目，最终中文字幕视频位于：
+窗口会实时显示下载、字幕提取或 Whisper 转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目。英译中和中译英的最终视频分别位于：
 
 ```text
 output\项目名称\rendered\chinese_hardsub.mp4
+output\项目名称\rendered\english_hardsub.mp4
 ```
 
 翻译方式说明：
 
-- “免费模式”不需要 API，会自动完成视频下载和英文字幕，然后停在人工翻译步骤。
-- “本地离线翻译并压制”不需要 API，会在本机完成英译中并继续压制视频。首次使用会下载约 70 MB 的模型，之后可以离线运行。
-- “自动翻译并压制字幕”会继续生成中文并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
+- “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
+- “本地离线翻译并压制”不需要 API，会按所选方向在本机完成英译中或中译英并继续压制视频。每个方向首次使用时会下载对应模型，之后可以离线运行。
+- “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
-建议保持“优先直接使用 YouTube 提供的简体中文字幕”处于勾选状态。程序发现作者简中字幕或 YouTube 简中自动字幕时，会直接规范化并压制；没有合适中文字幕时，才使用所选翻译方式。
+建议保持“优先使用 YouTube 提供的简体中文字幕”处于勾选状态。英译中时它可直接作为中文成品；中译英时它会作为中文原文进入翻译。中译英模式没有中文字幕时，程序会用本地 Whisper 识别中文语音。
 
 ChatGPT Plus 不能直接作为本地程序的 API 使用，也不包含 OpenAI API 额度。
 
@@ -309,15 +312,25 @@ python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
   --translation-provider offline --prefer-youtube-chinese
 ```
 
+把已获授权的中文视频本地化为英文：
+
+```powershell
+python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
+  --translation-direction zh-to-en --translation-provider offline
+```
+
+中译英模式会优先使用视频已有的简体中文字幕；没有中文字幕时，用多语言 Whisper 以 `zh` 模式识别中文语音，然后使用本地中译英模型生成和压制英文字幕。
+
 如果已有简体中文字幕，程序直接压制，不运行翻译。如果只有英文字幕，程序使用本地离线模型翻译；如果没有字幕，则先用 Whisper 识别英文，再离线翻译并压制。
 
 首次离线翻译会把模型下载到：
 
 ```text
 %USERPROFILE%\.youtube-chinese-localizer\models\translate-en_zh-1_9
+%USERPROFILE%\.youtube-chinese-localizer\models\translate-zh_en-1_9
 ```
 
-模型下载约 70 MB，占用约 85 MB 磁盘。它源自 OPUS-MT，模型包附带 CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话和专业术语仍需要人工复核。
+两个方向的模型分别按需下载，每个安装后约占用 85 MB 磁盘。它们源自 OPUS-MT，模型包附带 CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话和专业术语仍需要人工复核。
 
 以下内容会被拒绝或无法处理：
 
@@ -433,6 +446,7 @@ transcription:
   compute_type: auto
 
 translation:
+  direction: en-to-zh  # en-to-zh 或 zh-to-en
   provider: offline
   batch_size: 40
   offline_device: auto
@@ -534,6 +548,7 @@ output\
       source.en.vtt
       source.zh.vtt
       english.cleaned.srt
+      english.ass
       chinese.srt
       chinese.ass
       bilingual.srt
@@ -544,6 +559,7 @@ output\
       transcription_audio.wav
     rendered\
       chinese_hardsub.mp4
+      english_hardsub.mp4
       preview_60_15.mp4
     publishing\
       title.txt
@@ -669,7 +685,7 @@ python -m pip install -e ".[offline-translation]"
 python main.py doctor
 ```
 
-模型只在第一次使用时下载。`offline_device: auto` 会优先尝试 CUDA；CUDA 运行库不完整时会自动回退到 CPU。模型下载被中断时不会把残缺目录当成已安装，可以重新运行同一任务继续处理。
+每个翻译方向的模型只在第一次使用时下载：英译中和中译英分别保存在 `translate-en_zh-1_9` 与 `translate-zh_en-1_9` 目录。`offline_device: auto` 会优先尝试 CUDA；CUDA 运行库不完整时会自动回退到 CPU。模型下载被中断时不会把残缺目录当成已安装，可以重新运行同一任务继续处理。
 
 ### Whisper 显存不足
 
@@ -684,12 +700,12 @@ transcription:
 
 ### 人工翻译文件无法导入
 
-确认：
+确认导出文件里的 `source_code` 和 `target_code` 与当前方向一致，并检查：
 
 - 返回内容是 JSONL
 - 每行是一个完整 JSON 对象
-- `id`、`start`、`end` 和 `en` 未改变
-- 每个 `zh` 都有内容
+- `id`、`start`、`end` 和原文栏（`en` 或 `zh`）未改变
+- 每个目标栏（`zh` 或 `en`）都有内容
 - URL 没有被修改或删除
 
 必要时重新导出原始分块：

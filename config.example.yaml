@@ -21,6 +21,7 @@ transcription:
   word_timestamps: true
 
 translation:
+  direction: en-to-zh  # en-to-zh or zh-to-en
   provider: manual  # manual, offline, or openai-compatible
   model: ""
   endpoint: ""
@@ -29,6 +30,8 @@ translation:
   glossary_file: glossary.yaml
   offline_model_directory: ~/.youtube-chinese-localizer/models/translate-en_zh-1_9
   offline_model_url: https://argos-net.com/v1/translate-en_zh-1_9.argosmodel
+  offline_zh_en_model_directory: ~/.youtube-chinese-localizer/models/translate-zh_en-1_9
+  offline_zh_en_model_url: https://argos-net.com/v1/translate-zh_en-1_9.argosmodel
   offline_device: auto
   offline_compute_type: auto
   offline_auto_download: true

@@ -19,6 +19,8 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     assert config.download.prefer_youtube_chinese is True
     assert config.download.format == "bestvideo+bestaudio/best"
     assert config.download.format_sort == ["res", "fps", "br", "size"]
+    assert config.translation.direction == "en-to-zh"
+    assert config.translation.offline_zh_en_model_directory.name == "translate-zh_en-1_9"
     assert config.translation.offline_device == "auto"
 
 

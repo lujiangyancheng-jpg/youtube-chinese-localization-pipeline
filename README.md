@@ -1,13 +1,14 @@
 # YouTube Chinese Localization Pipeline
 
-A production-oriented local Python application that turns an authorized English-language
-YouTube video or local video into a reusable localization project containing normalized
-English subtitles, Simplified Chinese subtitles, optional bilingual subtitles, and a
-validated hard-subtitled MP4.
+A production-oriented local Python application that localizes authorized English- or
+Chinese-language YouTube and local videos in either direction. Each reusable project contains
+normalized English subtitles, Simplified Chinese subtitles, optional bilingual subtitles, and
+a validated hard-subtitled MP4.
 
 The pipeline is resumable, keeps intermediate files, never uploads content, and can complete
-Chinese localization without an API by using provided YouTube Chinese captions or a local
-offline translation model. Manual ChatGPT export/import remains available.
+English↔Chinese localization without an API by using provided YouTube captions, multilingual
+Whisper transcription, and local offline translation models. Manual ChatGPT export/import
+remains available.
 
 > 中文用户：请阅读完整的[中文使用说明书](docs/USER_GUIDE.zh-CN.md)。
 
@@ -32,12 +33,12 @@ attribution requirements, and publishing-platform rules.
 - Local video validation and safe copying
 - VTT/SRT/ASS parsing and normalized UTF-8 SRT output
 - Rolling-caption overlap cleanup and conservative English cleanup
-- `faster-whisper` English transcription fallback with VAD and optional word timestamps
+- `faster-whisper` English or Chinese transcription fallback with VAD and word timestamps
 - Manual Markdown/JSONL translation chunks with strict cue/timestamp validation
-- Local offline English→Simplified Chinese translation with deterministic caching
+- Local offline English↔Simplified Chinese translation with directional model selection and caching
 - OpenAI-compatible subtitle translation with retries and deterministic response caching
-- Simplified Chinese SRT and styled ASS output
-- Chinese-only, English-above-Chinese, and Chinese-above-English subtitle modes
+- English or Simplified Chinese target SRT and styled ASS output
+- Target-only, English-above-Chinese, and Chinese-above-English subtitle modes
 - H.264/AAC hard-subtitled MP4 rendering with NVENC-to-libx264 fallback
 - Preview rendering and output stream/duration/decode validation
 - Atomic state/report writes and hash-based resume decisions
@@ -103,17 +104,19 @@ After completing the Windows installation above, double-click `Start Localizer.c
 project folder. You can then:
 
 1. paste an authorized public YouTube URL (or select a local video);
-2. choose Chinese-only or bilingual subtitles;
-3. confirm that you have the required rights or permission; and
-4. click **开始本地化**.
+2. choose **English → Simplified Chinese** or **Simplified Chinese → English**;
+3. choose target-only or bilingual subtitles;
+4. confirm that you have the required rights or permission; and
+5. click **开始本地化**.
 
 The window streams progress from the existing resumable pipeline and provides a button for
 opening the `output` folder. Closing or stopping a run keeps completed stages so the same
 input can be resumed later.
 
-Keep **优先直接使用 YouTube 提供的简体中文字幕** selected to use creator or automatic
-Simplified Chinese captions without translating them. When no suitable Chinese track exists,
-the selected translation mode is used as the fallback.
+Keep **优先使用 YouTube 提供的简体中文字幕** selected. In English→Chinese mode it can be
+used directly as the target subtitle; in Chinese→English mode it becomes the Chinese source
+for translation. When no Chinese source exists in Chinese→English mode, Whisper transcribes
+the Chinese speech locally.
 
 YouTube downloads default to the highest-resolution video stream and the best available audio
 stream without restricting the source codec to MP4/M4A. Formats are ranked by resolution,
@@ -121,12 +124,12 @@ frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitl
 
 The desktop interface offers three translation modes:
 
-- **Free/manual mode** downloads the video, obtains or transcribes English subtitles, and
+- **Free/manual mode** downloads the video, obtains or transcribes source-language subtitles, and
   exports translation chunks. You translate and import those chunks before rendering.
-- **Local offline mode** translates English subtitles on this computer and continues through
-  hard-subtitle rendering without an API. The first run downloads an approximately 70 MB
-  English→Simplified Chinese model; later runs work offline and reuse cached translations.
-- **API automatic mode** continues through Simplified Chinese translation and hard-subtitle
+- **Local offline mode** translates in the selected direction on this computer and continues
+  through hard-subtitle rendering without an API. Each direction downloads its model on first
+  use; later runs work offline and reuse cached translations.
+- **API automatic mode** continues through target-language translation and hard-subtitle
   rendering. It requires an OpenAI-compatible endpoint, model name, and API key. Values
   entered in the window are passed to the processing run. The API key is never saved;
   endpoint and model settings may be recorded in the local project's resolved configuration
@@ -144,11 +147,15 @@ The equivalent no-API command is:
 ```powershell
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
   --translation-provider offline --prefer-youtube-chinese
+
+python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
+  --translation-direction zh-to-en --translation-provider offline
 ```
 
-The offline model is stored under
-`~/.youtube-chinese-localizer/models/translate-en_zh-1_9`. It is derived from OPUS-MT and
-distributed with a CC-BY 4.0 model notice in its included `README.md`. Local model translation
+The offline models are stored under
+`~/.youtube-chinese-localizer/models/translate-en_zh-1_9` and
+`~/.youtube-chinese-localizer/models/translate-zh_en-1_9`. They are derived from OPUS-MT and
+distributed with CC-BY 4.0 model notices in their included `README.md`. Local model translation
 is convenient and private, but names, jokes, and specialized terminology still need review.
 
 ## Manual ChatGPT translation workflow (no API billing)
@@ -258,6 +265,7 @@ transcription:
   word_timestamps: true
 
 translation:
+  direction: en-to-zh   # en-to-zh or zh-to-en
   provider: offline     # manual, offline, or openai-compatible
   batch_size: 40
   offline_device: auto  # auto, cpu, or cuda; auto safely falls back to CPU
@@ -294,6 +302,7 @@ output/
       source.en.vtt
       source.zh.vtt
       english.cleaned.srt
+      english.ass
       chinese.srt
       chinese.ass
       bilingual.srt
@@ -304,6 +313,7 @@ output/
       transcription_audio.wav
     rendered/
       chinese_hardsub.mp4
+      english_hardsub.mp4
       preview_START_DURATION.mp4
     publishing/
       title.txt

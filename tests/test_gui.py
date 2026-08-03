@@ -25,6 +25,8 @@ def test_build_process_command_uses_argument_array_and_resume() -> None:
         "chinese",
         "--translation-provider",
         "manual",
+        "--translation-direction",
+        "en-to-zh",
         "--prefer-youtube-chinese",
         "--resume",
     ]
@@ -65,6 +67,7 @@ def test_build_process_command_supports_offline_without_youtube_chinese() -> Non
         "https://youtu.be/abc123def45",
         subtitle_mode="bilingual_en_zh",
         translation_provider="offline",
+        translation_direction="zh-to-en",
         prefer_youtube_chinese=False,
         resume=False,
         python_executable="python.exe",
@@ -72,5 +75,6 @@ def test_build_process_command_supports_offline_without_youtube_chinese() -> Non
     )
 
     assert "offline" in command
+    assert command[command.index("--translation-direction") + 1] == "zh-to-en"
     assert "--no-prefer-youtube-chinese" in command
     assert "--resume" not in command

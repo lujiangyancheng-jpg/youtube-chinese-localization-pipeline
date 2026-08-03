@@ -12,16 +12,16 @@ from youtube_localizer.translation.offline import (
 )
 
 
-def _write_fake_model_archive(path) -> None:
-    root = "translate-en_zh-test"
+def _write_fake_model_archive(path, *, source_code="en", target_code="zh") -> None:
+    root = f"translate-{source_code}_{target_code}-test"
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             f"{root}/metadata.json",
             json.dumps(
                 {
                     "package_version": "test",
-                    "from_code": "en",
-                    "to_code": "zh",
+                    "from_code": source_code,
+                    "to_code": target_code,
                 }
             ),
         )
@@ -50,3 +50,25 @@ def test_install_offline_model_archive_rejects_path_traversal(tmp_path) -> None:
     with pytest.raises(LocalizerError, match="unsafe path"):
         install_offline_model_archive(archive, tmp_path / "model")
     assert not (tmp_path.parent / "outside.txt").exists()
+
+
+def test_install_offline_model_archive_supports_chinese_to_english(tmp_path) -> None:
+    archive = tmp_path / "zh-en.argosmodel"
+    destination = tmp_path / "translate-zh_en"
+    _write_fake_model_archive(archive, source_code="zh", target_code="en")
+
+    installed = install_offline_model_archive(
+        archive,
+        destination,
+        source_code="zh",
+        target_code="en",
+    )
+
+    metadata = validate_offline_model(
+        installed,
+        source_code="zh",
+        target_code="en",
+    )
+    assert metadata is not None
+    assert metadata["from_code"] == "zh"
+    assert metadata["to_code"] == "en"
