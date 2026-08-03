@@ -31,6 +31,7 @@ dev = [
 
 [project.scripts]
 youtube-localizer = "youtube_localizer.cli:run"
+youtube-localizer-gui = "youtube_localizer.gui:run_gui"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/youtube_localizer"]

@@ -94,6 +94,37 @@ application, but `faster-whisper`/CTranslate2 wheels may not yet be available fo
 The default translation provider is `manual`. The first process run stops safely after
 creating English subtitles and numbered translation chunks.
 
+## Windows paste-a-link desktop interface
+
+After completing the Windows installation above, double-click `Start Localizer.cmd` in the
+project folder. You can then:
+
+1. paste an authorized public YouTube URL (or select a local video);
+2. choose Chinese-only or bilingual subtitles;
+3. confirm that you have the required rights or permission; and
+4. click **开始本地化**.
+
+The window streams progress from the existing resumable pipeline and provides a button for
+opening the `output` folder. Closing or stopping a run keeps completed stages so the same
+input can be resumed later.
+
+The desktop interface offers two translation modes:
+
+- **Free/manual mode** downloads the video, obtains or transcribes English subtitles, and
+  exports translation chunks. You translate and import those chunks before rendering.
+- **Automatic mode** continues through Simplified Chinese translation and hard-subtitle
+  rendering. It requires an OpenAI-compatible endpoint, model name, and API key. Values
+  entered in the window are passed to the processing run. The API key is never saved;
+  endpoint and model settings may be recorded in the local project's resolved configuration
+  so an interrupted run can be resumed.
+
+ChatGPT Plus cannot be used by the local program as an API and does not include API credits.
+The interface can also be opened from PowerShell with:
+
+```powershell
+python main.py gui
+```
+
 ## Manual ChatGPT translation workflow (no API billing)
 
 **ChatGPT Plus does not include OpenAI API credits. OpenAI API usage is billed separately.**

@@ -522,6 +522,14 @@ def version_command() -> None:
     console.print(__version__)
 
 
+@app.command("gui")
+def gui_command() -> None:
+    """Open the local paste-a-link desktop interface."""
+    from .gui import run_gui
+
+    run_gui()
+
+
 KNOWN_COMMANDS = {
     "process",
     "batch",
@@ -536,6 +544,7 @@ KNOWN_COMMANDS = {
     "validate",
     "clean",
     "doctor",
+    "gui",
     "version",
 }
 
