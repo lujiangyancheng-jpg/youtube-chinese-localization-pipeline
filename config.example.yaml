@@ -3,7 +3,10 @@ subtitle_language: zh-CN
 subtitle_mode: chinese
 
 download:
-  format: bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best
+  # Highest-resolution video + highest-quality audio, without restricting source codecs.
+  format: bestvideo+bestaudio/best
+  # Prefer resolution first, then frame rate, bitrate, and file size.
+  format_sort: [res, fps, br, size]
   prefer_mp4: true
   download_thumbnail: true
   download_metadata: true

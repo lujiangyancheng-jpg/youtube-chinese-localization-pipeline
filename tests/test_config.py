@@ -17,6 +17,8 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     assert config.transcription.model == "small"
     assert config.render.codec == "libx264"
     assert config.download.prefer_youtube_chinese is True
+    assert config.download.format == "bestvideo+bestaudio/best"
+    assert config.download.format_sort == ["res", "fps", "br", "size"]
     assert config.translation.offline_device == "auto"
 
 

@@ -115,6 +115,10 @@ Keep **优先直接使用 YouTube 提供的简体中文字幕** selected to use 
 Simplified Chinese captions without translating them. When no suitable Chinese track exists,
 the selected translation mode is used as the fallback.
 
+YouTube downloads default to the highest-resolution video stream and the best available audio
+stream without restricting the source codec to MP4/M4A. Formats are ranked by resolution,
+frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitled MP4.
+
 The desktop interface offers three translation modes:
 
 - **Free/manual mode** downloads the video, obtains or transcribes English subtitles, and
@@ -259,6 +263,8 @@ translation:
   offline_device: auto  # auto, cpu, or cuda; auto safely falls back to CPU
 
 download:
+  format: bestvideo+bestaudio/best
+  format_sort: [res, fps, br, size]
   prefer_youtube_chinese: true
 
 subtitles:

@@ -204,6 +204,7 @@ def download_youtube(
         "continuedl": True,
         "overwrites": False,
         "format": config.format,
+        "format_sort": list(config.format_sort),
         "outtmpl": str(destination_dir / "download.%(ext)s"),
         "writesubtitles": any(selection[1] == "creator" for selection in selections),
         "writeautomaticsub": any(selection[1] == "automatic" for selection in selections),

@@ -438,6 +438,9 @@ translation:
   offline_device: auto
 
 download:
+  # 最高源画质：依次优先分辨率、帧率、码率和文件大小。
+  format: bestvideo+bestaudio/best
+  format_sort: [res, fps, br, size]
   prefer_youtube_chinese: true
 
 subtitles:

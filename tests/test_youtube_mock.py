@@ -81,5 +81,8 @@ def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
     assert result.chinese_subtitle == tmp_path / "source.zh.vtt"
     assert result.chinese_language == "zh-Hans"
     assert result.chinese_kind == "automatic"
+    assert FakeDownloadYDL.last_options["format"] == "bestvideo+bestaudio/best"
+    assert FakeDownloadYDL.last_options["format_sort"] == ["res", "fps", "br", "size"]
+    assert FakeDownloadYDL.last_options["merge_output_format"] == "mp4"
     assert FakeDownloadYDL.last_options["writesubtitles"] is True
     assert FakeDownloadYDL.last_options["writeautomaticsub"] is True

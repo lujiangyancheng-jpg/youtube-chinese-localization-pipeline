@@ -16,7 +16,10 @@ class StrictModel(BaseModel):
 
 
 class DownloadConfig(StrictModel):
-    format: str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+    format: str = "bestvideo+bestaudio/best"
+    format_sort: list[str] = Field(
+        default_factory=lambda: ["res", "fps", "br", "size"], min_length=1
+    )
     prefer_mp4: bool = True
     download_thumbnail: bool = True
     download_metadata: bool = True
