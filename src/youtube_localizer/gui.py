@@ -19,6 +19,7 @@ SUBTITLE_MODES = {
 }
 TRANSLATION_MODES = {
     "免费模式（处理到人工翻译）": "manual",
+    "本地离线翻译并压制（无需 API）": "offline",
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
 }
 
@@ -28,6 +29,7 @@ def build_process_command(
     *,
     subtitle_mode: str,
     translation_provider: str,
+    prefer_youtube_chinese: bool = True,
     resume: bool = True,
     python_executable: str | None = None,
     main_script: Path | None = None,
@@ -49,6 +51,11 @@ def build_process_command(
         subtitle_mode,
         "--translation-provider",
         translation_provider,
+        (
+            "--prefer-youtube-chinese"
+            if prefer_youtube_chinese
+            else "--no-prefer-youtube-chinese"
+        ),
     ]
     if resume:
         command.append("--resume")
@@ -83,7 +90,7 @@ class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("YouTube 中文本地化工具")
-        self.root.geometry("820x720")
+        self.root.geometry("840x760")
         self.root.minsize(700, 620)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -93,11 +100,7 @@ class LocalizerWindow:
         self.stop_requested = False
 
         endpoint, model, api_key = api_configuration(os.environ)
-        default_translation = (
-            "自动翻译并压制字幕（需要 API）"
-            if endpoint and model and api_key
-            else "免费模式（处理到人工翻译）"
-        )
+        default_translation = "本地离线翻译并压制（无需 API）"
 
         self.input_value = tk.StringVar()
         self.subtitle_label = tk.StringVar(value="仅简体中文字幕")
@@ -106,6 +109,7 @@ class LocalizerWindow:
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
         self.authorized = tk.BooleanVar(value=False)
+        self.prefer_youtube_chinese = tk.BooleanVar(value=True)
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
 
@@ -163,6 +167,11 @@ class LocalizerWindow:
         )
         translation_combo.grid(row=1, column=1, sticky="ew", pady=4)
         translation_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_translation_fields())
+        ttk.Checkbutton(
+            options,
+            text="优先直接使用 YouTube 提供的简体中文字幕（没有时再按上方方式翻译）",
+            variable=self.prefer_youtube_chinese,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 2))
         options.columnconfigure(1, weight=1)
 
         self.api_frame = ttk.LabelFrame(outer, text="自动翻译 API（API Key 不会保存）", padding=12)
@@ -256,6 +265,7 @@ class LocalizerWindow:
             self.input_value.get(),
             subtitle_mode=SUBTITLE_MODES[self.subtitle_label.get()],
             translation_provider=provider,
+            prefer_youtube_chinese=self.prefer_youtube_chinese.get(),
             resume=self.resume.get(),
         )
         environment = os.environ.copy()
@@ -284,6 +294,10 @@ class LocalizerWindow:
         if provider == "manual":
             self._append_log(
                 "当前为免费模式：程序会完成下载和英文字幕，然后导出等待翻译的文件。\n\n"
+            )
+        elif provider == "offline":
+            self._append_log(
+                "当前为本地离线模式：优先使用 YouTube 中文字幕；如需翻译，首次会下载本地模型。\n\n"
             )
         else:
             self._append_log("当前为自动模式：完成翻译后会继续压制中文字幕。\n\n")

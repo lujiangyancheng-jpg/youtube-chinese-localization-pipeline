@@ -109,7 +109,7 @@ FFmpeg 必须包含 `ass`/`subtitles`（libass）字幕滤镜。
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[transcription]"
+python -m pip install -e ".[transcription,offline-translation]"
 ```
 
 如果只处理已经带英文字幕的视频，不需要 Whisper：
@@ -131,6 +131,8 @@ python main.py doctor
 - ffprobe：`ok`
 - yt-dlp：`ok`
 - faster-whisper：`ok` 或 `optional`
+- Offline translation runtime：`ok`
+- Offline English→Chinese model：首次使用前可为 `optional`，下载后为 `ok`
 - 输出目录：`ok`
 - 中文字体：`ok` 或可接受的警告
 
@@ -158,8 +160,11 @@ output\项目名称\rendered\chinese_hardsub.mp4
 翻译方式说明：
 
 - “免费模式”不需要 API，会自动完成视频下载和英文字幕，然后停在人工翻译步骤。
+- “本地离线翻译并压制”不需要 API，会在本机完成英译中并继续压制视频。首次使用会下载约 70 MB 的模型，之后可以离线运行。
 - “自动翻译并压制字幕”会继续生成中文并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
+
+建议保持“优先直接使用 YouTube 提供的简体中文字幕”处于勾选状态。程序发现作者简中字幕或 YouTube 简中自动字幕时，会直接规范化并压制；没有合适中文字幕时，才使用所选翻译方式。
 
 ChatGPT Plus 不能直接作为本地程序的 API 使用，也不包含 OpenAI API 额度。
 
@@ -288,12 +293,31 @@ python main.py validate "output\Owned demo_a1b2c3d4e5"
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-字幕优先顺序：
+默认字幕优先顺序：
 
-1. 作者上传的英文字幕
-2. 作者上传的 `en-US`、`en-GB` 等英文变体
-3. YouTube 自动生成的英文字幕
-4. 本地 faster-whisper 转录
+1. 作者上传的简体中文字幕（`zh-Hans`、`zh-CN` 或 `zh`）
+2. YouTube 提供的简体中文自动字幕
+3. 作者上传的英文字幕
+4. 作者上传的 `en-US`、`en-GB` 等英文变体
+5. YouTube 自动生成的英文字幕
+6. 本地 faster-whisper 英文转录
+
+完全不使用 API 的一站式命令：
+
+```powershell
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
+  --translation-provider offline --prefer-youtube-chinese
+```
+
+如果已有简体中文字幕，程序直接压制，不运行翻译。如果只有英文字幕，程序使用本地离线模型翻译；如果没有字幕，则先用 Whisper 识别英文，再离线翻译并压制。
+
+首次离线翻译会把模型下载到：
+
+```text
+%USERPROFILE%\.youtube-chinese-localizer\models\translate-en_zh-1_9
+```
+
+模型下载约 70 MB，占用约 85 MB 磁盘。它源自 OPUS-MT，模型包附带 CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话和专业术语仍需要人工复核。
 
 以下内容会被拒绝或无法处理：
 
@@ -308,7 +332,7 @@ python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
 
 ## 7. 使用 OpenAI-compatible API 自动翻译
 
-只有希望单命令完成翻译时才需要配置 API。
+只有选择云端 OpenAI-compatible 翻译时才需要配置 API；本地离线模式不需要。
 
 ### 7.1 设置环境变量
 
@@ -409,8 +433,12 @@ transcription:
   compute_type: auto
 
 translation:
-  provider: manual
+  provider: offline
   batch_size: 40
+  offline_device: auto
+
+download:
+  prefer_youtube_chinese: true
 
 subtitles:
   font: Microsoft YaHei
@@ -501,6 +529,7 @@ output\
       thumbnail.jpg
     subtitles\
       source.en.vtt
+      source.zh.vtt
       english.cleaned.srt
       chinese.srt
       chinese.ass
@@ -627,6 +656,17 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[transcription]"
 ```
+
+### 本地离线翻译模型无法下载或加载
+
+先安装离线翻译运行组件：
+
+```powershell
+python -m pip install -e ".[offline-translation]"
+python main.py doctor
+```
+
+模型只在第一次使用时下载。`offline_device: auto` 会优先尝试 CUDA；CUDA 运行库不完整时会自动回退到 CPU。模型下载被中断时不会把残缺目录当成已安装，可以重新运行同一任务继续处理。
 
 ### Whisper 显存不足
 

@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -25,6 +26,18 @@ YOUTUBE_HOSTS = {
     "youtu.be",
 }
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
+SIMPLIFIED_CHINESE_LANGUAGES = ("zh-Hans", "zh-CN", "zh")
+
+
+@dataclass(frozen=True)
+class YouTubeDownloadResult:
+    video: Path
+    english_subtitle: Path | None = None
+    english_language: str = ""
+    english_kind: str = ""
+    chinese_subtitle: Path | None = None
+    chinese_language: str = ""
+    chinese_kind: str = ""
 
 
 def is_youtube_url(value: str) -> bool:
@@ -142,14 +155,49 @@ def choose_english_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
+def _matching_language(catalog: dict[str, Any], wanted: tuple[str, ...]) -> str | None:
+    by_casefold = {language.casefold(): language for language in catalog}
+    for preferred in wanted:
+        match = by_casefold.get(preferred.casefold())
+        if match:
+            return match
+    return None
+
+
+def choose_chinese_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
+    """Prefer creator Simplified Chinese captions, then YouTube automatic captions."""
+    manual = info.get("subtitles") or {}
+    automatic = info.get("automatic_captions") or {}
+    manual_language = _matching_language(manual, SIMPLIFIED_CHINESE_LANGUAGES)
+    if manual_language:
+        return manual_language, "creator"
+    automatic_language = _matching_language(automatic, SIMPLIFIED_CHINESE_LANGUAGES)
+    if automatic_language:
+        return automatic_language, "automatic"
+    return None
+
+
+def _downloaded_subtitle(destination_dir: Path, language: str) -> Path | None:
+    wanted = f".{language}.".casefold()
+    candidates = sorted(
+        path
+        for path in destination_dir.glob("download*.*")
+        if path.suffix.lower() in {".vtt", ".srt", ".ass"}
+        and wanted in path.name.casefold()
+    )
+    return candidates[0] if candidates else None
+
+
 def download_youtube(
     url: str,
     info: dict[str, Any],
     destination_dir: Path,
     config: DownloadConfig,
-) -> tuple[Path, Path | None, str, str]:
+) -> YouTubeDownloadResult:
     destination_dir.mkdir(parents=True, exist_ok=True)
-    subtitle = choose_english_subtitle(info)
+    english = choose_english_subtitle(info)
+    chinese = choose_chinese_subtitle(info) if config.prefer_youtube_chinese else None
+    selections = [selection for selection in (english, chinese) if selection is not None]
     options: dict[str, Any] = {
         "quiet": False,
         "noplaylist": True,
@@ -157,9 +205,9 @@ def download_youtube(
         "overwrites": False,
         "format": config.format,
         "outtmpl": str(destination_dir / "download.%(ext)s"),
-        "writesubtitles": bool(subtitle and subtitle[1] == "creator"),
-        "writeautomaticsub": bool(subtitle and subtitle[1] == "automatic"),
-        "subtitleslangs": [subtitle[0]] if subtitle else [],
+        "writesubtitles": any(selection[1] == "creator" for selection in selections),
+        "writeautomaticsub": any(selection[1] == "automatic" for selection in selections),
+        "subtitleslangs": list(dict.fromkeys(selection[0] for selection in selections)),
         "subtitlesformat": "vtt/srt/best",
     }
     if config.prefer_mp4:
@@ -191,24 +239,26 @@ def download_youtube(
     if video != destination:
         video.replace(destination)
 
-    subtitle_file = None
-    if subtitle:
-        subtitle_candidates = sorted(
-            [
-                *destination_dir.glob("download*.vtt"),
-                *destination_dir.glob("download*.srt"),
-                *destination_dir.glob("download*.ass"),
-            ]
-        )
-        if subtitle_candidates:
-            original = subtitle_candidates[0]
-            subtitle_file = destination_dir / f"source.en{original.suffix.lower()}"
-            original.replace(subtitle_file)
-    return (
-        destination,
-        subtitle_file,
-        subtitle[0] if subtitle else "",
-        subtitle[1] if subtitle else "",
+    english_file = None
+    if english:
+        original = _downloaded_subtitle(destination_dir, english[0])
+        if original:
+            english_file = destination_dir / f"source.en{original.suffix.lower()}"
+            original.replace(english_file)
+    chinese_file = None
+    if chinese:
+        original = _downloaded_subtitle(destination_dir, chinese[0])
+        if original:
+            chinese_file = destination_dir / f"source.zh{original.suffix.lower()}"
+            original.replace(chinese_file)
+    return YouTubeDownloadResult(
+        video=destination,
+        english_subtitle=english_file,
+        english_language=english[0] if english else "",
+        english_kind=english[1] if english else "",
+        chinese_subtitle=chinese_file,
+        chinese_language=chinese[0] if chinese else "",
+        chinese_kind=chinese[1] if chinese else "",
     )
 
 

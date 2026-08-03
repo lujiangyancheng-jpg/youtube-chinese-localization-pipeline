@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from youtube_localizer.download.youtube import (
+    choose_chinese_subtitle,
     choose_english_subtitle,
     is_youtube_url,
     youtube_video_id,
@@ -27,3 +28,19 @@ def test_creator_english_subtitle_has_priority() -> None:
         "automatic_captions": {"en": [{}]},
     }
     assert choose_english_subtitle(info) == ("en-GB", "creator")
+
+
+def test_creator_simplified_chinese_subtitle_has_priority() -> None:
+    info = {
+        "subtitles": {"zh-CN": [{}]},
+        "automatic_captions": {"zh-Hans": [{}]},
+    }
+    assert choose_chinese_subtitle(info) == ("zh-CN", "creator")
+
+
+def test_automatic_simplified_chinese_subtitle_is_supported() -> None:
+    info = {
+        "subtitles": {"zh-Hant": [{}]},
+        "automatic_captions": {"zh-Hans": [{}]},
+    }
+    assert choose_chinese_subtitle(info) == ("zh-Hans", "automatic")

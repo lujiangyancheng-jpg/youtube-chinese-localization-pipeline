@@ -44,6 +44,10 @@ class SourceMetadata(BaseModel):
     audio_streams: list[dict[str, Any]] = Field(default_factory=list)
     subtitle_language: str = ""
     subtitle_kind: str = ""
+    english_subtitle_language: str = ""
+    english_subtitle_kind: str = ""
+    chinese_subtitle_language: str = ""
+    chinese_subtitle_kind: str = ""
 
 
 class StepRecord(BaseModel):

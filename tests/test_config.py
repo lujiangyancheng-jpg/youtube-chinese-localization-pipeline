@@ -16,6 +16,8 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     assert str(config.output_directory) == "localized"
     assert config.transcription.model == "small"
     assert config.render.codec == "libx264"
+    assert config.download.prefer_youtube_chinese is True
+    assert config.translation.offline_device == "auto"
 
 
 def test_configuration_rejects_unknown_fields(tmp_path) -> None:

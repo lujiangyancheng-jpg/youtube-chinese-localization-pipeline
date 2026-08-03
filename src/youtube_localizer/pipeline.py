@@ -36,6 +36,7 @@ from .translation.base import TranslationContext
 from .translation.cache import TranslationCache
 from .translation.glossary import load_glossary
 from .translation.manual import ManualExportProvider
+from .translation.offline import LocalOfflineProvider
 from .translation.openai_compatible import OpenAICompatibleProvider
 from .utils.files import (
     atomic_write_json,
@@ -275,6 +276,43 @@ def translate_with_api(
     return _write_localized_subtitles(project, english, translated, config)
 
 
+def translate_with_offline(
+    project: ProjectPaths,
+    config: AppConfig,
+    metadata: SourceMetadata | None = None,
+) -> tuple[list[Path], list[str]]:
+    metadata = metadata or load_project_metadata(project)
+    english = parse_subtitle(project.english_srt)
+    glossary_path = Path(config.translation.glossary_file)
+    if not glossary_path.is_absolute():
+        candidates = [project.root / glossary_path, Path.cwd() / glossary_path]
+        glossary_path = next((path for path in candidates if path.is_file()), candidates[0])
+    glossary = load_glossary(glossary_path)
+    model_directory = config.translation.offline_model_directory.expanduser()
+    if not model_directory.is_absolute():
+        model_directory = (Path.cwd() / model_directory).resolve()
+    provider = LocalOfflineProvider(
+        model_directory=model_directory,
+        model_url=config.translation.offline_model_url,
+        auto_download=config.translation.offline_auto_download,
+        device=config.translation.offline_device,
+        compute_type=config.translation.offline_compute_type,
+        cache=TranslationCache(project.temp / "translation_cache"),
+    )
+    translated: list[SubtitleCue] = []
+    batch_size = config.translation.batch_size
+    context = _translation_context(metadata, glossary)
+    for offset in range(0, len(english), batch_size):
+        batch = english[offset : offset + batch_size]
+        LOGGER.info(
+            "Offline translating subtitle batch %s/%s…",
+            offset // batch_size + 1,
+            (len(english) + batch_size - 1) // batch_size,
+        )
+        translated.extend(provider.translate_batch(batch, context))
+    return _write_localized_subtitles(project, english, translated, config)
+
+
 def render_project(project: ProjectPaths, config: AppConfig) -> Path:
     metadata = load_project_metadata(project)
     source = find_source_video(project)
@@ -358,20 +396,32 @@ def process_pipeline(
                     if raw_info is None:
                         refreshed, raw_info = inspect_youtube(metadata.source_input)
                         metadata = refreshed
-                    source_video, subtitle_file, sub_language, sub_kind = download_youtube(
+                    download = download_youtube(
                         metadata.source_url or metadata.source_input,
                         raw_info,
                         project.source,
                         config.download,
                     )
-                    metadata.subtitle_language = sub_language
-                    metadata.subtitle_kind = sub_kind
-                    subtitle_source = sub_kind
-                    if subtitle_file:
-                        normalized_subtitle_location = project.subtitles / subtitle_file.name
-                        subtitle_file.replace(normalized_subtitle_location)
-                        subtitle_file = normalized_subtitle_location
-                        step_outputs.append(subtitle_file)
+                    source_video = download.video
+                    metadata.english_subtitle_language = download.english_language
+                    metadata.english_subtitle_kind = download.english_kind
+                    metadata.chinese_subtitle_language = download.chinese_language
+                    metadata.chinese_subtitle_kind = download.chinese_kind
+                    if download.chinese_subtitle:
+                        metadata.subtitle_language = download.chinese_language
+                        metadata.subtitle_kind = f"{download.chinese_kind} Chinese subtitles"
+                    else:
+                        metadata.subtitle_language = download.english_language
+                        metadata.subtitle_kind = download.english_kind
+                    subtitle_source = metadata.subtitle_kind
+                    for subtitle_file in (
+                        download.english_subtitle,
+                        download.chinese_subtitle,
+                    ):
+                        if subtitle_file:
+                            normalized_subtitle_location = project.subtitles / subtitle_file.name
+                            subtitle_file.replace(normalized_subtitle_location)
+                            step_outputs.append(normalized_subtitle_location)
                     if config.download.download_metadata:
                         raw_path = project.source / "metadata.raw.json"
                         save_raw_metadata(raw_info, raw_path)
@@ -395,75 +445,144 @@ def process_pipeline(
                 *project.source.glob("source.en.ass"),
             ]
         )
-        english_hash_source = (
-            hash_file(source_subtitles[0]) if source_subtitles else hash_file(source_video)
+        source_chinese_subtitles = sorted(
+            [
+                *project.subtitles.glob("source.zh.vtt"),
+                *project.subtitles.glob("source.zh.srt"),
+                *project.subtitles.glob("source.zh.ass"),
+                *project.source.glob("source.zh.vtt"),
+                *project.source.glob("source.zh.srt"),
+                *project.source.glob("source.zh.ass"),
+            ]
         )
-        subtitle_config_hash = stable_hash(
-            {
-                "preserve_sound_descriptions": config.subtitles.preserve_sound_descriptions,
-                "transcription": config.transcription,
-            }
+        use_provided_chinese = bool(
+            config.download.prefer_youtube_chinese
+            and source_chinese_subtitles
+            and "translate" not in force_steps
         )
-        english_changed = not state.can_skip(
-            "english_subtitles",
-            input_hash=english_hash_source,
-            config_hash=subtitle_config_hash,
-            output_files=[project.english_srt],
-            force="english_subtitles" in force_steps or "transcribe" in force_steps,
+        if use_provided_chinese:
+            chinese_source = source_chinese_subtitles[0]
+            chinese_source_hash = hash_file(chinese_source)
+            chinese_config_hash = stable_hash(
+                {
+                    "preserve_sound_descriptions": config.subtitles.preserve_sound_descriptions,
+                    "source_language": metadata.chinese_subtitle_language,
+                }
+            )
+            if not state.can_skip(
+                "youtube_chinese_subtitles",
+                input_hash=chinese_source_hash,
+                config_hash=chinese_config_hash,
+                output_files=[project.chinese_srt],
+            ):
+                with state.step(
+                    "youtube_chinese_subtitles",
+                    input_hash=chinese_source_hash,
+                    config_hash=chinese_config_hash,
+                ) as step_outputs:
+                    normalized_chinese = normalize_cues(
+                        parse_subtitle(chinese_source),
+                        preserve_sound_descriptions=config.subtitles.preserve_sound_descriptions,
+                    )
+                    errors = validate_cues(normalized_chinese)
+                    if errors:
+                        raise LocalizerError(
+                            "Downloaded Chinese subtitle normalization failed:\n"
+                            + "\n".join(errors)
+                        )
+                    write_srt(project.chinese_srt, normalized_chinese)
+                    step_outputs.append(project.chinese_srt)
+            subtitle_source = metadata.subtitle_kind or "YouTube Simplified Chinese subtitles"
+
+        needs_english = (
+            not use_provided_chinese
+            or config.subtitle_mode != "chinese"
+            or "translate" in force_steps
         )
-        if english_changed:
-            with state.step(
+        english_changed = False
+        if needs_english:
+            english_hash_source = (
+                hash_file(source_subtitles[0]) if source_subtitles else hash_file(source_video)
+            )
+            subtitle_config_hash = stable_hash(
+                {
+                    "preserve_sound_descriptions": config.subtitles.preserve_sound_descriptions,
+                    "transcription": config.transcription,
+                }
+            )
+            english_changed = not state.can_skip(
                 "english_subtitles",
                 input_hash=english_hash_source,
                 config_hash=subtitle_config_hash,
-            ) as step_outputs:
-                if source_subtitles and "transcribe" not in force_steps:
-                    parsed = parse_subtitle(source_subtitles[0])
-                    normalized = normalize_cues(
-                        parsed,
-                        preserve_sound_descriptions=config.subtitles.preserve_sound_descriptions,
-                    )
-                    errors = validate_cues(normalized)
-                    if errors:
-                        raise LocalizerError(
-                            "Downloaded subtitle normalization failed:\n" + "\n".join(errors)
+                output_files=[project.english_srt],
+                force="english_subtitles" in force_steps or "transcribe" in force_steps,
+            )
+            if english_changed:
+                with state.step(
+                    "english_subtitles",
+                    input_hash=english_hash_source,
+                    config_hash=subtitle_config_hash,
+                ) as step_outputs:
+                    if source_subtitles and "transcribe" not in force_steps:
+                        parsed = parse_subtitle(source_subtitles[0])
+                        normalized = normalize_cues(
+                            parsed,
+                            preserve_sound_descriptions=config.subtitles.preserve_sound_descriptions,
                         )
-                    cleanup = cleanup_english(normalized)
-                    write_srt(project.english_srt, cleanup.cues)
-                    warnings.extend(cleanup.warnings)
-                    flagged_cues.extend(cleanup.flagged_cue_ids)
-                    subtitle_source = metadata.subtitle_kind or "downloaded English subtitles"
-                    step_outputs.append(project.english_srt)
-                else:
-                    audio = project.audio / "transcription_audio.wav"
-                    extract_transcription_audio(source_video, audio)
-                    raw_transcription = project.subtitles / "transcription.raw.json"
-                    cleanup = transcribe_audio(
-                        audio,
-                        raw_transcription,
-                        project.english_srt,
-                        config.transcription,
-                    )
-                    warnings.extend(cleanup.warnings)
-                    flagged_cues.extend(cleanup.flagged_cue_ids)
-                    subtitle_source = "faster-whisper"
-                    step_outputs.extend([audio, raw_transcription, project.english_srt])
+                        errors = validate_cues(normalized)
+                        if errors:
+                            raise LocalizerError(
+                                "Downloaded subtitle normalization failed:\n" + "\n".join(errors)
+                            )
+                        cleanup = cleanup_english(normalized)
+                        write_srt(project.english_srt, cleanup.cues)
+                        warnings.extend(cleanup.warnings)
+                        flagged_cues.extend(cleanup.flagged_cue_ids)
+                        if not use_provided_chinese:
+                            subtitle_source = (
+                                metadata.english_subtitle_kind
+                                or metadata.subtitle_kind
+                                or "downloaded English subtitles"
+                            )
+                        step_outputs.append(project.english_srt)
+                    else:
+                        audio = project.audio / "transcription_audio.wav"
+                        extract_transcription_audio(source_video, audio)
+                        raw_transcription = project.subtitles / "transcription.raw.json"
+                        cleanup = transcribe_audio(
+                            audio,
+                            raw_transcription,
+                            project.english_srt,
+                            config.transcription,
+                        )
+                        warnings.extend(cleanup.warnings)
+                        flagged_cues.extend(cleanup.flagged_cue_ids)
+                        if not use_provided_chinese:
+                            subtitle_source = "faster-whisper"
+                        step_outputs.extend([audio, raw_transcription, project.english_srt])
 
         if english_changed:
-            for stale in (
-                project.chinese_srt,
+            stale_files = [
                 project.subtitles / "chinese.ass",
                 project.bilingual_srt,
                 project.bilingual_ass,
                 project.temp / "manual_translations.json",
                 project.rendered / "chinese_hardsub.mp4",
-            ):
+            ]
+            if not use_provided_chinese:
+                stale_files.append(project.chinese_srt)
+            for stale in stale_files:
                 stale.unlink(missing_ok=True)
 
-        english = parse_subtitle(project.english_srt)
-        cue_count = len(english)
+        english = parse_subtitle(project.english_srt) if needs_english else []
+        chinese = parse_subtitle(project.chinese_srt) if use_provided_chinese else []
+        cue_count = len(chinese) if chinese else len(english)
 
-        translation_hash = hash_file(project.english_srt)
+        translation_hash = (
+            hash_file(project.chinese_srt)
+            if use_provided_chinese
+            else hash_file(project.english_srt)
+        )
         translation_config_hash = stable_hash(
             {
                 "translation": config.translation,
@@ -471,16 +590,16 @@ def process_pipeline(
                 "subtitles": config.subtitles,
             }
         )
-        api_translation_current = state.can_skip(
+        translation_current = state.can_skip(
             "translate",
             input_hash=translation_hash,
             config_hash=translation_config_hash,
             output_files=[project.chinese_srt],
             force="translate" in force_steps,
         )
-        needs_translation = not project.chinese_srt.is_file()
-        if config.translation.provider != "manual":
-            needs_translation = not api_translation_current
+        needs_translation = not use_provided_chinese and not project.chinese_srt.is_file()
+        if not use_provided_chinese and config.translation.provider != "manual":
+            needs_translation = not translation_current
         elif "translate" in force_steps:
             needs_translation = True
 
@@ -542,9 +661,14 @@ def process_pipeline(
                 input_hash=translation_hash,
                 config_hash=translation_config_hash,
             ) as step_outputs:
-                translated_outputs, translation_warnings = translate_with_api(
-                    project, config, metadata
-                )
+                if config.translation.provider == "offline":
+                    translated_outputs, translation_warnings = translate_with_offline(
+                        project, config, metadata
+                    )
+                else:
+                    translated_outputs, translation_warnings = translate_with_api(
+                        project, config, metadata
+                    )
                 step_outputs.extend(translated_outputs)
                 warnings.extend(translation_warnings)
 
@@ -592,7 +716,9 @@ def process_pipeline(
             state.data,
             subtitle_source=subtitle_source,
             whisper_model=config.transcription.model if subtitle_source == "faster-whisper" else "",
-            translation_provider=config.translation.provider,
+            translation_provider=(
+                "youtube-provided" if use_provided_chinese else config.translation.provider
+            ),
             cue_count=cue_count,
             flagged_cues=flagged_cues,
             render_parameters=config.render.model_dump(mode="json"),

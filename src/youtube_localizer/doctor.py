@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .transcription.whisper_engine import cuda_available
+from .translation.offline import validate_offline_model
 from .utils.subprocesses import resolve_executable
 
 
@@ -75,6 +76,38 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
             ytdlp_path or ("Python module installed" if ytdlp_module else "install package yt-dlp"),
         )
     )
+    offline_runtime = all(
+        importlib.util.find_spec(module) is not None
+        for module in ("ctranslate2", "sentencepiece")
+    )
+    checks.append(
+        DoctorCheck(
+            "Offline translation runtime",
+            "ok" if offline_runtime else "optional",
+            (
+                "CTranslate2 and SentencePiece installed"
+                if offline_runtime
+                else 'install with: python -m pip install -e ".[offline-translation]"'
+            ),
+            False,
+        )
+    )
+    default_offline_model = Path(
+        "~/.youtube-chinese-localizer/models/translate-en_zh-1_9"
+    ).expanduser()
+    model_ready = validate_offline_model(default_offline_model) is not None
+    checks.append(
+        DoctorCheck(
+            "Offline English→Chinese model",
+            "ok" if model_ready else "optional",
+            (
+                str(default_offline_model)
+                if model_ready
+                else "downloads automatically on first offline translation"
+            ),
+            False,
+        )
+    )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
     checks.append(
         DoctorCheck(
@@ -88,11 +121,15 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
     checks.append(
         DoctorCheck(
             "Translation configuration",
-            "ok" if api_key else "optional",
+            "ok" if api_key or model_ready else "optional",
             (
                 "API key detected"
                 if api_key
-                else "manual export/import available; ChatGPT Plus does not include API credits"
+                else (
+                    "offline translation ready; API is optional"
+                    if model_ready
+                    else "manual export/import available; ChatGPT Plus does not include API credits"
+                )
             ),
             False,
         )

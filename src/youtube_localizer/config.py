@@ -20,6 +20,7 @@ class DownloadConfig(StrictModel):
     prefer_mp4: bool = True
     download_thumbnail: bool = True
     download_metadata: bool = True
+    prefer_youtube_chinese: bool = True
 
 
 class TranscriptionConfig(StrictModel):
@@ -32,12 +33,21 @@ class TranscriptionConfig(StrictModel):
 
 
 class TranslationConfig(StrictModel):
-    provider: Literal["manual", "openai-compatible"] = "manual"
+    provider: Literal["manual", "offline", "openai-compatible"] = "manual"
     model: str = ""
     endpoint: str = ""
     batch_size: int = Field(default=40, ge=1, le=200)
     preserve_timestamps: bool = True
     glossary_file: str = "glossary.yaml"
+    offline_model_directory: Path = Path(
+        "~/.youtube-chinese-localizer/models/translate-en_zh-1_9"
+    )
+    offline_model_url: str = (
+        "https://argos-net.com/v1/translate-en_zh-1_9.argosmodel"
+    )
+    offline_device: Literal["auto", "cpu", "cuda"] = "auto"
+    offline_compute_type: str = "auto"
+    offline_auto_download: bool = True
 
 
 class SubtitleConfig(StrictModel):

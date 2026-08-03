@@ -25,6 +25,7 @@ from .pipeline import (
     render_project,
     save_project_config,
     translate_with_api,
+    translate_with_offline,
 )
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.preview import render_preview
@@ -69,6 +70,7 @@ def _configured(
     output_dir: Path | None = None,
     subtitle_mode: str | None = None,
     translation_provider: str | None = None,
+    prefer_youtube_chinese: bool | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
@@ -81,10 +83,16 @@ def _configured(
             )
         changes["subtitle_mode"] = subtitle_mode
     if translation_provider:
-        if translation_provider not in {"manual", "openai-compatible"}:
-            raise LocalizerError("--translation-provider must be manual or openai-compatible.")
+        if translation_provider not in {"manual", "offline", "openai-compatible"}:
+            raise LocalizerError(
+                "--translation-provider must be manual, offline, or openai-compatible."
+            )
         changes["translation"] = config.translation.model_copy(
             update={"provider": translation_provider}
+        )
+    if prefer_youtube_chinese is not None:
+        changes["download"] = config.download.model_copy(
+            update={"prefer_youtube_chinese": prefer_youtube_chinese}
         )
     return config.model_copy(update=changes)
 
@@ -107,7 +115,14 @@ def process_command(
         str | None,
         typer.Option(
             "--translation-provider",
-            help="manual or openai-compatible.",
+            help="manual, offline, or openai-compatible.",
+        ),
+    ] = None,
+    prefer_youtube_chinese: Annotated[
+        bool | None,
+        typer.Option(
+            "--prefer-youtube-chinese/--no-prefer-youtube-chinese",
+            help="Use provided Simplified Chinese YouTube subtitles before translation.",
         ),
     ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
@@ -129,6 +144,7 @@ def process_command(
         output_dir=output_dir,
         subtitle_mode=subtitle_mode,
         translation_provider=translation_provider,
+        prefer_youtube_chinese=prefer_youtube_chinese,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "
@@ -331,15 +347,15 @@ def translate_command(
     project_path: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
     config_path: ConfigOption = None,
     provider: Annotated[
-        str | None, typer.Option("--provider", help="manual or openai-compatible.")
+        str | None, typer.Option("--provider", help="manual, offline, or openai-compatible.")
     ] = None,
 ) -> None:
     """Export manual chunks or run configured OpenAI-compatible translation."""
     project = _project(project_path)
     config = load_config(config_path) if config_path else load_project_config(project)
     if provider:
-        if provider not in {"manual", "openai-compatible"}:
-            raise LocalizerError("--provider must be manual or openai-compatible.")
+        if provider not in {"manual", "offline", "openai-compatible"}:
+            raise LocalizerError("--provider must be manual, offline, or openai-compatible.")
         config = config.model_copy(
             update={"translation": config.translation.model_copy(update={"provider": provider})}
         )
@@ -353,7 +369,10 @@ def translate_command(
         input_hash=hash_file(project.english_srt),
         config_hash=stable_hash(config.translation),
     ) as step_outputs:
-        outputs, warnings = translate_with_api(project, config)
+        if config.translation.provider == "offline":
+            outputs, warnings = translate_with_offline(project, config)
+        else:
+            outputs, warnings = translate_with_api(project, config)
         step_outputs.extend(outputs)
     state.mark_status("translation_ready")
     console.print(f"[green]Translation complete:[/] {', '.join(str(path) for path in outputs)}")

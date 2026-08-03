@@ -1,9 +1,20 @@
 from __future__ import annotations
 
-from youtube_localizer.cli import normalize_argv
+from youtube_localizer.cli import _configured, normalize_argv
 
 
 def test_implicit_process_command() -> None:
     assert normalize_argv(["input.mp4"]) == ["process", "input.mp4"]
     assert normalize_argv(["doctor"]) == ["doctor"]
     assert normalize_argv(["--batch", "inputs.txt"]) == ["batch", "inputs.txt"]
+
+
+def test_cli_configuration_supports_offline_and_youtube_chinese() -> None:
+    config = _configured(
+        None,
+        translation_provider="offline",
+        prefer_youtube_chinese=True,
+    )
+
+    assert config.translation.provider == "offline"
+    assert config.download.prefer_youtube_chinese is True

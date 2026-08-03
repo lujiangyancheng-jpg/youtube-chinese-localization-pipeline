@@ -7,6 +7,7 @@ download:
   prefer_mp4: true
   download_thumbnail: true
   download_metadata: true
+  prefer_youtube_chinese: true
 
 transcription:
   model: medium
@@ -17,12 +18,17 @@ transcription:
   word_timestamps: true
 
 translation:
-  provider: manual
+  provider: manual  # manual, offline, or openai-compatible
   model: ""
   endpoint: ""
   batch_size: 40
   preserve_timestamps: true
   glossary_file: glossary.yaml
+  offline_model_directory: ~/.youtube-chinese-localizer/models/translate-en_zh-1_9
+  offline_model_url: https://argos-net.com/v1/translate-en_zh-1_9.argosmodel
+  offline_device: auto
+  offline_compute_type: auto
+  offline_auto_download: true
 
 subtitles:
   format: ass
