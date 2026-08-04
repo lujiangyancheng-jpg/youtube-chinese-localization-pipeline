@@ -65,7 +65,7 @@ class TranslationConfig(StrictModel):
 
 class SubtitleConfig(StrictModel):
     format: Literal["srt", "ass"] = "ass"
-    font: str = "Microsoft YaHei"
+    font: str = "Noto Sans CJK SC"
     font_size: int = Field(default=48, ge=12, le=120)
     english_font_size: int = Field(default=34, ge=10, le=100)
     outline: int = Field(default=3, ge=0, le=10)

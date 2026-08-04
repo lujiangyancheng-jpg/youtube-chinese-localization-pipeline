@@ -54,9 +54,9 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.3.0-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.3.1-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
-Ollama、Whisper Medium、Qwen3:4b 以及英中/中英两套快速翻译模型，首次
+Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
 
 下面 3.1–3.6 是从 GitHub 源码手动安装时才需要的步骤。
@@ -152,8 +152,9 @@ Start Localizer.cmd
 1. 复制并粘贴一个你有权处理的公开 YouTube 视频链接，也可以选择本地视频。
 2. 选择“英文 → 简体中文”或“简体中文 → 英文”。
 3. 选择仅目标语言字幕或中英双语字幕。
-4. 选择翻译方式并确认授权。
-5. 点击“开始本地化”。
+4. 选择 Noto Sans CJK SC、Noto Serif CJK SC、霞鹜文楷或微软雅黑字幕字体。
+5. 选择翻译方式并确认授权。
+6. 点击“开始本地化”。
 
 窗口会实时显示下载、Whisper 本地转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目。英译中和中译英的最终视频分别位于：
 
@@ -477,7 +478,7 @@ download:
   format_sort: [res, fps, br, size]
 
 subtitles:
-  font: Microsoft YaHei
+  font: Noto Sans CJK SC
   font_size: 48
   outline: 3
   shadow: 1
@@ -494,13 +495,14 @@ render:
 
 ### 字幕字体
 
-Windows 推荐：
+离线安装包内置并可在界面直接选择：
 
-- Microsoft YaHei
-- SimHei
-- Noto Sans CJK SC
+- `Noto Sans CJK SC`：现代、清晰，默认推荐，适合大多数视频。
+- `Noto Serif CJK SC`：宋体风格，更典雅，适合纪录片或文化内容。
+- `LXGW WenKai`（霞鹜文楷）：自然手写感，适合生活、故事类内容。
+- `Microsoft YaHei`（微软雅黑）：使用 Windows 系统字体。
 
-软件不附带商业字体文件。配置的字体必须已经安装在系统中。
+前三款采用 SIL Open Font License 1.1，已经随离线安装包分发。FFmpeg 会从软件目录直接加载，不需要安装到 Windows。源码安装用户也可以在配置中填写其他已经安装的字体名称。
 
 ### Whisper 模型
 
@@ -786,11 +788,11 @@ python -m pip install --upgrade "yt-dlp[default,deno]"
 
 ### 中文显示为方框
 
-将配置中的字体改为系统已安装的中文字体：
+离线安装包用户先在界面中切换到内置字体。源码安装用户可将配置改为系统已安装的中文字体：
 
 ```yaml
 subtitles:
-  font: Microsoft YaHei
+  font: Noto Sans CJK SC
 ```
 
 然后重新生成预览或渲染。

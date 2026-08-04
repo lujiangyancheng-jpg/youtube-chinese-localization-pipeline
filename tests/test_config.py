@@ -23,6 +23,7 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     assert config.translation.offline_device == "auto"
     assert config.translation.ollama_model == "qwen3:4b"
     assert config.translation.ollama_endpoint == "http://localhost:11434"
+    assert config.subtitles.font == "Noto Sans CJK SC"
 
 
 def test_retired_youtube_subtitle_setting_is_ignored_for_saved_projects() -> None:

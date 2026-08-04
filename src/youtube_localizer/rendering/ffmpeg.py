@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..config import RenderConfig
 from ..errors import ExternalToolError, LocalizerError
+from ..resources import bundled_fonts_directory
 from ..utils.subprocesses import run_streaming_command
 
 LOGGER = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ def build_hardsub_command(
     ffmpeg: str = "ffmpeg",
     start: float | None = None,
     duration: float | None = None,
+    fonts_directory: Path | None = None,
 ) -> list[str]:
     command = [
         ffmpeg,
@@ -46,13 +48,16 @@ def build_hardsub_command(
         command += ["-t", str(max(0.1, duration))]
     escaped = escape_filter_path(subtitle_file)
     filter_name = "ass" if subtitle_file.suffix.lower() in {".ass", ".ssa"} else "subtitles"
+    subtitle_filter = f"{filter_name}=filename='{escaped}'"
+    if fonts_directory is not None:
+        subtitle_filter += f":fontsdir='{escape_filter_path(fonts_directory)}'"
     command += [
         "-map",
         "0:v:0",
         "-map",
         "0:a?",
         "-vf",
-        f"{filter_name}=filename='{escaped}'",
+        subtitle_filter,
         "-c:v",
         config.codec,
     ]
@@ -84,6 +89,9 @@ def render_hardsub(
 ) -> Path:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     temp = output_file.with_name(f"{output_file.stem}.partial{output_file.suffix}")
+    fonts_directory = bundled_fonts_directory()
+    if fonts_directory is not None:
+        LOGGER.info("Using bundled subtitle fonts from %s.", fonts_directory)
     command = build_hardsub_command(
         source_video,
         subtitle_file,
@@ -93,6 +101,7 @@ def render_hardsub(
         ffmpeg=ffmpeg,
         start=start,
         duration=duration,
+        fonts_directory=fonts_directory,
     )
     progress = _FFmpegProgress(expected_duration or duration)
     try:
@@ -111,6 +120,7 @@ def render_hardsub(
                     ffmpeg=ffmpeg,
                     start=start,
                     duration=duration,
+                    fonts_directory=fonts_directory,
                 ),
                 line_callback=progress.consume,
             )

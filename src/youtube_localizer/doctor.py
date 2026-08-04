@@ -8,7 +8,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .download.youtube import discover_javascript_runtimes
-from .resources import find_bundled_model, ollama_executable, resolve_whisper_model
+from .resources import (
+    bundled_fonts_directory,
+    find_bundled_model,
+    ollama_executable,
+    resolve_whisper_model,
+)
 from .transcription.whisper_engine import cuda_available
 from .translation.offline import validate_offline_model
 from .utils.subprocesses import resolve_executable
@@ -33,7 +38,14 @@ def _module_check(module: str, label: str, *, required: bool = True) -> DoctorCh
 
 
 def _font_check() -> DoctorCheck:
-    candidates = ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC"]
+    if bundled := bundled_fonts_directory():
+        return DoctorCheck("Chinese subtitle font", "ok", f"bundled fonts: {bundled}", False)
+    candidates = [
+        "Noto Sans CJK SC",
+        "Noto Serif CJK SC",
+        "LXGW WenKai",
+        "Microsoft YaHei",
+    ]
     font_files: list[Path] = []
     if os.name == "nt":
         fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"

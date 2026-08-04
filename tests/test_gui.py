@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from youtube_localizer.gui import api_configuration, build_process_command, local_ai_available
+from youtube_localizer.gui import (
+    SUBTITLE_FONTS,
+    api_configuration,
+    build_process_command,
+    local_ai_available,
+)
 
 
 def test_build_process_command_uses_argument_array_and_resume() -> None:
@@ -27,6 +32,8 @@ def test_build_process_command_uses_argument_array_and_resume() -> None:
         "manual",
         "--translation-direction",
         "en-to-zh",
+        "--subtitle-font",
+        "Noto Sans CJK SC",
         "--resume",
     ]
 
@@ -89,3 +96,17 @@ def test_build_process_command_supports_local_ai_without_api_key() -> None:
 
     assert command[command.index("--translation-provider") + 1] == "ollama"
     assert isinstance(local_ai_available(), bool)
+
+
+def test_build_process_command_passes_selected_bundled_font() -> None:
+    command = build_process_command(
+        "video.mp4",
+        subtitle_mode="chinese",
+        translation_provider="offline",
+        subtitle_font="LXGW WenKai",
+    )
+
+    assert command[command.index("--subtitle-font") + 1] == "LXGW WenKai"
+    assert {"Noto Sans CJK SC", "Noto Serif CJK SC", "LXGW WenKai"}.issubset(
+        SUBTITLE_FONTS.values()
+    )

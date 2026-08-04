@@ -2,7 +2,8 @@
 
 `build_offline_installer.ps1` creates a self-contained Windows x64 package with Python,
 FFmpeg, the standalone Ollama runtime, Whisper Medium, Qwen3:4b, and both Argos translation
-models. A newly installed copy therefore does not download a model on first use.
+models. It also bundles Noto Sans CJK SC, Noto Serif CJK SC, and LXGW WenKai for subtitle rendering.
+A newly installed copy therefore does not download a model or require a system font on first use.
 
 Build prerequisites:
 
@@ -17,8 +18,8 @@ Build from the repository root:
 powershell -ExecutionPolicy Bypass -File .\installer\build_offline_installer.ps1
 ```
 
-The script pins Python 3.12.10, the Whisper model revision, and Ollama v0.32.5; validates the
-Python and official Ollama checksums; hashes every bundled model in
+The script pins Python 3.12.10, the Whisper model revision, Ollama v0.32.5, and the three font
+source revisions; validates downloaded checksums; hashes every bundled model and font in
 `offline-assets.json`, loads Whisper with network-free resolution, and then emits a split setup
 set under `dist`. Keep the generated `.exe` and every adjacent `.bin` file together when copying
 or installing it.

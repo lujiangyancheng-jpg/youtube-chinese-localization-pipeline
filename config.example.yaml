@@ -42,7 +42,8 @@ translation:
 
 subtitles:
   format: ass
-  font: Microsoft YaHei
+  # Bundled offline choices: Noto Sans CJK SC, Noto Serif CJK SC, or LXGW WenKai.
+  font: Noto Sans CJK SC
   font_size: 48
   english_font_size: 34
   outline: 3

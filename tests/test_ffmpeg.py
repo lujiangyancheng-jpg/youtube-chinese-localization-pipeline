@@ -33,6 +33,26 @@ def test_ffmpeg_command_is_argument_array_and_escapes_windows_drive(tmp_path) ->
     assert command[-1] == str(output)
 
 
+def test_ffmpeg_command_loads_bundled_fonts_directory(tmp_path) -> None:
+    source = tmp_path / "source.mp4"
+    subtitle = tmp_path / "subtitle.ass"
+    output = tmp_path / "output.mp4"
+    fonts = tmp_path / "pretty fonts"
+    fonts.mkdir()
+
+    command = build_hardsub_command(
+        source,
+        subtitle,
+        output,
+        RenderConfig(),
+        fonts_directory=fonts,
+    )
+
+    subtitle_filter = command[command.index("-vf") + 1]
+    assert ":fontsdir='" in subtitle_filter
+    assert "pretty fonts" in subtitle_filter
+
+
 def test_subprocess_wrapper_never_uses_shell() -> None:
     completed = subprocess.CompletedProcess(["tool"], 0, stdout="ok", stderr="")
     with patch(

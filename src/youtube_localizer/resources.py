@@ -34,6 +34,38 @@ def find_bundled_model(name: str) -> Path | None:
             return candidate
     return None
 
+
+def font_roots() -> list[Path]:
+    """Return font roots for an installed bundle and a source checkout."""
+    candidates: list[Path] = []
+    if configured := os.getenv("YOUTUBE_LOCALIZER_FONTS"):
+        candidates.append(Path(configured).expanduser())
+    if home := os.getenv("YOUTUBE_LOCALIZER_HOME"):
+        candidates.append(Path(home).expanduser() / "fonts")
+
+    source_root = Path(__file__).resolve().parents[2]
+    candidates.extend([source_root / "tools" / "fonts", source_root / "fonts"])
+    executable = Path(sys.executable).resolve()
+    candidates.extend(parent / "fonts" for parent in executable.parents[:4])
+
+    unique: list[Path] = []
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved not in unique:
+            unique.append(resolved)
+    return unique
+
+
+def bundled_fonts_directory() -> Path | None:
+    """Return a local font directory that libass can use without system installation."""
+    for root in font_roots():
+        if root.is_dir() and any(
+            path.is_file() for suffix in ("*.ttf", "*.otf", "*.ttc") for path in root.glob(suffix)
+        ):
+            return root
+    return None
+
+
 def resolve_whisper_model(model: str) -> tuple[str, bool]:
     """Resolve a configured Whisper size to bundled weights when available."""
     configured = Path(model).expanduser()

@@ -3,7 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-from youtube_localizer.resources import find_bundled_model, resolve_whisper_model
+from youtube_localizer.resources import (
+    bundled_fonts_directory,
+    find_bundled_model,
+    resolve_whisper_model,
+)
 
 
 def test_bundled_model_resolution_uses_configured_model_root(tmp_path, monkeypatch) -> None:
@@ -33,3 +37,11 @@ def test_explicit_whisper_directory_is_always_local(tmp_path) -> None:
 
     assert reference == str(model.resolve())
     assert local_only is True
+
+
+def test_bundled_font_resolution_uses_configured_font_root(tmp_path, monkeypatch) -> None:
+    font = tmp_path / "NotoSansCJKsc-Regular.otf"
+    font.write_bytes(b"font")
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_FONTS", str(tmp_path))
+
+    assert bundled_fonts_directory() == tmp_path.resolve()

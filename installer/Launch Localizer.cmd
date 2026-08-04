@@ -2,6 +2,7 @@
 setlocal
 set "YOUTUBE_LOCALIZER_HOME=%~dp0"
 set "YOUTUBE_LOCALIZER_MODELS=%~dp0models"
+set "YOUTUBE_LOCALIZER_FONTS=%~dp0fonts"
 set "FFMPEG_PATH=%~dp0runtime\ffmpeg\bin\ffmpeg.exe"
 set "FFPROBE_PATH=%~dp0runtime\ffmpeg\bin\ffprobe.exe"
 set "OLLAMA_PATH=%~dp0runtime\ollama\ollama.exe"

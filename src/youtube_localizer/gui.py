@@ -29,6 +29,12 @@ TRANSLATION_MODES = {
     "本地 AI 段落翻译并压制（高质量，无 API Key）": "ollama",
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
 }
+SUBTITLE_FONTS = {
+    "Noto Sans CJK SC（现代无衬线，推荐）": "Noto Sans CJK SC",
+    "Noto Serif CJK SC（典雅宋体）": "Noto Serif CJK SC",
+    "霞鹜文楷（自然手写）": "LXGW WenKai",
+    "微软雅黑（系统字体）": "Microsoft YaHei",
+}
 
 
 def local_ai_available() -> bool:
@@ -41,6 +47,7 @@ def build_process_command(
     subtitle_mode: str,
     translation_provider: str,
     translation_direction: str = "en-to-zh",
+    subtitle_font: str = "Noto Sans CJK SC",
     resume: bool = True,
     python_executable: str | None = None,
     main_script: Path | None = None,
@@ -55,6 +62,8 @@ def build_process_command(
         raise ValueError("未知的翻译模式。")
     if translation_direction not in TRANSLATION_DIRECTIONS.values():
         raise ValueError("未知的翻译方向。")
+    if subtitle_font not in SUBTITLE_FONTS.values():
+        raise ValueError("未知的字幕字体。")
     command = [
         python_executable or sys.executable,
         str(main_script or PROJECT_ROOT / "main.py"),
@@ -66,6 +75,8 @@ def build_process_command(
         translation_provider,
         "--translation-direction",
         translation_direction,
+        "--subtitle-font",
+        subtitle_font,
     ]
     if resume:
         command.append("--resume")
@@ -100,8 +111,8 @@ class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("视频中英双向本地化工具")
-        self.root.geometry("840x760")
-        self.root.minsize(700, 620)
+        self.root.geometry("840x800")
+        self.root.minsize(700, 660)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -121,6 +132,7 @@ class LocalizerWindow:
         self.direction_label = tk.StringVar(value="英文 → 简体中文")
         self.subtitle_label = tk.StringVar(value="仅目标语言字幕")
         self.translation_label = tk.StringVar(value=default_translation)
+        self.font_label = tk.StringVar(value="Noto Sans CJK SC（现代无衬线，推荐）")
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
@@ -181,7 +193,16 @@ class LocalizerWindow:
             width=34,
         )
         subtitle_combo.grid(row=1, column=1, sticky="ew", pady=4)
-        ttk.Label(options, text="翻译方式：").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Label(options, text="字幕字体：").grid(row=2, column=0, sticky="w", pady=4)
+        font_combo = ttk.Combobox(
+            options,
+            textvariable=self.font_label,
+            values=list(SUBTITLE_FONTS),
+            state="readonly",
+            width=34,
+        )
+        font_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        ttk.Label(options, text="翻译方式：").grid(row=3, column=0, sticky="w", pady=4)
         translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
@@ -189,7 +210,7 @@ class LocalizerWindow:
             state="readonly",
             width=34,
         )
-        translation_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        translation_combo.grid(row=3, column=1, sticky="ew", pady=4)
         translation_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_translation_fields())
         options.columnconfigure(1, weight=1)
 
@@ -285,6 +306,7 @@ class LocalizerWindow:
             subtitle_mode=SUBTITLE_MODES[self.subtitle_label.get()],
             translation_provider=provider,
             translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
+            subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
             resume=self.resume.get(),
         )
         environment = os.environ.copy()
@@ -329,7 +351,7 @@ class LocalizerWindow:
             target_name = "英文" if self.active_direction == "zh-to-en" else "简体中文"
             self._append_log(
                 f"当前为本地 AI 段落翻译：会先理解完整段落，再自然翻译成{target_name}。"
-                "不需要 API Key；首次使用会下载本地模型。\n\n"
+                "不需要 API Key；离线安装包已内置本地模型。\n\n"
             )
         else:
             target_name = "英文" if self.active_direction == "zh-to-en" else "中文"

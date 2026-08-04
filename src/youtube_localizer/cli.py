@@ -78,6 +78,7 @@ def _configured(
     subtitle_mode: str | None = None,
     translation_provider: str | None = None,
     translation_direction: str | None = None,
+    subtitle_font: str | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
@@ -89,6 +90,11 @@ def _configured(
                 "--subtitle-mode must be chinese, bilingual_en_zh, or bilingual_zh_en."
             )
         changes["subtitle_mode"] = subtitle_mode
+    if subtitle_font is not None:
+        normalized_font = subtitle_font.strip()
+        if not normalized_font or "\n" in normalized_font or "\r" in normalized_font:
+            raise LocalizerError("--subtitle-font must be a non-empty font family name.")
+        changes["subtitles"] = config.subtitles.model_copy(update={"font": normalized_font})
     translation_changes: dict[str, str] = {}
     if translation_provider:
         if translation_provider not in {"manual", "offline", "ollama", "openai-compatible"}:
@@ -133,6 +139,16 @@ def process_command(
             help="en-to-zh or zh-to-en.",
         ),
     ] = None,
+    subtitle_font: Annotated[
+        str | None,
+        typer.Option(
+            "--subtitle-font",
+            help=(
+                "ASS font family, for example Noto Sans CJK SC, "
+                "Noto Serif CJK SC, or LXGW WenKai."
+            ),
+        ),
+    ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Replace an existing matching project.")
@@ -156,6 +172,7 @@ def process_command(
         subtitle_mode=subtitle_mode,
         translation_provider=translation_provider,
         translation_direction=translation_direction,
+        subtitle_font=subtitle_font,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "

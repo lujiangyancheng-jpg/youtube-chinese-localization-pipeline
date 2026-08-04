@@ -33,6 +33,12 @@ def test_cli_configuration_supports_local_ai_without_api_key() -> None:
     assert config.translation.ollama_endpoint == "http://localhost:11434"
 
 
+def test_cli_configuration_overrides_subtitle_font() -> None:
+    config = _configured(None, subtitle_font=" LXGW WenKai ")
+
+    assert config.subtitles.font == "LXGW WenKai"
+
+
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:
     with pytest.raises(InputValidationError, match="transalte"):
         process_pipeline("missing.mp4", AppConfig(), force_steps={"transalte"})

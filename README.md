@@ -287,7 +287,7 @@ download:
   format_sort: [res, fps, br, size]
 
 subtitles:
-  font: Microsoft YaHei
+  font: Noto Sans CJK SC
   font_size: 48
   max_chinese_chars_per_line: 20
 
@@ -359,10 +359,12 @@ retry count. Failed runs are explicitly marked `failed`; manual runs are marked
 
 ## Subtitle styling
 
-Hard subtitles use ASS styling. The default Windows font is Microsoft YaHei, with a dark
-outline and bottom alignment. No proprietary fonts are bundled. Run `doctor` to see whether
-a common Chinese font is detected, set `subtitles.font` to another installed font when
-needed, and render a short preview before the full video:
+Hard subtitles use ASS styling with a dark outline and bottom alignment. The offline installer
+bundles `Noto Sans CJK SC` (the default), `Noto Serif CJK SC`, and `LXGW WenKai` under the SIL Open
+Font License. The desktop app exposes all three plus the Windows `Microsoft YaHei` system font
+in its subtitle-font selector. FFmpeg loads bundled fonts directly from the application, so they
+do not need to be installed system-wide. Source-checkout users can set `subtitles.font` to any
+installed family. Render a short preview before the full video:
 
 ```powershell
 python main.py preview "output\PROJECT_NAME" --start 60 --duration 15
