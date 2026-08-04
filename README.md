@@ -120,7 +120,9 @@ the Chinese speech locally.
 
 YouTube downloads default to the highest-resolution video stream and the best available audio
 stream without restricting the source codec to MP4/M4A. Formats are ranked by resolution,
-frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitled MP4.
+frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitled MP4. The
+project dependency set includes Deno and `yt-dlp-ejs`; `python main.py doctor` must report
+`yt-dlp JavaScript support: ok` so YouTube's complete format list can be discovered.
 
 The desktop interface offers three translation modes:
 
@@ -128,7 +130,9 @@ The desktop interface offers three translation modes:
   exports translation chunks. You translate and import those chunks before rendering.
 - **Local offline mode** translates in the selected direction on this computer and continues
   through hard-subtitle rendering without an API. Each direction downloads its model on first
-  use; later runs work offline and reuse cached translations.
+  use; later runs work offline and reuse cached translations. Consecutive caption fragments are
+  translated as sentence groups and mapped back to their original timestamps; configured glossary
+  terms are enforced in the target text.
 - **API automatic mode** continues through target-language translation and hard-subtitle
   rendering. It requires an OpenAI-compatible endpoint, model name, and API key. Values
   entered in the window are passed to the processing run. The API key is never saved;
@@ -339,7 +343,8 @@ by an atomic rename. Download partials are retained so `--resume` can continue.
   only when input hash, relevant configuration hash, and output files still match.
 - `--overwrite`: remove and recreate only the exact matching project directory.
 - `--force-step NAME`: repeat a selected stage. Supported names are `acquire`,
-  `english_subtitles`, `transcribe`, `translate`, and `render`.
+  `english_subtitles`, `chinese_subtitles`, `transcribe`, `translate`, and `render`. Unknown or
+  misspelled names are rejected.
 
 Every state entry records start/end times, status, hashes, outputs, errors, elapsed time, and
 retry count. Failed runs are explicitly marked `failed`; manual runs are marked
@@ -357,7 +362,11 @@ python main.py preview "output\PROJECT_NAME" --start 60 --duration 15
 ```
 
 The readability pass wraps long Chinese text without changing timestamps and reports high
-characters-per-second cues. It does not invent or rewrite factual content.
+characters-per-second cues. ASS canvas width and Chinese line length follow the source video's
+display aspect ratio, including rotation metadata, so portrait video does not crop a landscape
+subtitle layout. Bilingual YouTube tracks with different cue boundaries are aligned by temporal
+overlap while keeping the target-language timeline. The pass does not invent or rewrite factual
+content.
 
 ## Optional NVIDIA/CUDA setup
 

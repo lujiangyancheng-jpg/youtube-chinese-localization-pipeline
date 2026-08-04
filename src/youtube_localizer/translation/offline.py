@@ -3,10 +3,12 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import stat
 import tempfile
 import zipfile
+from itertools import pairwise
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import urlparse
@@ -26,6 +28,119 @@ MODEL_REQUIRED_PATHS = (
     "model/config.json",
     "model/model.bin",
 )
+EN_SENTENCE_END_RE = re.compile(r"[.!?](?:[\"')\]]+)?$")
+ZH_SENTENCE_END_RE = re.compile(r"[。！？!?](?:[\"”’）》\]]+)?$")
+
+
+def _replace_term(text: str, source: str, target: str) -> str:
+    return re.sub(re.escape(source), lambda _match: target, text, flags=re.IGNORECASE)
+
+
+def enforce_glossary(
+    source_text: str,
+    translated_text: str,
+    glossary: dict[str, str],
+    *,
+    target_code: str,
+    default_translations: dict[str, str] | None = None,
+) -> str:
+    output = translated_text
+    default_translations = default_translations or {}
+    for source, target in sorted(glossary.items(), key=lambda item: len(item[0]), reverse=True):
+        if not re.search(re.escape(source), source_text, flags=re.IGNORECASE):
+            continue
+        if target in output:
+            continue
+        default_translation = default_translations.get(source, "")
+        if default_translation and re.search(
+            re.escape(default_translation), output, flags=re.IGNORECASE
+        ):
+            output = _replace_term(output, default_translation, target)
+            continue
+        if re.search(re.escape(source), output, flags=re.IGNORECASE):
+            output = _replace_term(output, source, target)
+        else:
+            output = f"{output} ({target})" if target_code == "en" else f"{output}（{target}）"
+    return output
+
+
+def group_sentence_cues(
+    cues: list[SubtitleCue],
+    *,
+    source_code: str,
+    max_cues: int = 4,
+    max_characters: int = 240,
+    max_gap_ms: int = 1200,
+) -> list[list[SubtitleCue]]:
+    groups: list[list[SubtitleCue]] = []
+    current: list[SubtitleCue] = []
+    end_pattern = ZH_SENTENCE_END_RE if source_code == "zh" else EN_SENTENCE_END_RE
+    for cue in cues:
+        if current and cue.start_ms - current[-1].end_ms > max_gap_ms:
+            groups.append(current)
+            current = []
+        current.append(cue)
+        combined_length = sum(len(item.text) for item in current)
+        if (
+            end_pattern.search(cue.text.strip())
+            or len(current) >= max_cues
+            or combined_length >= max_characters
+        ):
+            groups.append(current)
+            current = []
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _target_units(text: str, target_code: str) -> list[str]:
+    if target_code == "en":
+        return re.findall(r"\S+", text)
+    return re.findall(r"[\u3400-\u9fff]|[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*|[^\s]", text)
+
+
+def _join_target_units(units: list[str], target_code: str) -> str:
+    if target_code == "en":
+        return " ".join(units)
+    output = ""
+    for unit in units:
+        if output and output[-1].isascii() and output[-1].isalnum() and unit[0].isascii() and unit[0].isalnum():
+            output += " "
+        output += unit
+    return output
+
+
+def split_group_translation(
+    translated_text: str,
+    source_cues: list[SubtitleCue],
+    *,
+    source_code: str,
+    target_code: str,
+) -> list[str] | None:
+    if len(source_cues) == 1:
+        return [translated_text.strip()]
+    units = _target_units(translated_text, target_code)
+    if len(units) < len(source_cues):
+        return None
+    weights = [
+        max(1, len(re.findall(r"\S+", cue.text)) if source_code == "en" else len(cue.text))
+        for cue in source_cues
+    ]
+    total_weight = sum(weights)
+    boundaries = [0]
+    consumed_weight = 0
+    for index, weight in enumerate(weights[:-1], start=1):
+        consumed_weight += weight
+        boundary = round(len(units) * consumed_weight / total_weight)
+        boundary = max(boundaries[-1] + 1, boundary)
+        boundary = min(boundary, len(units) - (len(source_cues) - index))
+        boundaries.append(boundary)
+    boundaries.append(len(units))
+    parts = [
+        _join_target_units(units[start:end], target_code).strip()
+        for start, end in pairwise(boundaries)
+    ]
+    return parts if all(parts) else None
 
 
 def select_offline_translation_device(requested_device: str) -> str:
@@ -288,17 +403,31 @@ class LocalOfflineProvider(TranslationProvider):
         }
         return self.translator.translate_batch(tokenized, **arguments)
 
+    def _glossary_default_translations(self, sources: list[str]) -> dict[str, str]:
+        if not sources:
+            return {}
+        glossary_results = self._translate_tokens(
+            [self.processor.encode(source, out_type=str) for source in sources]
+        )
+        return {
+            source: self.processor.decode_pieces(result.hypotheses[0])
+            .replace(chr(0x2581), " ")
+            .strip()
+            for source, result in zip(sources, glossary_results, strict=True)
+        }
+
     def translate_batch(
         self,
         cues: list[SubtitleCue],
         context: TranslationContext,
     ) -> list[SubtitleCue]:
+        original_texts = [cue.text for cue in cues]
         payload = {
-            "provider": "offline-argos-opus",
+            "provider": "offline-argos-opus-context-v2",
             "source_code": self.source_code,
             "target_code": self.target_code,
             "model_version": self.metadata.get("package_version", "unknown"),
-            "texts": [cue.text for cue in cues],
+            "texts": original_texts,
             "glossary": context.glossary,
         }
         key = self.cache.key(payload)
@@ -313,17 +442,33 @@ class LocalOfflineProvider(TranslationProvider):
 
         if not translations:
             tokenized = [
-                self.processor.encode(cue.text.replace("\n", " "), out_type=str) for cue in cues
+                self.processor.encode(text.replace("\n", " "), out_type=str)
+                for text in original_texts
             ]
             try:
                 results = self._translate_tokens(tokenized)
             except Exception as exc:
                 raise LocalizerError(f"Local offline translation failed: {exc}") from exc
+            active_glossary_sources = [
+                source
+                for source in context.glossary
+                if any(
+                    re.search(re.escape(source), text, flags=re.IGNORECASE)
+                    for text in original_texts
+                )
+            ]
+            default_translations = self._glossary_default_translations(active_glossary_sources)
             translations = [
-                self.processor.decode_pieces(result.hypotheses[0])
-                .replace(chr(0x2581), " ")
-                .strip()
-                for result in results
+                enforce_glossary(
+                    source_text,
+                    self.processor.decode_pieces(result.hypotheses[0])
+                    .replace(chr(0x2581), " ")
+                    .strip(),
+                    context.glossary,
+                    target_code=self.target_code,
+                    default_translations=default_translations,
+                )
+                for source_text, result in zip(original_texts, results, strict=True)
             ]
             if len(translations) != len(cues) or any(not value for value in translations):
                 raise LocalizerError("Local offline translation returned missing subtitle text.")
@@ -339,3 +484,77 @@ class LocalOfflineProvider(TranslationProvider):
             )
             for cue, translation in zip(cues, translations, strict=True)
         ]
+
+
+def translate_cues_contextually(
+    provider: LocalOfflineProvider,
+    cues: list[SubtitleCue],
+    context: TranslationContext,
+    *,
+    source_code: str,
+    target_code: str,
+    batch_size: int,
+) -> list[SubtitleCue]:
+    groups = group_sentence_cues(cues, source_code=source_code)
+    translated_by_id: dict[int, SubtitleCue] = {}
+    separator = "" if source_code == "zh" else " "
+    grouped_context = TranslationContext(
+        title=context.title,
+        channel=context.channel,
+        description=context.description,
+        source_url=context.source_url,
+        glossary={},
+    )
+    active_glossary_sources = [
+        source
+        for source in context.glossary
+        if any(re.search(re.escape(source), cue.text, flags=re.IGNORECASE) for cue in cues)
+    ]
+    glossary_defaults = provider._glossary_default_translations(active_glossary_sources)
+
+    for offset in range(0, len(groups), batch_size):
+        group_batch = groups[offset : offset + batch_size]
+        merged = [
+            SubtitleCue(
+                id=group[0].id,
+                start_ms=group[0].start_ms,
+                end_ms=group[-1].end_ms,
+                text=separator.join(cue.text.strip() for cue in group),
+            )
+            for group in group_batch
+        ]
+        LOGGER.info(
+            "Offline translating contextual subtitle batch %s/%s…",
+            offset // batch_size + 1,
+            (len(groups) + batch_size - 1) // batch_size,
+        )
+        translated_groups = provider.translate_batch(merged, grouped_context)
+        for group, translated_group in zip(group_batch, translated_groups, strict=True):
+            parts = split_group_translation(
+                translated_group.text,
+                group,
+                source_code=source_code,
+                target_code=target_code,
+            )
+            if parts is None:
+                fallback = provider.translate_batch(group, context)
+                for cue in fallback:
+                    translated_by_id[cue.id] = cue
+                continue
+            for cue, text in zip(group, parts, strict=True):
+                translated_by_id[cue.id] = cue.model_copy(
+                    update={
+                        "text": enforce_glossary(
+                            cue.text,
+                            text,
+                            context.glossary,
+                            target_code=target_code,
+                            default_translations=glossary_defaults,
+                        )
+                    }
+                )
+
+    missing = [cue.id for cue in cues if cue.id not in translated_by_id]
+    if missing:
+        raise LocalizerError(f"Contextual offline translation omitted cue IDs: {missing}")
+    return [translated_by_id[cue.id] for cue in cues]

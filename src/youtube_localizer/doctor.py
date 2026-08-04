@@ -7,6 +7,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .download.youtube import discover_javascript_runtimes
 from .transcription.whisper_engine import cuda_available
 from .translation.offline import validate_offline_model
 from .utils.subprocesses import resolve_executable
@@ -49,7 +50,12 @@ def _font_check() -> DoctorCheck:
     )
 
 
-def run_doctor(output_directory: Path) -> list[DoctorCheck]:
+def run_doctor(
+    output_directory: Path,
+    *,
+    offline_model_directory: Path | None = None,
+    offline_zh_en_model_directory: Path | None = None,
+) -> list[DoctorCheck]:
     version_ok = sys.version_info >= (3, 11)
     checks = [
         DoctorCheck(
@@ -76,6 +82,22 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
             ytdlp_path or ("Python module installed" if ytdlp_module else "install package yt-dlp"),
         )
     )
+    runtimes = discover_javascript_runtimes()
+    ejs_available = importlib.util.find_spec("yt_dlp_ejs") is not None
+    javascript_ready = bool(runtimes) and ejs_available
+    runtime_detail = ", ".join(f"{name}: {path}" for name, path in runtimes.items())
+    checks.append(
+        DoctorCheck(
+            "yt-dlp JavaScript support",
+            "ok" if javascript_ready else "missing",
+            (
+                f"{runtime_detail}; yt-dlp-ejs installed"
+                if javascript_ready
+                else "Install project dependencies with yt-dlp[default,deno] so all YouTube "
+                "formats can be discovered."
+            ),
+        )
+    )
     offline_runtime = all(
         importlib.util.find_spec(module) is not None
         for module in ("ctranslate2", "sentencepiece")
@@ -92,8 +114,9 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
             False,
         )
     )
-    default_offline_model = Path(
-        "~/.youtube-chinese-localizer/models/translate-en_zh-1_9"
+    default_offline_model = (
+        offline_model_directory
+        or Path("~/.youtube-chinese-localizer/models/translate-en_zh-1_9")
     ).expanduser()
     model_ready = validate_offline_model(default_offline_model) is not None
     checks.append(
@@ -108,8 +131,9 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
             False,
         )
     )
-    zh_en_model = Path(
-        "~/.youtube-chinese-localizer/models/translate-zh_en-1_9"
+    zh_en_model = (
+        offline_zh_en_model_directory
+        or Path("~/.youtube-chinese-localizer/models/translate-zh_en-1_9")
     ).expanduser()
     zh_en_model_ready = (
         validate_offline_model(zh_en_model, source_code="zh", target_code="en")

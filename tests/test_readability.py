@@ -22,3 +22,9 @@ def test_reading_speed_warning() -> None:
     ]
     _, issues = readability_pass(cues, width=20, max_lines=2)
     assert any("characters per second" in issue.message for issue in issues)
+
+
+def test_portrait_wrapping_balances_text_across_the_line_limit() -> None:
+    wrapped = wrap_chinese("中" * 25, width=10, max_lines=2)
+
+    assert [len(line) for line in wrapped.splitlines()] == [13, 12]

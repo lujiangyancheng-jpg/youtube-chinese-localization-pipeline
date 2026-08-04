@@ -95,7 +95,13 @@ def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
         "subtitles": {"en": [{}]},
         "automatic_captions": {"zh-Hans": [{}]},
     }
-    with patch("youtube_localizer.download.youtube._youtube_dl", side_effect=FakeDownloadYDL):
+    with (
+        patch("youtube_localizer.download.youtube._youtube_dl", side_effect=FakeDownloadYDL),
+        patch(
+            "youtube_localizer.download.youtube.discover_javascript_runtimes",
+            return_value={"deno": r"C:\tools\deno.exe"},
+        ),
+    ):
         result = download_youtube(
             "https://youtu.be/dQw4w9WgXcQ",
             info,
@@ -111,6 +117,9 @@ def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
     assert FakeDownloadYDL.last_options["format"] == "bestvideo+bestaudio/best"
     assert FakeDownloadYDL.last_options["format_sort"] == ["res", "fps", "br", "size"]
     assert FakeDownloadYDL.last_options["merge_output_format"] == "mp4"
+    assert FakeDownloadYDL.last_options["js_runtimes"] == {
+        "deno": {"path": r"C:\tools\deno.exe"}
+    }
     assert FakeDownloadYDL.last_options["writesubtitles"] is True
     assert FakeDownloadYDL.last_options["writeautomaticsub"] is True
 

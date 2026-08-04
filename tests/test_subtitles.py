@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from youtube_localizer.models import SubtitleCue
+from youtube_localizer.subtitles.bilingual import align_bilingual_tracks, combine_bilingual
 from youtube_localizer.subtitles.normalize import (
     normalize_cues,
     remove_rolling_overlap,
@@ -120,3 +121,27 @@ def test_validate_cues_reports_timing_and_duplicate_errors() -> None:
 def test_parser_rejects_empty_file() -> None:
     with pytest.raises(Exception, match="No valid"):
         parse_srt_text("")
+
+
+def test_independent_language_tracks_align_to_chinese_target_timeline() -> None:
+    english = [
+        SubtitleCue(id=1, start_ms=0, end_ms=1000, text="Hello"),
+        SubtitleCue(id=2, start_ms=1000, end_ms=2000, text="world"),
+    ]
+    chinese = [SubtitleCue(id=1, start_ms=0, end_ms=2000, text="你好世界")]
+
+    aligned_english, aligned_chinese = align_bilingual_tracks(
+        english,
+        chinese,
+        reference_language="zh",
+    )
+    bilingual = combine_bilingual(
+        aligned_english,
+        aligned_chinese,
+        mode="bilingual_en_zh",
+    )
+
+    assert len(bilingual) == 1
+    assert bilingual[0].start_ms == 0
+    assert bilingual[0].end_ms == 2000
+    assert bilingual[0].text == "Hello world\n你好世界"

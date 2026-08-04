@@ -16,6 +16,7 @@ from .errors import LocalizerError
 from .logging_config import configure_logging
 from .models import ProjectPaths
 from .pipeline import (
+    FORCE_STEPS,
     _language_pair,
     _source_subtitle,
     _target_ass,
@@ -172,12 +173,22 @@ def process_command(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "
         "content you have explicit permission to translate and redistribute."
     )
+    requested_force_steps = set(force_step or [])
+    unknown_force_steps = requested_force_steps - FORCE_STEPS
+    if unknown_force_steps:
+        raise LocalizerError(
+            "Unknown --force-step value(s): "
+            + ", ".join(sorted(unknown_force_steps))
+            + ". Expected one of: "
+            + ", ".join(sorted(FORCE_STEPS))
+            + "."
+        )
     result = process_pipeline(
         input_value,
         config,
         resume=resume,
         overwrite=overwrite,
-        force_steps=set(force_step or []),
+        force_steps=requested_force_steps,
         verbose=verbose,
     )
     console.print(f"[bold green]Project:[/] {result.project.root}")
@@ -357,7 +368,13 @@ def translate_import_command(
         if _target_subtitle(project, config).is_file():
             english = parse_subtitle(project.english_srt)
             chinese = parse_subtitle(project.chinese_srt)
-            localized, additional = _write_localized_subtitles(project, english, chinese, config)
+            localized, additional = _write_localized_subtitles(
+                project,
+                english,
+                chinese,
+                config,
+                load_project_metadata(project),
+            )
             outputs.extend(localized)
             warnings.extend(additional)
             state.mark_status("translation_ready")
@@ -555,7 +572,11 @@ def doctor_command(
 ) -> None:
     """Check Python, FFmpeg, yt-dlp, Whisper/CUDA, fonts, and output access."""
     config = load_config(config_path)
-    checks = run_doctor(config.output_directory.expanduser())
+    checks = run_doctor(
+        config.output_directory.expanduser(),
+        offline_model_directory=config.translation.offline_model_directory,
+        offline_zh_en_model_directory=config.translation.offline_zh_en_model_directory,
+    )
     table = Table("Check", "Status", "Details")
     styles = {"ok": "green", "missing": "red", "warning": "yellow", "optional": "cyan"}
     for check in checks:

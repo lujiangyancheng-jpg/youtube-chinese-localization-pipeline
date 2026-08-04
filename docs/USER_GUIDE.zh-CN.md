@@ -130,6 +130,7 @@ python main.py doctor
 - FFmpeg：`ok`
 - ffprobe：`ok`
 - yt-dlp：`ok`
+- yt-dlp JavaScript support：`ok`（Deno 与 yt-dlp-ejs 均已安装）
 - faster-whisper：`ok` 或 `optional`
 - Offline translation runtime：`ok`
 - Offline English→Chinese model：首次英译中前可为 `optional`，下载后为 `ok`
@@ -164,6 +165,7 @@ output\项目名称\rendered\english_hardsub.mp4
 
 - “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
 - “本地离线翻译并压制”不需要 API，会按所选方向在本机完成英译中或中译英并继续压制视频。每个方向首次使用时会下载对应模型，之后可以离线运行。
+- 离线翻译会先合并同一句中的连续字幕碎片，再按原时间轴拆回，并强制应用 `glossary.yaml` 中的术语。
 - “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
@@ -404,6 +406,8 @@ subtitles\bilingual.srt
 subtitles\bilingual.ass
 ```
 
+如果 YouTube 提供的中英文字幕轨道数量或时间点不同，程序会按时间重叠自动对齐，并保留目标语言轨道的时间轴，不会再因 cue 数量不同而中止。
+
 ## 9. 先预览字幕样式
 
 在渲染整个视频前，可以先生成 15 秒预览：
@@ -470,6 +474,8 @@ render:
   crf: 18
   preset: medium
 ```
+
+`max_chinese_chars_per_line` 是横屏上限。竖屏、方形视频以及带 90° 旋转信息的手机视频会根据实际显示比例自动缩短每行字数，并生成匹配比例的 ASS 画布。
 
 ### 字幕字体
 
@@ -744,11 +750,12 @@ python main.py process INPUT --overwrite
 - 视频是否仍然可用
 - 是否存在年龄、地区或账号限制
 - yt-dlp 是否为最新版本
+- `python main.py doctor` 中的 `yt-dlp JavaScript support` 是否为 `ok`
 
 更新 yt-dlp：
 
 ```powershell
-python -m pip install --upgrade yt-dlp
+python -m pip install --upgrade "yt-dlp[default,deno]"
 ```
 
 软件不会通过 Cookie 或其他方式绕过访问限制。

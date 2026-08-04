@@ -24,19 +24,19 @@ from .rendering.ffmpeg import render_hardsub
 from .rendering.validation import validate_rendered_video
 from .reporting import build_report, write_report
 from .state import PipelineState
-from .subtitles.bilingual import combine_bilingual
+from .subtitles.bilingual import align_bilingual_tracks, combine_bilingual
 from .subtitles.cleanup import cleanup_english
 from .subtitles.normalize import normalize_cues, validate_cues
 from .subtitles.parser import parse_subtitle, write_srt
 from .subtitles.readability import readability_pass
-from .subtitles.styling import write_ass
+from .subtitles.styling import chinese_line_width, write_ass, write_bilingual_ass
 from .transcription.audio import extract_transcription_audio
 from .transcription.whisper_engine import transcribe_audio
 from .translation.base import TranslationContext
 from .translation.cache import TranslationCache
 from .translation.glossary import load_glossary
 from .translation.manual import ManualExportProvider
-from .translation.offline import LocalOfflineProvider
+from .translation.offline import LocalOfflineProvider, translate_cues_contextually
 from .translation.openai_compatible import OpenAICompatibleProvider
 from .utils.files import (
     atomic_write_json,
@@ -49,6 +49,14 @@ from .utils.hashing import hash_file, hash_text, stable_hash
 
 LOGGER = logging.getLogger(__name__)
 VIDEO_SUFFIXES = {".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi"}
+FORCE_STEPS = {
+    "acquire",
+    "english_subtitles",
+    "chinese_subtitles",
+    "transcribe",
+    "translate",
+    "render",
+}
 
 
 @dataclass
@@ -191,6 +199,12 @@ def _translation_context(metadata: SourceMetadata, glossary: dict[str, str]) -> 
     )
 
 
+def _video_size(metadata: SourceMetadata | None) -> tuple[int, int] | None:
+    if metadata and metadata.width and metadata.height:
+        return metadata.width, metadata.height
+    return None
+
+
 def _language_pair(config: AppConfig) -> tuple[str, str]:
     return ("zh", "en") if config.translation.direction == "zh-to-en" else ("en", "zh")
 
@@ -220,40 +234,68 @@ def _write_localized_subtitles(
     english: list[SubtitleCue],
     chinese: list[SubtitleCue],
     config: AppConfig,
+    metadata: SourceMetadata | None = None,
+    *,
+    align_independent_tracks: bool = False,
 ) -> tuple[list[Path], list[str]]:
+    video_size = _video_size(metadata)
     if config.translation.direction == "zh-to-en":
         write_srt(project.english_srt, english)
-        write_ass(project.english_ass, english, config.subtitles, bilingual_mode="english")
+        write_ass(
+            project.english_ass,
+            english,
+            config.subtitles,
+            bilingual_mode="english",
+            video_size=video_size,
+        )
         outputs = [project.english_srt, project.english_ass]
         if config.subtitle_mode != "chinese":
-            bilingual = combine_bilingual(english, chinese, mode=config.subtitle_mode)
+            bilingual_english, bilingual_chinese = (
+                align_bilingual_tracks(english, chinese, reference_language="en")
+                if align_independent_tracks
+                else (english, chinese)
+            )
+            bilingual = combine_bilingual(
+                bilingual_english, bilingual_chinese, mode=config.subtitle_mode
+            )
             write_srt(project.bilingual_srt, bilingual)
-            write_ass(
+            write_bilingual_ass(
                 project.bilingual_ass,
-                bilingual,
+                bilingual_english,
+                bilingual_chinese,
                 config.subtitles,
-                bilingual_mode=config.subtitle_mode,
+                mode=config.subtitle_mode,
+                video_size=video_size,
             )
             outputs.extend([project.bilingual_srt, project.bilingual_ass])
         return outputs, []
 
     readable, issues = readability_pass(
         chinese,
-        width=config.subtitles.max_chinese_chars_per_line,
+        width=chinese_line_width(config.subtitles, video_size),
         max_lines=config.subtitles.max_lines,
     )
     write_srt(project.chinese_srt, readable)
     chinese_ass = project.subtitles / "chinese.ass"
-    write_ass(chinese_ass, readable, config.subtitles)
+    write_ass(chinese_ass, readable, config.subtitles, video_size=video_size)
     outputs = [project.chinese_srt, chinese_ass]
     if config.subtitle_mode != "chinese":
-        bilingual = combine_bilingual(english, readable, mode=config.subtitle_mode)
+        bilingual_english, bilingual_chinese = (
+            align_bilingual_tracks(english, readable, reference_language="zh")
+            if align_independent_tracks
+            else (english, readable)
+        )
+        bilingual = combine_bilingual(
+            bilingual_english, bilingual_chinese, mode=config.subtitle_mode
+        )
         write_srt(project.bilingual_srt, bilingual)
-        write_ass(
+        write_bilingual_ass(
             project.bilingual_ass,
-            bilingual,
+            bilingual_english,
+            bilingual_chinese,
             config.subtitles,
-            bilingual_mode=config.subtitle_mode,
+            mode=config.subtitle_mode,
+            video_size=video_size,
         )
         outputs.extend([project.bilingual_srt, project.bilingual_ass])
     warnings = [f"Cue {issue.cue_id}: {issue.message}" for issue in issues]
@@ -320,7 +362,7 @@ def translate_with_api(
         translated.extend(provider.translate_batch(batch, batch_context))
     english = source_cues if source_code == "en" else translated
     chinese = source_cues if source_code == "zh" else translated
-    return _write_localized_subtitles(project, english, chinese, config)
+    return _write_localized_subtitles(project, english, chinese, config, metadata)
 
 
 def translate_with_offline(
@@ -355,20 +397,19 @@ def translate_with_offline(
         source_code=source_code,
         target_code=target_code,
     )
-    translated: list[SubtitleCue] = []
     batch_size = config.translation.batch_size
     context = _translation_context(metadata, glossary)
-    for offset in range(0, len(source_cues), batch_size):
-        batch = source_cues[offset : offset + batch_size]
-        LOGGER.info(
-            "Offline translating subtitle batch %s/%s…",
-            offset // batch_size + 1,
-            (len(source_cues) + batch_size - 1) // batch_size,
-        )
-        translated.extend(provider.translate_batch(batch, context))
+    translated = translate_cues_contextually(
+        provider,
+        source_cues,
+        context,
+        source_code=source_code,
+        target_code=target_code,
+        batch_size=batch_size,
+    )
     english = source_cues if source_code == "en" else translated
     chinese = source_cues if source_code == "zh" else translated
-    return _write_localized_subtitles(project, english, chinese, config)
+    return _write_localized_subtitles(project, english, chinese, config, metadata)
 
 
 def render_project(project: ProjectPaths, config: AppConfig) -> Path:
@@ -379,18 +420,30 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
         if not subtitle.is_file():
             target = parse_subtitle(_target_subtitle(project, config))
             target_mode = "english" if config.translation.direction == "zh-to-en" else "chinese"
-            write_ass(subtitle, target, config.subtitles, bilingual_mode=target_mode)
+            write_ass(
+                subtitle,
+                target,
+                config.subtitles,
+                bilingual_mode=target_mode,
+                video_size=_video_size(metadata),
+            )
     else:
         subtitle = project.bilingual_ass
         if not subtitle.is_file():
             english = parse_subtitle(project.english_srt)
             chinese = parse_subtitle(project.chinese_srt)
-            bilingual = combine_bilingual(english, chinese, mode=config.subtitle_mode)
-            write_ass(
+            english, chinese = align_bilingual_tracks(
+                english,
+                chinese,
+                reference_language=("en" if config.translation.direction == "zh-to-en" else "zh"),
+            )
+            write_bilingual_ass(
                 subtitle,
-                bilingual,
+                english,
+                chinese,
                 config.subtitles,
-                bilingual_mode=config.subtitle_mode,
+                mode=config.subtitle_mode,
+                video_size=_video_size(metadata),
             )
     output = rendered_output(project, config)
     render_hardsub(
@@ -414,10 +467,45 @@ def process_pipeline(
     verbose: bool = False,
 ) -> PipelineResult:
     force_steps = force_steps or set()
+    unknown_force_steps = force_steps - FORCE_STEPS
+    if unknown_force_steps:
+        raise InputValidationError(
+            "Unknown --force-step value(s): "
+            + ", ".join(sorted(unknown_force_steps))
+            + ". Expected one of: "
+            + ", ".join(sorted(FORCE_STEPS))
+            + "."
+        )
     project, metadata, raw_info = prepare_project(value, config, resume=resume, overwrite=overwrite)
     configure_logging(project.logs / "pipeline.log", verbose=verbose)
     state = PipelineState(project.state_file, source_input=value)
-    warnings: list[str] = []
+    if not state.data.warnings:
+        previous_report_path = project.logs / "report.json"
+        if previous_report_path.is_file():
+            try:
+                previous_report = load_json(previous_report_path)
+                previous_warnings = (
+                    previous_report.get("warnings", [])
+                    if isinstance(previous_report, dict)
+                    else []
+                )
+                if isinstance(previous_warnings, list):
+                    state.data.warnings = [str(warning) for warning in previous_warnings]
+                    state.save()
+            except (OSError, TypeError, ValueError):
+                LOGGER.warning("Could not migrate warnings from the previous processing report.")
+    warnings = list(dict.fromkeys(state.data.warnings))
+
+    def remember_warnings(additional: list[str] | tuple[str, ...]) -> None:
+        changed = False
+        for warning in additional:
+            if warning not in warnings:
+                warnings.append(warning)
+                changed = True
+        if changed:
+            state.data.warnings = warnings.copy()
+            state.save()
+
     outputs: list[Path] = []
     cue_count = 0
     flagged_cues: list[int] = []
@@ -461,7 +549,7 @@ def process_pipeline(
                         project.source,
                         config.download,
                     )
-                    warnings.extend(download.warnings)
+                    remember_warnings(download.warnings)
                     source_video = download.video
                     metadata.english_subtitle_language = download.english_language
                     metadata.english_subtitle_kind = download.english_kind
@@ -599,7 +687,7 @@ def process_pipeline(
                             )
                         cleanup = cleanup_english(normalized)
                         write_srt(project.english_srt, cleanup.cues)
-                        warnings.extend(cleanup.warnings)
+                        remember_warnings(cleanup.warnings)
                         flagged_cues.extend(cleanup.flagged_cue_ids)
                         if not use_provided_chinese:
                             subtitle_source = (
@@ -618,7 +706,7 @@ def process_pipeline(
                             project.english_srt,
                             config.transcription,
                         )
-                        warnings.extend(cleanup.warnings)
+                        remember_warnings(cleanup.warnings)
                         flagged_cues.extend(cleanup.flagged_cue_ids)
                         if not use_provided_chinese:
                             subtitle_source = "faster-whisper"
@@ -653,7 +741,7 @@ def process_pipeline(
                         config.transcription,
                         language="zh",
                     )
-                    warnings.extend(cleanup.warnings)
+                    remember_warnings(cleanup.warnings)
                     flagged_cues.extend(cleanup.flagged_cue_ids)
                     subtitle_source = "faster-whisper (Chinese)"
                     step_outputs.extend([audio, raw_transcription, project.chinese_srt])
@@ -777,16 +865,18 @@ def process_pipeline(
                         project, config, metadata
                     )
                 step_outputs.extend(translated_outputs)
-                warnings.extend(translation_warnings)
+                remember_warnings(translation_warnings)
 
         localized_outputs, localized_warnings = _write_localized_subtitles(
             project,
             parse_subtitle(project.english_srt) if project.english_srt.is_file() else [],
             parse_subtitle(project.chinese_srt),
             config,
+            metadata,
+            align_independent_tracks=provided_chinese_is_target,
         )
         outputs.extend(localized_outputs)
-        warnings.extend(localized_warnings)
+        remember_warnings(localized_warnings)
 
         if config.publishing.generate_metadata:
             metadata_outputs = generate_publishing_assets(

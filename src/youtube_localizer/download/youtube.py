@@ -4,6 +4,8 @@ import json
 import logging
 import os
 import re
+import shutil
+import sys
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +29,12 @@ YOUTUBE_HOSTS = {
 }
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
 SIMPLIFIED_CHINESE_LANGUAGES = ("zh-Hans", "zh-CN", "zh")
+JAVASCRIPT_RUNTIME_EXECUTABLES = {
+    "deno": ("deno.exe", "deno"),
+    "node": ("node.exe", "node"),
+    "quickjs": ("qjs.exe", "qjs", "quickjs.exe", "quickjs"),
+    "bun": ("bun.exe", "bun"),
+}
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,33 @@ def _youtube_dl(options: dict[str, Any]):
     return YoutubeDL(options)
 
 
+def discover_javascript_runtimes() -> dict[str, str]:
+    """Find yt-dlp-compatible runtimes, including executables beside the active Python."""
+    discovered: dict[str, str] = {}
+    python_directory = Path(sys.executable).resolve().parent
+    for runtime, executable_names in JAVASCRIPT_RUNTIME_EXECUTABLES.items():
+        path: Path | None = None
+        for executable_name in executable_names:
+            local = python_directory / executable_name
+            if local.is_file():
+                path = local
+                break
+            if located := shutil.which(executable_name):
+                path = Path(located)
+                break
+        if path:
+            discovered[runtime] = str(path.resolve())
+    return discovered
+
+
+def _enable_javascript_runtime(options: dict[str, Any]) -> None:
+    runtimes = discover_javascript_runtimes()
+    if runtimes:
+        options["js_runtimes"] = {
+            runtime: {"path": path} for runtime, path in runtimes.items()
+        }
+
+
 def _validate_info(info: dict[str, Any]) -> None:
     availability = (info.get("availability") or "public").lower()
     if availability in {"private", "subscriber_only", "premium_only", "needs_auth"}:
@@ -104,6 +139,7 @@ def inspect_youtube(url: str) -> tuple[SourceMetadata, dict[str, Any]]:
         "noplaylist": True,
         "extract_flat": False,
     }
+    _enable_javascript_runtime(options)
     try:
         with _youtube_dl(options) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -224,6 +260,7 @@ def download_youtube(
         "subtitleslangs": list(dict.fromkeys(selection[0] for selection in selections)),
         "subtitlesformat": "vtt/srt/best",
     }
+    _enable_javascript_runtime(options)
     if config.prefer_mp4:
         options["merge_output_format"] = "mp4"
     download_warnings: list[str] = []

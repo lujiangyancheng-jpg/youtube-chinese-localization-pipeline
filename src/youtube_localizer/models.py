@@ -69,6 +69,7 @@ class PipelineStateData(BaseModel):
     project_status: str = "incomplete"
     updated_at: str = ""
     steps: dict[str, StepRecord] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)

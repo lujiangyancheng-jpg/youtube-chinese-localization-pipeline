@@ -10,7 +10,7 @@ from ..models import ProjectPaths, SubtitleCue
 from ..subtitles.bilingual import combine_bilingual
 from ..subtitles.parser import parse_subtitle, write_srt
 from ..subtitles.readability import readability_pass
-from ..subtitles.styling import write_ass
+from ..subtitles.styling import write_bilingual_ass
 from ..utils.files import atomic_write_json, atomic_write_text, load_json
 from ..utils.hashing import stable_hash
 from ..utils.text import ms_to_srt, timestamp_to_ms
@@ -287,10 +287,11 @@ def import_translation_file(
             bilingual = combine_bilingual(english, chinese, mode=subtitle_mode)
             write_srt(project.bilingual_srt, bilingual)
             if subtitle_config is not None:
-                write_ass(
+                write_bilingual_ass(
                     project.bilingual_ass,
-                    bilingual,
+                    english,
+                    chinese,
                     subtitle_config,
-                    bilingual_mode=subtitle_mode,
+                    mode=subtitle_mode,
                 )
     return len(stored), len(source_cues), warnings

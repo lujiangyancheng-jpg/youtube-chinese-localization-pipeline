@@ -27,7 +27,9 @@ class JsonFormatter(logging.Formatter):
 def configure_logging(log_file: Path | None = None, *, verbose: bool = False) -> None:
     root = logging.getLogger()
     root.setLevel(logging.DEBUG if verbose else logging.INFO)
-    root.handlers.clear()
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+        handler.close()
 
     console = RichHandler(
         rich_tracebacks=True,
