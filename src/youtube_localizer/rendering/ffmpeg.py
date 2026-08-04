@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..config import RenderConfig
 from ..errors import ExternalToolError, LocalizerError
-from ..utils.subprocesses import run_command
+from ..utils.subprocesses import run_streaming_command
 
 LOGGER = logging.getLogger(__name__)
 
@@ -27,7 +27,18 @@ def build_hardsub_command(
     start: float | None = None,
     duration: float | None = None,
 ) -> list[str]:
-    command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y"]
+    command = [
+        ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-stats_period",
+        "2",
+        "-progress",
+        "pipe:1",
+        "-y",
+    ]
     if start is not None:
         command += ["-ss", str(max(0, start))]
     command += ["-i", str(source_video)]
@@ -69,6 +80,7 @@ def render_hardsub(
     ffmpeg: str = "ffmpeg",
     start: float | None = None,
     duration: float | None = None,
+    expected_duration: float | None = None,
 ) -> Path:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     temp = output_file.with_name(f"{output_file.stem}.partial{output_file.suffix}")
@@ -82,13 +94,14 @@ def render_hardsub(
         start=start,
         duration=duration,
     )
+    progress = _FFmpegProgress(expected_duration or duration)
     try:
-        run_command(command)
+        run_streaming_command(command, line_callback=progress.consume)
     except ExternalToolError as exc:
         if config.codec in {"h264_nvenc", "hevc_nvenc"}:
             LOGGER.warning("Hardware encoding failed; retrying with libx264.")
             fallback = config.model_copy(update={"codec": "libx264", "preset": "medium"})
-            run_command(
+            run_streaming_command(
                 build_hardsub_command(
                     source_video,
                     subtitle_file,
@@ -98,7 +111,8 @@ def render_hardsub(
                     ffmpeg=ffmpeg,
                     start=start,
                     duration=duration,
-                )
+                ),
+                line_callback=progress.consume,
             )
         else:
             hint = ""
@@ -109,6 +123,51 @@ def render_hardsub(
         raise LocalizerError("FFmpeg reported success but did not create a rendered video.")
     temp.replace(output_file)
     return output_file
+
+
+class _FFmpegProgress:
+    def __init__(self, expected_duration: float | None) -> None:
+        self.expected_duration = (
+            expected_duration if expected_duration and expected_duration > 0 else None
+        )
+        self.values: dict[str, str] = {}
+
+    def consume(self, line: str) -> None:
+        key, separator, value = line.partition("=")
+        if not separator:
+            return
+        self.values[key] = value
+        if key != "progress":
+            return
+        elapsed_text = self.values.get("out_time", "00:00:00")
+        speed = self.values.get("speed", "?")
+        elapsed = _parse_ffmpeg_time(elapsed_text)
+        if self.expected_duration is None:
+            LOGGER.info("Rendering subtitles: %s elapsed, speed %s.", elapsed_text, speed)
+            return
+        percent = min(100.0, max(0.0, elapsed / self.expected_duration * 100))
+        LOGGER.info(
+            "Rendering subtitles: %.1f%% (%s / %s), speed %s.",
+            percent,
+            elapsed_text,
+            _format_duration(self.expected_duration),
+            speed,
+        )
+
+
+def _parse_ffmpeg_time(value: str) -> float:
+    try:
+        hours, minutes, seconds = value.split(":", maxsplit=2)
+        return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _format_duration(value: float) -> str:
+    total_seconds = max(0, round(value))
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
 
 def build_softsub_command(

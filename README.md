@@ -446,6 +446,11 @@ can extend a temporary rate limit.
 Check `ffmpeg -filters` for `ass` and `subtitles`, install a libass-enabled build, confirm
 the configured font is installed, and run `preview` before rendering the whole video.
 
+If FFmpeg reports Windows status `0xC000013A` (decimal `3221225786`), rendering was stopped
+by the Stop button, a closed localizer window, or another interruption; it is not a codec
+failure. Keep the window open and resume the same project. Rendering now reports percentage,
+encoded timestamp, and speed every two seconds, and resume repeats only the unfinished stage.
+
 ### A manual import is rejected
 
 Ask ChatGPT to return JSONL only. Do not change `id`, `start`, `end`, or the source field

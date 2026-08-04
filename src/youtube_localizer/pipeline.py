@@ -452,6 +452,7 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
         output,
         config.render,
         source_audio_codec=metadata.audio_codec,
+        expected_duration=metadata.duration,
     )
     validate_rendered_video(output, expected_duration=metadata.duration)
     return output
