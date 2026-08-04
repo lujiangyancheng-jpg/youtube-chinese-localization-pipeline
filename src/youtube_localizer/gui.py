@@ -14,18 +14,18 @@ from .resources import ollama_executable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-APP_BACKGROUND = "#F3F5FA"
+APP_BACKGROUND = "#F5F6F8"
 SURFACE = "#FFFFFF"
-HEADER = "#202552"
-PRIMARY = "#5B5BD6"
-PRIMARY_HOVER = "#4848B8"
-TEXT = "#172033"
-MUTED = "#667085"
-BORDER = "#DCE1EC"
-SUCCESS = "#16825D"
-DANGER = "#C2415C"
-LOG_BACKGROUND = "#111827"
-LOG_TEXT = "#DCE3EF"
+HEADER = "#FFFFFF"
+PRIMARY = "#2FAD68"
+PRIMARY_HOVER = "#278F57"
+TEXT = "#24272C"
+MUTED = "#747A84"
+BORDER = "#E2E5E9"
+SUCCESS = "#2FAD68"
+DANGER = "#D14D57"
+LOG_BACKGROUND = "#F7F8FA"
+LOG_TEXT = "#40444B"
 UI_FONT = "Microsoft YaHei UI"
 
 SUBTITLE_MODES = {
@@ -139,8 +139,8 @@ class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Localize Studio｜视频本地化")
-        self.root.geometry("940x860")
-        self.root.minsize(780, 700)
+        self.root.geometry("980x720")
+        self.root.minsize(820, 620)
         self.root.configure(background=APP_BACKGROUND)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -169,10 +169,15 @@ class LocalizerWindow:
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
         self.mode_hint = tk.StringVar()
+        self.workflow_summary = tk.StringVar()
+        self.settings_visible = False
+        self.log_visible = False
 
         self._configure_style()
         self._build_layout()
         self._update_translation_fields()
+        self.input_value.trace_add("write", self._update_input_state)
+        self._update_input_state()
         self.root.after(100, self._poll_events)
 
     def _configure_style(self) -> None:
@@ -181,30 +186,22 @@ class LocalizerWindow:
             style.theme_use("clam")
 
         style.configure("App.TFrame", background=APP_BACKGROUND)
-        style.configure("Card.TFrame", background=SURFACE)
-        style.configure(
-            "Card.TLabelframe",
-            background=SURFACE,
-            bordercolor=BORDER,
-            borderwidth=1,
-            relief="solid",
-        )
-        style.configure(
-            "Card.TLabelframe.Label",
-            background=SURFACE,
-            foreground=TEXT,
-            font=(UI_FONT, 10, "bold"),
-        )
+        style.configure("Toolbar.TFrame", background=HEADER)
+        style.configure("Card.TFrame", background=SURFACE, relief="flat")
+        style.configure("Toolbar.TLabel", background=HEADER, foreground=TEXT, font=(UI_FONT, 10))
         style.configure("Card.TLabel", background=SURFACE, foreground=TEXT, font=(UI_FONT, 10))
         style.configure(
             "Field.TLabel", background=SURFACE, foreground=TEXT, font=(UI_FONT, 9, "bold")
         )
         style.configure("Muted.TLabel", background=SURFACE, foreground=MUTED, font=(UI_FONT, 9))
         style.configure(
+            "AppMuted.TLabel", background=APP_BACKGROUND, foreground=MUTED, font=(UI_FONT, 9)
+        )
+        style.configure(
             "SectionTitle.TLabel",
             background=SURFACE,
             foreground=TEXT,
-            font=(UI_FONT, 11, "bold"),
+            font=(UI_FONT, 12, "bold"),
         )
         style.configure(
             "Primary.TButton",
@@ -212,16 +209,16 @@ class LocalizerWindow:
             foreground="#FFFFFF",
             bordercolor=PRIMARY,
             font=(UI_FONT, 10, "bold"),
-            padding=(18, 10),
+            padding=(17, 9),
         )
         style.map(
             "Primary.TButton",
             background=[
                 ("pressed", PRIMARY_HOVER),
                 ("active", PRIMARY_HOVER),
-                ("disabled", "#A7A7D9"),
+                ("disabled", "#A9D8BD"),
             ],
-            foreground=[("disabled", "#ECECF8")],
+            foreground=[("disabled", "#EFF8F2")],
         )
         style.configure(
             "Secondary.TButton",
@@ -229,21 +226,30 @@ class LocalizerWindow:
             foreground=TEXT,
             bordercolor=BORDER,
             font=(UI_FONT, 9),
-            padding=(12, 8),
+            padding=(12, 7),
         )
-        style.map("Secondary.TButton", background=[("active", "#E9ECF5")])
+        style.map("Secondary.TButton", background=[("active", "#F0F2F4")])
+        style.configure(
+            "Toolbar.TButton",
+            background=HEADER,
+            foreground=TEXT,
+            bordercolor=HEADER,
+            font=(UI_FONT, 9),
+            padding=(11, 7),
+        )
+        style.map("Toolbar.TButton", background=[("active", "#F0F2F4")])
         style.configure(
             "Danger.TButton",
-            background="#FCE8ED",
+            background="#FBEAEC",
             foreground=DANGER,
-            bordercolor="#F3C5D0",
+            bordercolor="#F2CDD1",
             font=(UI_FONT, 9, "bold"),
-            padding=(14, 9),
+            padding=(14, 8),
         )
-        style.map("Danger.TButton", background=[("active", "#F7D7DF")])
+        style.map("Danger.TButton", background=[("active", "#F6D9DC")])
         style.configure(
             "Modern.TEntry",
-            fieldbackground="#F8F9FC",
+            fieldbackground="#FAFAFB",
             foreground=TEXT,
             bordercolor=BORDER,
             lightcolor=BORDER,
@@ -252,8 +258,8 @@ class LocalizerWindow:
         )
         style.configure(
             "Modern.TCombobox",
-            fieldbackground="#F8F9FC",
-            background="#F8F9FC",
+            fieldbackground="#FAFAFB",
+            background="#FAFAFB",
             foreground=TEXT,
             bordercolor=BORDER,
             arrowsize=16,
@@ -261,7 +267,7 @@ class LocalizerWindow:
         )
         style.map(
             "Modern.TCombobox",
-            fieldbackground=[("readonly", "#F8F9FC"), ("disabled", "#ECEEF3")],
+            fieldbackground=[("readonly", "#FAFAFB"), ("disabled", "#ECEEF1")],
             foreground=[("readonly", TEXT), ("disabled", "#98A2B3")],
         )
         style.configure("Card.TCheckbutton", background=SURFACE, foreground=TEXT, font=(UI_FONT, 9))
@@ -269,93 +275,136 @@ class LocalizerWindow:
         style.configure(
             "Accent.Horizontal.TProgressbar",
             background=PRIMARY,
-            troughcolor="#E8EAF2",
-            bordercolor="#E8EAF2",
+            troughcolor="#E8ECE9",
+            bordercolor="#E8ECE9",
             lightcolor=PRIMARY,
             darkcolor=PRIMARY,
-            thickness=6,
+            thickness=5,
         )
 
     def _build_layout(self) -> None:
-        outer = ttk.Frame(self.root, style="App.TFrame", padding=(20, 18, 20, 16))
+        outer = ttk.Frame(self.root, style="App.TFrame")
         outer.grid(row=0, column=0, sticky="nsew")
         self.root.rowconfigure(0, weight=1)
         self.root.columnconfigure(0, weight=1)
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(7, weight=1)
 
-        hero = tk.Frame(outer, background=HEADER, padx=24, pady=18)
-        hero.grid(row=0, column=0, sticky="ew", pady=(0, 12))
-        hero.columnconfigure(0, weight=1)
+        hero = tk.Frame(outer, background=HEADER, padx=18, pady=12)
+        hero.grid(row=0, column=0, sticky="ew")
+        hero.columnconfigure(4, weight=1)
+        brand = tk.Frame(hero, background=HEADER)
+        brand.grid(row=0, column=0, sticky="w", padx=(0, 22))
         tk.Label(
-            hero,
-            text="LOCALIZE STUDIO",
-            background=HEADER,
-            foreground="#AEB3FF",
-            font=(UI_FONT, 9, "bold"),
-        ).grid(row=0, column=0, sticky="w")
-        tk.Label(
-            hero,
-            text="让每一段视频，自然地跨越语言",
-            background=HEADER,
+            brand,
+            text="L",
+            width=2,
+            background=PRIMARY,
             foreground="#FFFFFF",
-            font=(UI_FONT, 20, "bold"),
-        ).grid(row=1, column=0, sticky="w", pady=(3, 2))
+            font=(UI_FONT, 13, "bold"),
+        ).pack(side="left")
         tk.Label(
-            hero,
-            text="粘贴链接或选择本地视频，一站式完成识别、翻译、字幕与成片。",
+            brand,
+            text="Localize Studio",
             background=HEADER,
-            foreground="#C8CCDF",
-            font=(UI_FONT, 9),
-        ).grid(row=2, column=0, sticky="w")
-        tk.Label(
-            hero,
-            text="  本地运行 · 隐私优先  ",
-            background="#363C72",
-            foreground="#E7E8FF",
-            font=(UI_FONT, 9, "bold"),
-            padx=8,
-            pady=5,
-        ).grid(row=0, column=1, rowspan=3, sticky="e", padx=(20, 0))
-
-        input_frame = ttk.LabelFrame(
-            outer, text="添加视频", style="Card.TLabelframe", padding=(16, 10, 16, 14)
+            foreground=TEXT,
+            font=(UI_FONT, 12, "bold"),
+        ).pack(side="left", padx=(9, 0))
+        self.paste_button = ttk.Button(
+            hero, text="＋  粘贴链接", style="Primary.TButton", command=self._paste
         )
-        input_frame.grid(row=1, column=0, sticky="ew")
-        input_frame.columnconfigure(0, weight=1)
+        self.paste_button.grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(
+            hero,
+            text="选择本地视频",
+            style="Secondary.TButton",
+            command=self._choose_local_file,
+        ).grid(row=0, column=2)
+        self.settings_button = ttk.Button(
+            hero,
+            text="处理设置",
+            style="Toolbar.TButton",
+            command=self._toggle_settings,
+        )
+        self.settings_button.grid(row=0, column=5, padx=(8, 0))
+        ttk.Button(
+            hero,
+            text="输出文件夹",
+            style="Toolbar.TButton",
+            command=self._open_output,
+        ).grid(row=0, column=6, padx=(4, 0))
+        ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
+
+        self.empty_state = ttk.Frame(outer, style="App.TFrame")
+        self.empty_state.grid(row=1, column=0, rowspan=7, sticky="nsew")
+        empty_content = ttk.Frame(self.empty_state, style="App.TFrame")
+        empty_content.pack(expand=True)
+        tk.Label(
+            empty_content,
+            text="↓",
+            width=3,
+            background="#E2F4E9",
+            foreground=PRIMARY,
+            font=(UI_FONT, 24, "bold"),
+        ).pack(pady=(0, 16))
+        tk.Label(
+            empty_content,
+            text="添加一个视频链接",
+            background=APP_BACKGROUND,
+            foreground=TEXT,
+            font=(UI_FONT, 16, "bold"),
+        ).pack()
         ttk.Label(
-            input_frame,
-            text="支持 YouTube 链接，也可以直接处理电脑里的视频文件",
-            style="Muted.TLabel",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+            empty_content,
+            text="复制 YouTube 链接，然后点击上方“粘贴链接”",
+            style="AppMuted.TLabel",
+        ).pack(pady=(7, 3))
+        ttk.Label(
+            empty_content,
+            text="最高画质下载 · 本地语音识别 · 离线翻译 · 字幕压制",
+            style="AppMuted.TLabel",
+        ).pack()
+
+        self.input_frame = ttk.Frame(outer, style="Card.TFrame", padding=(22, 16, 22, 18))
+        self.input_frame.grid(row=1, column=0, sticky="ew", padx=24, pady=(20, 0))
+        self.input_frame.columnconfigure(0, weight=1)
+        ttk.Label(self.input_frame, text="准备处理", style="SectionTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10)
+        )
         self.input_entry = ttk.Entry(
-            input_frame,
+            self.input_frame,
             textvariable=self.input_value,
             style="Modern.TEntry",
             font=(UI_FONT, 10),
         )
         self.input_entry.grid(row=1, column=0, sticky="ew", ipady=2)
         ttk.Button(
-            input_frame, text="粘贴链接", style="Secondary.TButton", command=self._paste
-        ).grid(row=1, column=1, padx=(8, 0))
-        ttk.Button(
-            input_frame,
-            text="选择本地视频",
+            self.input_frame,
+            text="移除",
             style="Secondary.TButton",
-            command=self._choose_local_file,
-        ).grid(row=1, column=2, padx=(8, 0))
-
-        options = ttk.LabelFrame(
-            outer, text="输出设置", style="Card.TLabelframe", padding=(16, 10, 16, 12)
+            command=self._clear_input,
+        ).grid(row=1, column=1, padx=(8, 0))
+        ttk.Label(self.input_frame, textvariable=self.workflow_summary, style="Muted.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(9, 0)
         )
-        options.grid(row=2, column=0, sticky="ew", pady=(12, 0))
-        options.columnconfigure(0, weight=1, uniform="settings")
-        options.columnconfigure(1, weight=1, uniform="settings")
+
+        options = self.settings_panel = ttk.Frame(
+            outer, style="Card.TFrame", padding=(22, 14, 22, 14)
+        )
+        options.grid(row=2, column=0, sticky="ew", padx=24, pady=(12, 0))
+        for column in range(4):
+            options.columnconfigure(column, weight=1, uniform="settings")
         ttk.Label(options, text="翻译方向", style="Field.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 5), padx=(0, 8)
+            row=0, column=0, sticky="w", pady=(0, 5), padx=(0, 6)
         )
         ttk.Label(options, text="字幕 / 下载模式", style="Field.TLabel").grid(
-            row=0, column=1, sticky="w", pady=(0, 5), padx=(8, 0)
+            row=0, column=1, sticky="w", pady=(0, 5), padx=6
+        )
+        ttk.Label(options, text="翻译方式", style="Field.TLabel").grid(
+            row=0, column=2, sticky="w", pady=(0, 5), padx=6
+        )
+        ttk.Label(options, text="字幕字体", style="Field.TLabel").grid(
+            row=0, column=3, sticky="w", pady=(0, 5), padx=(6, 0)
         )
         self.direction_combo = ttk.Combobox(
             options,
@@ -364,7 +413,10 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.direction_combo.grid(row=1, column=0, sticky="ew", padx=(0, 8))
+        self.direction_combo.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+        self.direction_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
+        )
         self.subtitle_combo = ttk.Combobox(
             options,
             textvariable=self.subtitle_label,
@@ -372,15 +424,9 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.subtitle_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        self.subtitle_combo.grid(row=1, column=1, sticky="ew", padx=6)
         self.subtitle_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
-        )
-        ttk.Label(options, text="字幕字体", style="Field.TLabel").grid(
-            row=2, column=0, sticky="w", pady=(12, 5), padx=(0, 8)
-        )
-        ttk.Label(options, text="翻译方式", style="Field.TLabel").grid(
-            row=2, column=1, sticky="w", pady=(12, 5), padx=(8, 0)
         )
         self.font_combo = ttk.Combobox(
             options,
@@ -389,7 +435,7 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.font_combo.grid(row=3, column=0, sticky="ew", padx=(0, 8))
+        self.font_combo.grid(row=1, column=3, sticky="ew", padx=(6, 0))
         self.translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
@@ -397,47 +443,46 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.translation_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
+        self.translation_combo.grid(row=1, column=2, sticky="ew", padx=6)
         self.translation_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
         ttk.Label(options, textvariable=self.mode_hint, style="Muted.TLabel").grid(
-            row=4, column=0, columnspan=2, sticky="w", pady=(10, 0)
+            row=2, column=0, columnspan=4, sticky="w", pady=(9, 0)
         )
 
-        self.api_frame = ttk.LabelFrame(
+        self.api_frame = ttk.Frame(
             outer,
-            text="OpenAI-compatible API",
-            style="Card.TLabelframe",
-            padding=(16, 10, 16, 14),
+            style="Card.TFrame",
+            padding=(22, 12, 22, 14),
         )
-        self.api_frame.grid(row=3, column=0, sticky="ew", pady=(12, 0))
-        self.api_frame.columnconfigure(0, weight=1)
-        self.api_frame.columnconfigure(1, weight=1)
+        self.api_frame.grid(row=3, column=0, sticky="ew", padx=24, pady=(8, 0))
+        for column in range(3):
+            self.api_frame.columnconfigure(column, weight=1, uniform="api")
         ttk.Label(self.api_frame, text="接口地址", style="Field.TLabel").grid(
-            row=0, column=0, sticky="w", padx=(0, 8)
+            row=0, column=0, sticky="w", padx=(0, 6)
         )
         ttk.Label(self.api_frame, text="模型名称", style="Field.TLabel").grid(
-            row=0, column=1, sticky="w", padx=(8, 0)
+            row=0, column=1, sticky="w", padx=6
+        )
+        ttk.Label(self.api_frame, text="API Key（不会保存）", style="Field.TLabel").grid(
+            row=0, column=2, sticky="w", padx=(6, 0)
         )
         self.endpoint_entry = ttk.Entry(
             self.api_frame, textvariable=self.endpoint, style="Modern.TEntry"
         )
-        self.endpoint_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(5, 10))
+        self.endpoint_entry.grid(row=1, column=0, sticky="ew", padx=(0, 6), pady=(5, 0))
         self.model_entry = ttk.Entry(self.api_frame, textvariable=self.model, style="Modern.TEntry")
-        self.model_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(5, 10))
-        ttk.Label(self.api_frame, text="API Key（不会保存）", style="Field.TLabel").grid(
-            row=2, column=0, columnspan=2, sticky="w"
-        )
+        self.model_entry.grid(row=1, column=1, sticky="ew", padx=6, pady=(5, 0))
         self.key_entry = ttk.Entry(
             self.api_frame, textvariable=self.api_key, show="●", style="Modern.TEntry"
         )
-        self.key_entry.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.key_entry.grid(row=1, column=2, sticky="ew", padx=(6, 0), pady=(5, 0))
 
-        confirmation = ttk.LabelFrame(
-            outer, text="开始前确认", style="Card.TLabelframe", padding=(16, 8, 16, 10)
+        confirmation = self.confirmation_frame = ttk.Frame(
+            outer, style="Card.TFrame", padding=(22, 10, 22, 12)
         )
-        confirmation.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        confirmation.grid(row=4, column=0, sticky="ew", padx=24, pady=(10, 0))
         ttk.Checkbutton(
             confirmation,
             text="我确认拥有该视频，或已取得下载、翻译和再发布所需的授权/许可。",
@@ -451,8 +496,8 @@ class LocalizerWindow:
             style="Card.TCheckbutton",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        actions = ttk.Frame(outer, style="App.TFrame")
-        actions.grid(row=5, column=0, sticky="ew", pady=(12, 10))
+        actions = self.actions_frame = ttk.Frame(outer, style="App.TFrame")
+        actions.grid(row=5, column=0, sticky="ew", padx=24, pady=(12, 10))
         self.start_button = ttk.Button(
             actions,
             text="开始本地化",
@@ -470,13 +515,14 @@ class LocalizerWindow:
         self.stop_button.pack(side="left", padx=(8, 0))
         ttk.Button(
             actions,
-            text="打开输出文件夹",
+            text="调整处理设置",
             style="Secondary.TButton",
-            command=self._open_output,
+            command=self._show_settings,
         ).pack(side="right")
 
         status_card = ttk.Frame(outer, style="Card.TFrame", padding=(14, 10))
-        status_card.grid(row=6, column=0, sticky="ew", pady=(0, 10))
+        status_card.grid(row=6, column=0, sticky="ew", padx=24, pady=(0, 10))
+        self.status_card = status_card
         status_card.columnconfigure(1, weight=1)
         self.status_dot = tk.Label(
             status_card,
@@ -489,13 +535,20 @@ class LocalizerWindow:
         ttk.Label(status_card, textvariable=self.status, style="Card.TLabel").grid(
             row=0, column=1, sticky="w"
         )
+        self.log_button = ttk.Button(
+            status_card,
+            text="显示运行记录",
+            style="Toolbar.TButton",
+            command=self._toggle_log,
+        )
+        self.log_button.grid(row=0, column=2, sticky="e")
         self.progress = ttk.Progressbar(
             status_card, style="Accent.Horizontal.TProgressbar", mode="determinate", maximum=100
         )
-        self.progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.progress.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
-        log_card = ttk.Frame(outer, style="Card.TFrame", padding=(14, 10, 14, 14))
-        log_card.grid(row=7, column=0, sticky="nsew")
+        log_card = self.log_card = ttk.Frame(outer, style="Card.TFrame", padding=(18, 10, 18, 14))
+        log_card.grid(row=7, column=0, sticky="nsew", padx=24, pady=(0, 16))
         log_card.rowconfigure(1, weight=1)
         log_card.columnconfigure(0, weight=1)
         ttk.Label(log_card, text="运行记录", style="SectionTitle.TLabel").grid(
@@ -506,21 +559,99 @@ class LocalizerWindow:
         )
         self.log = scrolledtext.ScrolledText(
             log_card,
-            height=9,
+            height=7,
             wrap="word",
             state="disabled",
             font=("Consolas", 9),
             background=LOG_BACKGROUND,
             foreground=LOG_TEXT,
-            insertbackground="#FFFFFF",
+            insertbackground=TEXT,
             selectbackground=PRIMARY,
-            borderwidth=0,
+            borderwidth=1,
+            highlightthickness=0,
             relief="flat",
             padx=12,
             pady=10,
         )
         self.log.grid(row=1, column=0, columnspan=2, sticky="nsew")
-        self.input_entry.focus_set()
+        self.settings_panel.grid_remove()
+        self.api_frame.grid_remove()
+        self.log_card.grid_remove()
+        self.paste_button.focus_set()
+
+    def _update_input_state(self, *_args: object) -> None:
+        has_input = bool(self.input_value.get().strip())
+        task_frames = (
+            self.input_frame,
+            self.confirmation_frame,
+            self.actions_frame,
+            self.status_card,
+        )
+        if has_input:
+            self.empty_state.grid_remove()
+            for frame in task_frames:
+                frame.grid()
+            if self.settings_visible:
+                self.settings_panel.grid()
+            else:
+                self.settings_panel.grid_remove()
+            if self.log_visible:
+                self.log_card.grid()
+            else:
+                self.log_card.grid_remove()
+            self.input_entry.focus_set()
+        else:
+            for frame in task_frames:
+                frame.grid_remove()
+            self.log_card.grid_remove()
+            if self.settings_visible:
+                self.empty_state.grid_remove()
+                self.settings_panel.grid()
+            else:
+                self.settings_panel.grid_remove()
+                self.empty_state.grid()
+
+        provider = TRANSLATION_MODES[self.translation_label.get()]
+        automatic = provider == "openai-compatible"
+        if self.settings_visible and automatic:
+            self.api_frame.grid()
+        else:
+            self.api_frame.grid_remove()
+
+    def _toggle_settings(self) -> None:
+        self.settings_visible = not self.settings_visible
+        if self.settings_visible:
+            self.log_visible = False
+            self.log_button.configure(text="显示运行记录")
+        self.settings_button.configure(text="收起设置" if self.settings_visible else "处理设置")
+        self._update_input_state()
+
+    def _show_settings(self) -> None:
+        if not self.settings_visible:
+            self._toggle_settings()
+
+    def _toggle_log(self) -> None:
+        self.log_visible = not self.log_visible
+        if self.log_visible:
+            self.settings_visible = False
+            self.settings_button.configure(text="处理设置")
+        self.log_button.configure(text="隐藏运行记录" if self.log_visible else "显示运行记录")
+        self._update_input_state()
+
+    def _show_log(self) -> None:
+        if not self.log_visible:
+            self.log_visible = True
+            self.log_button.configure(text="隐藏运行记录")
+        self.settings_visible = False
+        self.settings_button.configure(text="处理设置")
+        self._update_input_state()
+
+    def _clear_input(self) -> None:
+        if self.process and self.process.poll() is None:
+            messagebox.showinfo("任务进行中", "请先停止当前任务，再移除视频。", parent=self.root)
+            return
+        self.input_value.set("")
+        self.authorized.set(False)
 
     def _paste(self) -> None:
         try:
@@ -555,8 +686,21 @@ class LocalizerWindow:
         self.translation_combo.configure(state=selection_state)
         self.start_button.configure(text="开始下载" if download_only else "开始本地化")
         self.mode_hint.set(mode_description(subtitle_mode, provider))
+        if download_only:
+            self.workflow_summary.set("当前方案：最高画质原视频 · 最佳音频 · 不生成字幕")
+        else:
+            provider_names = {
+                "manual": "人工翻译",
+                "offline": "本地快速翻译",
+                "ollama": "本地 AI 段落翻译",
+                "openai-compatible": "API 自动翻译",
+            }
+            self.workflow_summary.set(
+                f"当前方案：{self.direction_label.get()} · {self.subtitle_label.get()} · "
+                f"{provider_names[provider]}"
+            )
         automatic = not download_only and provider == "openai-compatible"
-        if automatic:
+        if automatic and self.settings_visible:
             self.api_frame.grid()
         else:
             self.api_frame.grid_remove()
@@ -600,6 +744,7 @@ class LocalizerWindow:
             return
 
         self._clear_log()
+        self._show_log()
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self._append_log(
             "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"

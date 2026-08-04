@@ -40,7 +40,7 @@ $env:FFMPEG_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe"
 $env:FFPROBE_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffprobe.exe"
 $env:OLLAMA_PATH = $Ollama
 
-& $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update_idletasks(); assert root.title().startswith('Localize Studio'); assert window.mode_hint.get(); root.destroy(); print('installed desktop interface: ok')"
+& $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('installed desktop interface: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }
 
 & $Python -c "from pathlib import Path; from youtube_localizer.resources import bundled_fonts_directory, resolve_whisper_model; from youtube_localizer.translation.offline import validate_offline_model; p,local=resolve_whisper_model('medium'); assert local; assert bundled_fonts_directory() == Path(r'$Fonts').resolve(); assert validate_offline_model(Path(r'$Models')/'translate-en_zh-1_9'); assert validate_offline_model(Path(r'$Models')/'translate-zh_en-1_9', source_code='zh', target_code='en'); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('installed offline models and fonts: ok')"

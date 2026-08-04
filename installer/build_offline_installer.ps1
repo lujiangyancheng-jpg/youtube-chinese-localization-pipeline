@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.4.0",
+    [string]$Version = "0.4.1",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
     [string]$PythonInstallerSha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB",
@@ -302,7 +302,7 @@ if (-not $SkipSmokeTest) {
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
         & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable; p,local=resolve_whisper_model('$WhisperModel'); assert local; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('offline runtime smoke test: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
-        & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update_idletasks(); assert root.title().startswith('Localize Studio'); assert window.mode_hint.get(); root.destroy(); print('staged desktop interface: ok')"
+        & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }
         & $EmbeddedPython (Join-Path $AppRoot "main.py") --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Staged CLI smoke test failed." }
