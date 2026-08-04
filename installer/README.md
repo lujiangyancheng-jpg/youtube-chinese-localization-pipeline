@@ -3,7 +3,8 @@
 `build_offline_installer.ps1` creates a self-contained Windows x64 package with Python,
 FFmpeg, the standalone Ollama runtime, Whisper Medium, Qwen3:4b, and both Argos translation
 models. It also bundles Noto Sans CJK SC, Noto Serif CJK SC, and LXGW WenKai for subtitle rendering.
-A newly installed copy therefore does not download a model or require a system font on first use.
+A newly installed copy therefore does not download a model, require a system font, or depend on
+a separate system Python/Tk installation on first use.
 
 Build prerequisites:
 

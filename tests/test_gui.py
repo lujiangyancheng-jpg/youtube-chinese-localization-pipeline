@@ -9,6 +9,7 @@ from youtube_localizer.gui import (
     api_configuration,
     build_process_command,
     local_ai_available,
+    mode_description,
 )
 
 
@@ -120,3 +121,9 @@ def test_build_process_command_supports_direct_download_without_subtitles() -> N
     )
 
     assert command[command.index("--subtitle-mode") + 1] == "download_only"
+
+
+def test_mode_description_explains_download_only_and_local_ai() -> None:
+    assert "不生成字幕" in mode_description("download_only", "ollama")
+    assert "完整段落" in mode_description("chinese", "ollama")
+    assert "API Key" in mode_description("chinese", "openai-compatible")

@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.3.2-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.4.0-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -142,6 +142,10 @@ python main.py doctor
 - 中文字体：`ok` 或可接受的警告
 
 ### 3.7 双击打开“粘贴链接”界面
+
+新版桌面界面采用卡片式布局：顶部添加视频，中间按两列选择翻译方向、字幕模式、
+字体和翻译方式，底部显示彩色状态、动态进度条与运行记录。API 设置只会在选择
+OpenAI-compatible 自动翻译时出现，其他本地模式不会显示不需要的输入项。
 
 安装和环境检查完成后，在项目目录中双击：
 

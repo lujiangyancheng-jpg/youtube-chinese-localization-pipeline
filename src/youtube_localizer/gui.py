@@ -14,6 +14,20 @@ from .resources import ollama_executable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+APP_BACKGROUND = "#F3F5FA"
+SURFACE = "#FFFFFF"
+HEADER = "#202552"
+PRIMARY = "#5B5BD6"
+PRIMARY_HOVER = "#4848B8"
+TEXT = "#172033"
+MUTED = "#667085"
+BORDER = "#DCE1EC"
+SUCCESS = "#16825D"
+DANGER = "#C2415C"
+LOG_BACKGROUND = "#111827"
+LOG_TEXT = "#DCE3EF"
+UI_FONT = "Microsoft YaHei UI"
+
 SUBTITLE_MODES = {
     "仅下载原视频（无字幕）": "download_only",
     "仅目标语言字幕": "chinese",
@@ -40,6 +54,19 @@ SUBTITLE_FONTS = {
 
 def local_ai_available() -> bool:
     return ollama_executable() is not None
+
+
+def mode_description(subtitle_mode: str, translation_provider: str) -> str:
+    """Return the short explanation shown under the selected workflow."""
+    if subtitle_mode == "download_only":
+        return "只下载并合并最高画质视频与最高质量音频，不生成字幕。"
+    descriptions = {
+        "manual": "准备原语言字幕和翻译文件，等待人工导入译文。",
+        "offline": "使用轻量本地模型自动翻译，速度优先，无需 API。",
+        "ollama": "使用本地 Qwen 理解完整段落后自然翻译，推荐。",
+        "openai-compatible": "使用 OpenAI-compatible 接口自动翻译；API Key 仅用于当前任务。",
+    }
+    return descriptions.get(translation_provider, "选择处理方式后即可开始。")
 
 
 def build_process_command(
@@ -111,9 +138,10 @@ def terminate_process_tree(process: subprocess.Popen[str]) -> None:
 class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("视频中英双向本地化工具")
-        self.root.geometry("840x800")
-        self.root.minsize(700, 660)
+        self.root.title("Localize Studio｜视频本地化")
+        self.root.geometry("940x860")
+        self.root.minsize(780, 700)
+        self.root.configure(background=APP_BACKGROUND)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -140,6 +168,7 @@ class LocalizerWindow:
         self.authorized = tk.BooleanVar(value=False)
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
+        self.mode_hint = tk.StringVar()
 
         self._configure_style()
         self._build_layout()
@@ -148,130 +177,349 @@ class LocalizerWindow:
 
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
-        if "vista" in style.theme_names():
-            style.theme_use("vista")
-        style.configure("Title.TLabel", font=("Segoe UI", 20, "bold"))
-        style.configure("Subtitle.TLabel", font=("Segoe UI", 10))
-        style.configure("Action.TButton", font=("Segoe UI", 11, "bold"), padding=(14, 8))
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
 
-    def _build_layout(self) -> None:
-        outer = ttk.Frame(self.root, padding=22)
-        outer.pack(fill="both", expand=True)
-
-        ttk.Label(outer, text="视频中英双向本地化工具", style="Title.TLabel").pack(anchor="w")
-        ttk.Label(
-            outer,
-            text="粘贴已获授权的视频链接或选择本地视频，自动完成中英双向字幕本地化。",
-            style="Subtitle.TLabel",
-        ).pack(anchor="w", pady=(4, 18))
-
-        input_frame = ttk.LabelFrame(outer, text="1. 视频链接", padding=12)
-        input_frame.pack(fill="x")
-        self.input_entry = ttk.Entry(input_frame, textvariable=self.input_value, font=("Segoe UI", 11))
-        self.input_entry.pack(side="left", fill="x", expand=True, ipady=5)
-        ttk.Button(input_frame, text="粘贴", command=self._paste).pack(side="left", padx=(8, 0))
-        ttk.Button(input_frame, text="选择本地视频", command=self._choose_local_file).pack(
-            side="left", padx=(8, 0)
+        style.configure("App.TFrame", background=APP_BACKGROUND)
+        style.configure("Card.TFrame", background=SURFACE)
+        style.configure(
+            "Card.TLabelframe",
+            background=SURFACE,
+            bordercolor=BORDER,
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure(
+            "Card.TLabelframe.Label",
+            background=SURFACE,
+            foreground=TEXT,
+            font=(UI_FONT, 10, "bold"),
+        )
+        style.configure("Card.TLabel", background=SURFACE, foreground=TEXT, font=(UI_FONT, 10))
+        style.configure(
+            "Field.TLabel", background=SURFACE, foreground=TEXT, font=(UI_FONT, 9, "bold")
+        )
+        style.configure("Muted.TLabel", background=SURFACE, foreground=MUTED, font=(UI_FONT, 9))
+        style.configure(
+            "SectionTitle.TLabel",
+            background=SURFACE,
+            foreground=TEXT,
+            font=(UI_FONT, 11, "bold"),
+        )
+        style.configure(
+            "Primary.TButton",
+            background=PRIMARY,
+            foreground="#FFFFFF",
+            bordercolor=PRIMARY,
+            font=(UI_FONT, 10, "bold"),
+            padding=(18, 10),
+        )
+        style.map(
+            "Primary.TButton",
+            background=[
+                ("pressed", PRIMARY_HOVER),
+                ("active", PRIMARY_HOVER),
+                ("disabled", "#A7A7D9"),
+            ],
+            foreground=[("disabled", "#ECECF8")],
+        )
+        style.configure(
+            "Secondary.TButton",
+            background=SURFACE,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            font=(UI_FONT, 9),
+            padding=(12, 8),
+        )
+        style.map("Secondary.TButton", background=[("active", "#E9ECF5")])
+        style.configure(
+            "Danger.TButton",
+            background="#FCE8ED",
+            foreground=DANGER,
+            bordercolor="#F3C5D0",
+            font=(UI_FONT, 9, "bold"),
+            padding=(14, 9),
+        )
+        style.map("Danger.TButton", background=[("active", "#F7D7DF")])
+        style.configure(
+            "Modern.TEntry",
+            fieldbackground="#F8F9FC",
+            foreground=TEXT,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+            padding=8,
+        )
+        style.configure(
+            "Modern.TCombobox",
+            fieldbackground="#F8F9FC",
+            background="#F8F9FC",
+            foreground=TEXT,
+            bordercolor=BORDER,
+            arrowsize=16,
+            padding=7,
+        )
+        style.map(
+            "Modern.TCombobox",
+            fieldbackground=[("readonly", "#F8F9FC"), ("disabled", "#ECEEF3")],
+            foreground=[("readonly", TEXT), ("disabled", "#98A2B3")],
+        )
+        style.configure("Card.TCheckbutton", background=SURFACE, foreground=TEXT, font=(UI_FONT, 9))
+        style.map("Card.TCheckbutton", background=[("active", SURFACE)])
+        style.configure(
+            "Accent.Horizontal.TProgressbar",
+            background=PRIMARY,
+            troughcolor="#E8EAF2",
+            bordercolor="#E8EAF2",
+            lightcolor=PRIMARY,
+            darkcolor=PRIMARY,
+            thickness=6,
         )
 
-        options = ttk.LabelFrame(outer, text="2. 输出设置", padding=12)
-        options.pack(fill="x", pady=(12, 0))
-        ttk.Label(options, text="翻译方向：").grid(row=0, column=0, sticky="w", pady=4)
+    def _build_layout(self) -> None:
+        outer = ttk.Frame(self.root, style="App.TFrame", padding=(20, 18, 20, 16))
+        outer.grid(row=0, column=0, sticky="nsew")
+        self.root.rowconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=1)
+        outer.columnconfigure(0, weight=1)
+        outer.rowconfigure(7, weight=1)
+
+        hero = tk.Frame(outer, background=HEADER, padx=24, pady=18)
+        hero.grid(row=0, column=0, sticky="ew", pady=(0, 12))
+        hero.columnconfigure(0, weight=1)
+        tk.Label(
+            hero,
+            text="LOCALIZE STUDIO",
+            background=HEADER,
+            foreground="#AEB3FF",
+            font=(UI_FONT, 9, "bold"),
+        ).grid(row=0, column=0, sticky="w")
+        tk.Label(
+            hero,
+            text="让每一段视频，自然地跨越语言",
+            background=HEADER,
+            foreground="#FFFFFF",
+            font=(UI_FONT, 20, "bold"),
+        ).grid(row=1, column=0, sticky="w", pady=(3, 2))
+        tk.Label(
+            hero,
+            text="粘贴链接或选择本地视频，一站式完成识别、翻译、字幕与成片。",
+            background=HEADER,
+            foreground="#C8CCDF",
+            font=(UI_FONT, 9),
+        ).grid(row=2, column=0, sticky="w")
+        tk.Label(
+            hero,
+            text="  本地运行 · 隐私优先  ",
+            background="#363C72",
+            foreground="#E7E8FF",
+            font=(UI_FONT, 9, "bold"),
+            padx=8,
+            pady=5,
+        ).grid(row=0, column=1, rowspan=3, sticky="e", padx=(20, 0))
+
+        input_frame = ttk.LabelFrame(
+            outer, text="添加视频", style="Card.TLabelframe", padding=(16, 10, 16, 14)
+        )
+        input_frame.grid(row=1, column=0, sticky="ew")
+        input_frame.columnconfigure(0, weight=1)
+        ttk.Label(
+            input_frame,
+            text="支持 YouTube 链接，也可以直接处理电脑里的视频文件",
+            style="Muted.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        self.input_entry = ttk.Entry(
+            input_frame,
+            textvariable=self.input_value,
+            style="Modern.TEntry",
+            font=(UI_FONT, 10),
+        )
+        self.input_entry.grid(row=1, column=0, sticky="ew", ipady=2)
+        ttk.Button(
+            input_frame, text="粘贴链接", style="Secondary.TButton", command=self._paste
+        ).grid(row=1, column=1, padx=(8, 0))
+        ttk.Button(
+            input_frame,
+            text="选择本地视频",
+            style="Secondary.TButton",
+            command=self._choose_local_file,
+        ).grid(row=1, column=2, padx=(8, 0))
+
+        options = ttk.LabelFrame(
+            outer, text="输出设置", style="Card.TLabelframe", padding=(16, 10, 16, 12)
+        )
+        options.grid(row=2, column=0, sticky="ew", pady=(12, 0))
+        options.columnconfigure(0, weight=1, uniform="settings")
+        options.columnconfigure(1, weight=1, uniform="settings")
+        ttk.Label(options, text="翻译方向", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 5), padx=(0, 8)
+        )
+        ttk.Label(options, text="字幕 / 下载模式", style="Field.TLabel").grid(
+            row=0, column=1, sticky="w", pady=(0, 5), padx=(8, 0)
+        )
         self.direction_combo = ttk.Combobox(
             options,
             textvariable=self.direction_label,
             values=list(TRANSLATION_DIRECTIONS),
             state="readonly",
-            width=34,
+            style="Modern.TCombobox",
         )
-        self.direction_combo.grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Label(options, text="字幕/下载模式：").grid(row=1, column=0, sticky="w", pady=4)
+        self.direction_combo.grid(row=1, column=0, sticky="ew", padx=(0, 8))
         self.subtitle_combo = ttk.Combobox(
             options,
             textvariable=self.subtitle_label,
             values=list(SUBTITLE_MODES),
             state="readonly",
-            width=34,
+            style="Modern.TCombobox",
         )
-        self.subtitle_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        self.subtitle_combo.grid(row=1, column=1, sticky="ew", padx=(8, 0))
         self.subtitle_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
-        ttk.Label(options, text="字幕字体：").grid(row=2, column=0, sticky="w", pady=4)
+        ttk.Label(options, text="字幕字体", style="Field.TLabel").grid(
+            row=2, column=0, sticky="w", pady=(12, 5), padx=(0, 8)
+        )
+        ttk.Label(options, text="翻译方式", style="Field.TLabel").grid(
+            row=2, column=1, sticky="w", pady=(12, 5), padx=(8, 0)
+        )
         self.font_combo = ttk.Combobox(
             options,
             textvariable=self.font_label,
             values=list(SUBTITLE_FONTS),
             state="readonly",
-            width=34,
+            style="Modern.TCombobox",
         )
-        self.font_combo.grid(row=2, column=1, sticky="ew", pady=4)
-        ttk.Label(options, text="翻译方式：").grid(row=3, column=0, sticky="w", pady=4)
+        self.font_combo.grid(row=3, column=0, sticky="ew", padx=(0, 8))
         self.translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
             values=list(TRANSLATION_MODES),
             state="readonly",
-            width=34,
+            style="Modern.TCombobox",
         )
-        self.translation_combo.grid(row=3, column=1, sticky="ew", pady=4)
+        self.translation_combo.grid(row=3, column=1, sticky="ew", padx=(8, 0))
         self.translation_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
-        options.columnconfigure(1, weight=1)
+        ttk.Label(options, textvariable=self.mode_hint, style="Muted.TLabel").grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(10, 0)
+        )
 
-        self.api_frame = ttk.LabelFrame(outer, text="自动翻译 API（API Key 不会保存）", padding=12)
-        self.api_frame.pack(fill="x", pady=(12, 0))
-        ttk.Label(self.api_frame, text="接口地址：").grid(row=0, column=0, sticky="w", pady=3)
-        self.endpoint_entry = ttk.Entry(self.api_frame, textvariable=self.endpoint)
-        self.endpoint_entry.grid(row=0, column=1, sticky="ew", pady=3)
-        ttk.Label(self.api_frame, text="模型名称：").grid(row=1, column=0, sticky="w", pady=3)
-        self.model_entry = ttk.Entry(self.api_frame, textvariable=self.model)
-        self.model_entry.grid(row=1, column=1, sticky="ew", pady=3)
-        ttk.Label(self.api_frame, text="API Key：").grid(row=2, column=0, sticky="w", pady=3)
-        self.key_entry = ttk.Entry(self.api_frame, textvariable=self.api_key, show="●")
-        self.key_entry.grid(row=2, column=1, sticky="ew", pady=3)
+        self.api_frame = ttk.LabelFrame(
+            outer,
+            text="OpenAI-compatible API",
+            style="Card.TLabelframe",
+            padding=(16, 10, 16, 14),
+        )
+        self.api_frame.grid(row=3, column=0, sticky="ew", pady=(12, 0))
+        self.api_frame.columnconfigure(0, weight=1)
         self.api_frame.columnconfigure(1, weight=1)
+        ttk.Label(self.api_frame, text="接口地址", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        ttk.Label(self.api_frame, text="模型名称", style="Field.TLabel").grid(
+            row=0, column=1, sticky="w", padx=(8, 0)
+        )
+        self.endpoint_entry = ttk.Entry(
+            self.api_frame, textvariable=self.endpoint, style="Modern.TEntry"
+        )
+        self.endpoint_entry.grid(row=1, column=0, sticky="ew", padx=(0, 8), pady=(5, 10))
+        self.model_entry = ttk.Entry(self.api_frame, textvariable=self.model, style="Modern.TEntry")
+        self.model_entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(5, 10))
+        ttk.Label(self.api_frame, text="API Key（不会保存）", style="Field.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w"
+        )
+        self.key_entry = ttk.Entry(
+            self.api_frame, textvariable=self.api_key, show="●", style="Modern.TEntry"
+        )
+        self.key_entry.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(5, 0))
 
-        confirmation = ttk.Frame(outer)
-        confirmation.pack(fill="x", pady=(12, 4))
+        confirmation = ttk.LabelFrame(
+            outer, text="开始前确认", style="Card.TLabelframe", padding=(16, 8, 16, 10)
+        )
+        confirmation.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         ttk.Checkbutton(
             confirmation,
             text="我确认拥有该视频，或已取得下载、翻译和再发布所需的授权/许可。",
             variable=self.authorized,
-        ).pack(anchor="w")
+            style="Card.TCheckbutton",
+        ).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(
             confirmation,
             text="若项目已存在，继续上次未完成的处理",
             variable=self.resume,
-        ).pack(anchor="w", pady=(4, 0))
+            style="Card.TCheckbutton",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        actions = ttk.Frame(outer)
-        actions.pack(fill="x", pady=(10, 8))
+        actions = ttk.Frame(outer, style="App.TFrame")
+        actions.grid(row=5, column=0, sticky="ew", pady=(12, 10))
         self.start_button = ttk.Button(
             actions,
             text="开始本地化",
-            style="Action.TButton",
+            style="Primary.TButton",
             command=self._start,
         )
         self.start_button.pack(side="left")
-        self.stop_button = ttk.Button(actions, text="停止", command=self._stop, state="disabled")
+        self.stop_button = ttk.Button(
+            actions,
+            text="停止任务",
+            style="Danger.TButton",
+            command=self._stop,
+            state="disabled",
+        )
         self.stop_button.pack(side="left", padx=(8, 0))
-        ttk.Button(actions, text="打开输出文件夹", command=self._open_output).pack(side="right")
+        ttk.Button(
+            actions,
+            text="打开输出文件夹",
+            style="Secondary.TButton",
+            command=self._open_output,
+        ).pack(side="right")
 
-        status_row = ttk.Frame(outer)
-        status_row.pack(fill="x", pady=(2, 6))
-        ttk.Label(status_row, text="状态：").pack(side="left")
-        ttk.Label(status_row, textvariable=self.status).pack(side="left")
+        status_card = ttk.Frame(outer, style="Card.TFrame", padding=(14, 10))
+        status_card.grid(row=6, column=0, sticky="ew", pady=(0, 10))
+        status_card.columnconfigure(1, weight=1)
+        self.status_dot = tk.Label(
+            status_card,
+            text="●",
+            background=SURFACE,
+            foreground=MUTED,
+            font=("Segoe UI Symbol", 10),
+        )
+        self.status_dot.grid(row=0, column=0, sticky="w", padx=(0, 7))
+        ttk.Label(status_card, textvariable=self.status, style="Card.TLabel").grid(
+            row=0, column=1, sticky="w"
+        )
+        self.progress = ttk.Progressbar(
+            status_card, style="Accent.Horizontal.TProgressbar", mode="determinate", maximum=100
+        )
+        self.progress.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
+        log_card = ttk.Frame(outer, style="Card.TFrame", padding=(14, 10, 14, 14))
+        log_card.grid(row=7, column=0, sticky="nsew")
+        log_card.rowconfigure(1, weight=1)
+        log_card.columnconfigure(0, weight=1)
+        ttk.Label(log_card, text="运行记录", style="SectionTitle.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 8)
+        )
+        ttk.Button(log_card, text="清空", style="Secondary.TButton", command=self._clear_log).grid(
+            row=0, column=1, sticky="e", pady=(0, 8)
+        )
         self.log = scrolledtext.ScrolledText(
-            outer,
-            height=15,
+            log_card,
+            height=9,
             wrap="word",
             state="disabled",
             font=("Consolas", 9),
+            background=LOG_BACKGROUND,
+            foreground=LOG_TEXT,
+            insertbackground="#FFFFFF",
+            selectbackground=PRIMARY,
+            borderwidth=0,
+            relief="flat",
+            padx=12,
+            pady=10,
         )
-        self.log.pack(fill="both", expand=True)
+        self.log.grid(row=1, column=0, columnspan=2, sticky="nsew")
         self.input_entry.focus_set()
 
     def _paste(self) -> None:
@@ -298,16 +546,20 @@ class LocalizerWindow:
             self.input_value.set(path)
 
     def _update_translation_fields(self) -> None:
-        download_only = SUBTITLE_MODES[self.subtitle_label.get()] == "download_only"
+        subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
+        provider = TRANSLATION_MODES[self.translation_label.get()]
+        download_only = subtitle_mode == "download_only"
         selection_state = "disabled" if download_only else "readonly"
         self.direction_combo.configure(state=selection_state)
         self.font_combo.configure(state=selection_state)
         self.translation_combo.configure(state=selection_state)
         self.start_button.configure(text="开始下载" if download_only else "开始本地化")
-        automatic = (
-            not download_only
-            and TRANSLATION_MODES[self.translation_label.get()] == "openai-compatible"
-        )
+        self.mode_hint.set(mode_description(subtitle_mode, provider))
+        automatic = not download_only and provider == "openai-compatible"
+        if automatic:
+            self.api_frame.grid()
+        else:
+            self.api_frame.grid_remove()
         state = "normal" if automatic else "disabled"
         for entry in (self.endpoint_entry, self.model_entry, self.key_entry):
             entry.configure(state=state)
@@ -349,7 +601,9 @@ class LocalizerWindow:
 
         self._clear_log()
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
-        self._append_log("正在启动本地化处理……\n")
+        self._append_log(
+            "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"
+        )
         if provider == "download_only":
             self._append_log(
                 "当前为无字幕直接下载：只下载并合并最高画质视频和最高质量音频，"
@@ -378,7 +632,9 @@ class LocalizerWindow:
         else:
             target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
             self._append_log(f"当前为自动模式：完成翻译后会继续压制{target_name}字幕。\n\n")
-        self.status.set("正在处理，请保持窗口打开")
+        self._set_status("正在处理，请保持窗口打开", "active")
+        self.progress.configure(mode="indeterminate", value=0)
+        self.progress.start(10)
         self.stop_requested = False
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
@@ -430,7 +686,7 @@ class LocalizerWindow:
         ):
             return
         self.stop_requested = True
-        self.status.set("正在停止……")
+        self._set_status("正在停止……")
         terminate_process_tree(process)
 
     def _poll_events(self) -> None:
@@ -450,24 +706,29 @@ class LocalizerWindow:
         self.root.after(100, self._poll_events)
 
     def _finish(self, return_code: int, provider: str) -> None:
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
         self.start_button.configure(state="normal")
         self.stop_button.configure(state="disabled")
         self.process = None
         if self.stop_requested:
             self.stop_requested = False
-            self.status.set("任务已停止，下次可以继续处理")
+            self.progress.configure(value=0)
+            self._set_status("任务已停止，下次可以继续处理")
             self._append_log("\n任务已停止；已完成的阶段会保留。\n")
             return
         if return_code != 0:
-            self.status.set("处理失败，请查看上方日志")
+            self.progress.configure(value=0)
+            self._set_status("处理失败，请查看上方日志", "error")
             messagebox.showerror(
                 "处理未完成",
                 "任务没有完成。窗口日志和 output 项目内的 logs 文件夹包含详细原因。",
                 parent=self.root,
             )
             return
+        self.progress.configure(value=100)
         if provider == "download_only":
-            self.status.set("原视频下载完成，没有生成字幕")
+            self._set_status("原视频下载完成，没有生成字幕", "success")
             messagebox.showinfo(
                 "下载完成",
                 "最高画质原视频已经保存到 output 项目的 source 文件夹。",
@@ -476,7 +737,7 @@ class LocalizerWindow:
         elif provider == "manual":
             source_name = "中文" if self.active_direction == "zh-to-en" else "英文"
             target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
-            self.status.set(f"下载和{source_name}字幕已完成，等待人工翻译")
+            self._set_status(f"下载和{source_name}字幕已完成，等待人工翻译", "success")
             messagebox.showinfo(
                 "第一阶段完成",
                 f"视频和{source_name}字幕已经准备好。请在 output 项目的 "
@@ -491,12 +752,22 @@ class LocalizerWindow:
                 if self.active_direction == "zh-to-en"
                 else "chinese_hardsub.mp4"
             )
-            self.status.set(f"本地化完成，{target_name}字幕视频已生成")
+            self._set_status(f"本地化完成，{target_name}字幕视频已生成", "success")
             messagebox.showinfo(
                 "本地化完成",
                 f"最终视频位于 output 项目的 rendered\\{output_name}。",
                 parent=self.root,
             )
+
+    def _set_status(self, message: str, tone: str = "muted") -> None:
+        colors = {
+            "muted": MUTED,
+            "active": PRIMARY,
+            "success": SUCCESS,
+            "error": DANGER,
+        }
+        self.status.set(message)
+        self.status_dot.configure(foreground=colors.get(tone, MUTED))
 
     def _append_log(self, text: str) -> None:
         self.log.configure(state="normal")

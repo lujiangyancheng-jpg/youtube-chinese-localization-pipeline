@@ -16,6 +16,12 @@ $Fonts = Join-Path $Root "fonts"
 $RequiredFiles = @(
     $Python
     $Ollama
+    (Join-Path $Root "runtime\python\_tkinter.pyd")
+    (Join-Path $Root "runtime\python\tcl86t.dll")
+    (Join-Path $Root "runtime\python\tk86t.dll")
+    (Join-Path $Root "runtime\python\zlib1.dll")
+    (Join-Path $Root "runtime\python\Lib\tkinter\__init__.py")
+    (Join-Path $Root "runtime\python\tcl\tk8.6\tk.tcl")
     (Join-Path $Models "faster-whisper-medium\model.bin")
     (Join-Path $Fonts "NotoSansCJKsc-Regular.otf")
     (Join-Path $Fonts "NotoSerifCJKsc-Regular.otf")
@@ -33,6 +39,9 @@ $env:YOUTUBE_LOCALIZER_FONTS = $Fonts
 $env:FFMPEG_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe"
 $env:FFPROBE_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffprobe.exe"
 $env:OLLAMA_PATH = $Ollama
+
+& $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update_idletasks(); assert root.title().startswith('Localize Studio'); assert window.mode_hint.get(); root.destroy(); print('installed desktop interface: ok')"
+if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }
 
 & $Python -c "from pathlib import Path; from youtube_localizer.resources import bundled_fonts_directory, resolve_whisper_model; from youtube_localizer.translation.offline import validate_offline_model; p,local=resolve_whisper_model('medium'); assert local; assert bundled_fonts_directory() == Path(r'$Fonts').resolve(); assert validate_offline_model(Path(r'$Models')/'translate-en_zh-1_9'); assert validate_offline_model(Path(r'$Models')/'translate-zh_en-1_9', source_code='zh', target_code='en'); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('installed offline models and fonts: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed model loading failed." }

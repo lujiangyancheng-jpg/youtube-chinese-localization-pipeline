@@ -104,7 +104,9 @@ offline` for a no-API end-to-end run. The desktop interface defaults to offline 
 ## Windows paste-a-link desktop interface
 
 After completing the Windows installation above, double-click `Start Localizer.cmd` in the
-project folder. You can then:
+project folder. The refreshed card-based interface keeps the input and primary action prominent,
+groups output settings in two columns, reveals API fields only when required, and shows a live
+status indicator, progress bar, and dark run log. You can then:
 
 1. paste an authorized public YouTube URL (or select a local video);
 2. choose **English → Simplified Chinese** or **Simplified Chinese → English**;

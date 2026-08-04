@@ -1,8 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.3.2",
+    [string]$Version = "0.4.0",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
+    [string]$PythonInstallerSha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB",
+    [string]$WixArchiveSha256 = "6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31",
     [string]$WhisperModel = "medium",
     [string]$WhisperRevision = "08e178d48790749d25932bbc082711ddcfdfbc4f",
     [string]$OllamaVersion = "v0.32.5",
@@ -93,7 +95,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Launch Localizer.cmd") -Destina
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "YouTube Localizer CLI.cmd") -Destination $StageRoot
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "THIRD_PARTY_MODELS.md") -Destination $LicenseRoot
 
-Write-Host "[2/9] Installing the embedded Python runtime and application dependencies..."
+Write-Host "[2/9] Installing the embedded Python/Tk runtime and application dependencies..."
 $PythonArchive = Join-Path $CacheRoot "python-$PythonVersion-embed-amd64.zip"
 Download-File "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-embed-amd64.zip" $PythonArchive
 if ((Get-FileHash -Algorithm SHA256 -LiteralPath $PythonArchive).Hash -ne $PythonArchiveSha256) {
@@ -107,12 +109,60 @@ $PthFile = Join-Path $PythonRoot "python$PythonMinor._pth"
 @(
     "python$PythonMinor.zip"
     "."
+    "Lib"
     "Lib\site-packages"
     "import site"
 ) | Set-Content -LiteralPath $PthFile -Encoding ascii
+
+# The official embeddable distribution omits tkinter and Tcl/Tk. Extract the matching,
+# signed CPython installer payload without installing it on the build machine, then add only
+# the GUI runtime files to the portable Python directory.
+$PythonInstaller = Join-Path $CacheRoot "python-$PythonVersion-amd64.exe"
+Download-VerifiedFile `
+    "https://www.python.org/ftp/python/$PythonVersion/python-$PythonVersion-amd64.exe" `
+    $PythonInstaller `
+    $PythonInstallerSha256
+$WixArchive = Join-Path $CacheRoot "wix314-binaries.zip"
+Download-VerifiedFile `
+    "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip" `
+    $WixArchive `
+    $WixArchiveSha256
+$WixToolsRoot = Join-Path $BuildRoot "wix-tools"
+$PythonBundleRoot = Join-Path $BuildRoot "python-bundle"
+$PythonMsiRoot = Join-Path $BuildRoot "python-msi"
+Reset-GeneratedDirectory $WixToolsRoot
+Reset-GeneratedDirectory $PythonBundleRoot
+Reset-GeneratedDirectory $PythonMsiRoot
+Expand-Archive -LiteralPath $WixArchive -DestinationPath $WixToolsRoot -Force
+$Dark = Join-Path $WixToolsRoot "dark.exe"
+& $Dark -nologo -x $PythonBundleRoot $PythonInstaller
+if ($LASTEXITCODE -ne 0) { throw "Could not extract the CPython installer payload." }
+$AttachedContainer = Join-Path $PythonBundleRoot "AttachedContainer"
+foreach ($msiName in @("tcltk.msi", "lib.msi")) {
+    $msiPath = Join-Path $AttachedContainer $msiName
+    if (-not (Test-Path -LiteralPath $msiPath -PathType Leaf)) {
+        throw "The CPython installer payload is missing $msiName."
+    }
+    $arguments = "/a `"$msiPath`" /qn TARGETDIR=`"$PythonMsiRoot`""
+    $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $arguments `
+        -Wait -PassThru -WindowStyle Hidden
+    if ($process.ExitCode -ne 0) {
+        throw "Could not extract $msiName (exit code $($process.ExitCode))."
+    }
+}
+foreach ($runtimeFile in @("_tkinter.pyd", "tcl86t.dll", "tk86t.dll", "zlib1.dll")) {
+    Copy-Item -LiteralPath (Join-Path $PythonMsiRoot "DLLs\$runtimeFile") `
+        -Destination $PythonRoot -Force
+}
+New-Item -ItemType Directory -Path (Join-Path $PythonRoot "Lib") -Force | Out-Null
+Copy-RequiredDirectory (Join-Path $PythonMsiRoot "Lib\tkinter") (Join-Path $PythonRoot "Lib\tkinter")
+Copy-RequiredDirectory (Join-Path $PythonMsiRoot "tcl") (Join-Path $PythonRoot "tcl")
+
 $GetPip = Join-Path $CacheRoot "get-pip.py"
 Download-File "https://bootstrap.pypa.io/get-pip.py" $GetPip
 $EmbeddedPython = Join-Path $PythonRoot "python.exe"
+& $EmbeddedPython -c "import tkinter as tk; root=tk.Tk(); root.withdraw(); root.update_idletasks(); root.destroy(); print('embedded tkinter: ok')"
+if ($LASTEXITCODE -ne 0) { throw "The embedded Python tkinter runtime is incomplete." }
 & $EmbeddedPython $GetPip --no-warn-script-location --disable-pip-version-check
 if ($LASTEXITCODE -ne 0) { throw "Could not bootstrap pip in the embedded Python runtime." }
 Push-Location $ProjectRoot
@@ -252,6 +302,8 @@ if (-not $SkipSmokeTest) {
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
         & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable; p,local=resolve_whisper_model('$WhisperModel'); assert local; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('offline runtime smoke test: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
+        & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update_idletasks(); assert root.title().startswith('Localize Studio'); assert window.mode_hint.get(); root.destroy(); print('staged desktop interface: ok')"
+        if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }
         & $EmbeddedPython (Join-Path $AppRoot "main.py") --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Staged CLI smoke test failed." }
     } finally {
