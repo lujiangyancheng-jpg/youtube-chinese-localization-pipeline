@@ -22,7 +22,7 @@ transcription:
 
 translation:
   direction: en-to-zh  # en-to-zh or zh-to-en
-  provider: manual  # manual, offline, or openai-compatible
+  provider: manual  # manual, offline, ollama, or openai-compatible
   model: ""
   endpoint: ""
   batch_size: 40
@@ -35,6 +35,11 @@ translation:
   offline_device: auto  # auto uses reliable CPU; set cuda only with a complete CUDA runtime
   offline_compute_type: auto
   offline_auto_download: true
+  # Higher-quality paragraph translation through a model running only on this computer.
+  ollama_endpoint: http://localhost:11434
+  ollama_model: qwen3:4b
+  ollama_auto_pull: true
+  ollama_timeout_seconds: 600
 
 subtitles:
   format: ass

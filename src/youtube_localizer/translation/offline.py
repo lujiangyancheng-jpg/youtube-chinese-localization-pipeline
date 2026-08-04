@@ -30,6 +30,8 @@ MODEL_REQUIRED_PATHS = (
 )
 EN_SENTENCE_END_RE = re.compile(r"[.!?](?:[\"')\]]+)?$")
 ZH_SENTENCE_END_RE = re.compile(r"[。！？!?](?:[\"”’）》\]]+)?$")
+EN_SENTENCE_MARK_RE = re.compile(r"[.!?]")
+ZH_SENTENCE_MARK_RE = re.compile(r"[。！？!?]")
 
 
 def _replace_term(text: str, source: str, target: str) -> str:
@@ -93,6 +95,61 @@ def group_sentence_cues(
     return groups
 
 
+def group_paragraph_cues(
+    cues: list[SubtitleCue],
+    *,
+    source_code: str,
+    max_cues: int = 20,
+    max_characters: int = 1000,
+    max_gap_ms: int = 1800,
+    max_duration_ms: int = 50_000,
+    target_sentences: int = 4,
+    minimum_duration_ms: int = 15_000,
+) -> list[list[SubtitleCue]]:
+    """Group rolling captions into paragraph-sized translation units.
+
+    Automatic captions often split one spoken sentence across many two-second cues. A soft
+    boundary waits for several complete sentences and enough spoken time; hard limits prevent
+    an unpunctuated transcript from exceeding the compact model's useful context window.
+    """
+    groups: list[list[SubtitleCue]] = []
+    current: list[SubtitleCue] = []
+    character_count = 0
+    sentence_count = 0
+    end_pattern = ZH_SENTENCE_END_RE if source_code == "zh" else EN_SENTENCE_END_RE
+    mark_pattern = ZH_SENTENCE_MARK_RE if source_code == "zh" else EN_SENTENCE_MARK_RE
+
+    def flush() -> None:
+        nonlocal current, character_count, sentence_count
+        if current:
+            groups.append(current)
+        current = []
+        character_count = 0
+        sentence_count = 0
+
+    for cue in cues:
+        if current and cue.start_ms - current[-1].end_ms > max_gap_ms:
+            flush()
+        current.append(cue)
+        character_count += len(cue.text)
+        sentence_count += len(mark_pattern.findall(cue.text))
+        duration = current[-1].end_ms - current[0].start_ms
+        soft_boundary = (
+            duration >= minimum_duration_ms
+            and sentence_count >= target_sentences
+            and end_pattern.search(cue.text.strip()) is not None
+        )
+        hard_boundary = (
+            len(current) >= max_cues
+            or character_count >= max_characters
+            or duration >= max_duration_ms
+        )
+        if soft_boundary or hard_boundary:
+            flush()
+    flush()
+    return groups
+
+
 def _target_units(text: str, target_code: str) -> list[str]:
     if target_code == "en":
         return re.findall(r"\S+", text)
@@ -141,6 +198,107 @@ def split_group_translation(
         for start, end in pairwise(boundaries)
     ]
     return parts if all(parts) else None
+
+
+def segment_translated_paragraph(
+    text: str,
+    *,
+    target_code: str,
+    max_characters: int,
+) -> list[str]:
+    """Split a complete translation at semantic punctuation, not source cue boundaries."""
+    normalized = " ".join(text.split()) if target_code == "en" else "".join(text.split())
+    if not normalized:
+        return []
+    if target_code == "zh":
+        sentences = re.findall(r"[^。！？!?]+[。！？!?]*", normalized)
+        break_characters = "，,；;：:、"
+    else:
+        sentences = re.findall(r".+?(?:[.!?]+(?=\s|$)|$)", normalized)
+        break_characters = ",;: "
+
+    segments: list[str] = []
+    for sentence in (value.strip() for value in sentences if value.strip()):
+        sentence_segment_start = len(segments)
+        remaining = sentence
+        while len(remaining) > max_characters:
+            candidates = [
+                index + 1
+                for index, character in enumerate(remaining[: max_characters + 1])
+                if character in break_characters and index + 1 >= max_characters // 2
+            ]
+            boundary = candidates[-1] if candidates else max_characters
+            segment = remaining[:boundary].strip()
+            if segment:
+                segments.append(segment)
+            remaining = remaining[boundary:].strip()
+        if remaining:
+            punctuation = "。！？!?，,；;：:、."
+            can_merge_short_tail = (
+                len(segments) > sentence_segment_start
+                and len(remaining) < max_characters // 4
+                and len(segments[-1]) + len(remaining) <= round(max_characters * 1.2)
+            )
+            if can_merge_short_tail or (
+                segments
+                and len(remaining) <= 3
+                and all(character in punctuation for character in remaining)
+            ):
+                segments[-1] += remaining
+            else:
+                segments.append(remaining)
+    return segments
+
+
+def paragraph_translation_to_cues(
+    translated_text: str,
+    source_cues: list[SubtitleCue],
+    *,
+    target_code: str,
+    first_id: int = 1,
+    max_characters: int = 40,
+) -> list[SubtitleCue]:
+    """Place natural translated phrases across a paragraph's original time range."""
+    if not source_cues:
+        return []
+    segments = segment_translated_paragraph(
+        translated_text,
+        target_code=target_code,
+        max_characters=max_characters,
+    )
+    if not segments:
+        raise LocalizerError("Local AI returned an empty paragraph translation.")
+    start_ms = source_cues[0].start_ms
+    end_ms = source_cues[-1].end_ms
+    duration = max(len(segments), end_ms - start_ms)
+    weights = [max(1, len(_target_units(segment, target_code))) for segment in segments]
+    total_weight = sum(weights)
+    boundaries = [start_ms]
+    minimum_duration = min(900, duration // len(segments))
+    weighted_duration = max(0, duration - minimum_duration * len(segments))
+    consumed_weight = 0
+    for index, weight in enumerate(weights[:-1], start=1):
+        consumed_weight += weight
+        boundary = (
+            start_ms
+            + minimum_duration * index
+            + round(weighted_duration * consumed_weight / total_weight)
+        )
+        boundary = max(boundaries[-1] + 1, boundary)
+        boundary = min(boundary, end_ms - (len(segments) - index))
+        boundaries.append(boundary)
+    boundaries.append(end_ms)
+    return [
+        SubtitleCue(
+            id=first_id + index,
+            start_ms=segment_start,
+            end_ms=segment_end,
+            text=segment,
+        )
+        for index, (segment, (segment_start, segment_end)) in enumerate(
+            zip(segments, pairwise(boundaries), strict=True)
+        )
+    ]
 
 
 def select_offline_translation_device(requested_device: str) -> str:
@@ -423,7 +581,7 @@ class LocalOfflineProvider(TranslationProvider):
     ) -> list[SubtitleCue]:
         original_texts = [cue.text for cue in cues]
         payload = {
-            "provider": "offline-argos-opus-context-v2",
+            "provider": "offline-argos-opus-paragraph-v3",
             "source_code": self.source_code,
             "target_code": self.target_code,
             "model_version": self.metadata.get("package_version", "unknown"),
@@ -495,7 +653,7 @@ def translate_cues_contextually(
     target_code: str,
     batch_size: int,
 ) -> list[SubtitleCue]:
-    groups = group_sentence_cues(cues, source_code=source_code)
+    groups = group_paragraph_cues(cues, source_code=source_code)
     translated_by_id: dict[int, SubtitleCue] = {}
     separator = "" if source_code == "zh" else " "
     grouped_context = TranslationContext(
@@ -524,7 +682,7 @@ def translate_cues_contextually(
             for group in group_batch
         ]
         LOGGER.info(
-            "Offline translating contextual subtitle batch %s/%s…",
+            "Offline translating paragraph batch %s/%s…",
             offset // batch_size + 1,
             (len(groups) + batch_size - 1) // batch_size,
         )

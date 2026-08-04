@@ -151,6 +151,19 @@ def run_doctor(
             False,
         )
     )
+    ollama_path = resolve_executable("ollama")
+    if not ollama_path and os.name == "nt" and (local_app_data := os.getenv("LOCALAPPDATA")):
+        installed_ollama = Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe"
+        if installed_ollama.is_file():
+            ollama_path = str(installed_ollama)
+    checks.append(
+        DoctorCheck(
+            "Local AI paragraph translation",
+            "ok" if ollama_path else "optional",
+            ollama_path or "install with: winget install Ollama.Ollama",
+            False,
+        )
+    )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
     checks.append(
         DoctorCheck(
@@ -164,13 +177,13 @@ def run_doctor(
     checks.append(
         DoctorCheck(
             "Translation configuration",
-            "ok" if api_key or model_ready or zh_en_model_ready else "optional",
+            "ok" if api_key or model_ready or zh_en_model_ready or ollama_path else "optional",
             (
                 "API key detected"
                 if api_key
                 else (
-                    "offline translation ready; API is optional"
-                    if model_ready or zh_en_model_ready
+                    "local translation ready; a cloud API is optional"
+                    if model_ready or zh_en_model_ready or ollama_path
                     else "manual export/import available; ChatGPT Plus does not include API credits"
                 )
             ),

@@ -164,8 +164,9 @@ output\项目名称\rendered\english_hardsub.mp4
 翻译方式说明：
 
 - “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
-- “本地离线翻译并压制”不需要 API，会按所选方向在本机完成英译中或中译英并继续压制视频。每个方向首次使用时会下载对应模型，之后可以离线运行。
-- 离线翻译会先合并同一句中的连续字幕碎片，再按原时间轴拆回，并强制应用 `glossary.yaml` 中的术语。
+- “本地快速翻译并压制”不需要 API，会使用约 85 MB 的轻量模型在本机完成翻译。它现在会先合并完整段落再翻译，适合速度优先或配置较低的电脑。
+- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。它使用本机 Ollama 和 `qwen3:4b`，先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕。模型首次下载约 2.5 GB，之后可以断网运行，字幕文本只发送到本机 `localhost`。
+- 两种本地翻译都会应用 `glossary.yaml` 中的术语。
 - “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
@@ -314,6 +315,16 @@ python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
   --translation-provider offline --prefer-youtube-chinese
 ```
 
+更自然的本地 AI 段落翻译（不需要云端 API 或 API Key）：
+
+```powershell
+winget install Ollama.Ollama
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
+  --translation-provider ollama --prefer-youtube-chinese
+```
+
+Ollama 安装后会在本机 `http://localhost:11434` 运行。第一次选择该模式时，软件会自动下载 `qwen3:4b`；之后不联网也能翻译。程序只把视频标题作为理解语境，模型只输出字幕正文，不会把标题或翻译说明混入字幕。
+
 把已获授权的中文视频本地化为英文：
 
 ```powershell
@@ -451,9 +462,12 @@ transcription:
 
 translation:
   direction: en-to-zh  # en-to-zh 或 zh-to-en
-  provider: offline
+  provider: ollama  # 推荐高质量本地模式；offline 为轻量快速模式
   batch_size: 40
   offline_device: auto  # 自动模式稳定使用 CPU；CUDA 需明确选择
+  ollama_endpoint: http://localhost:11434
+  ollama_model: qwen3:4b
+  ollama_auto_pull: true
 
 download:
   # 最高源画质：依次优先分辨率、帧率、码率和文件大小。

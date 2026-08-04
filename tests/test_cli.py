@@ -27,6 +27,13 @@ def test_cli_configuration_supports_offline_and_youtube_chinese() -> None:
     assert config.download.prefer_youtube_chinese is True
 
 
+def test_cli_configuration_supports_local_ai_without_api_key() -> None:
+    config = _configured(None, translation_provider="ollama")
+
+    assert config.translation.provider == "ollama"
+    assert config.translation.ollama_endpoint == "http://localhost:11434"
+
+
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:
     with pytest.raises(InputValidationError, match="transalte"):
         process_pipeline("missing.mp4", AppConfig(), force_steps={"transalte"})

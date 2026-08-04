@@ -37,7 +37,7 @@ class TranscriptionConfig(StrictModel):
 
 class TranslationConfig(StrictModel):
     direction: Literal["en-to-zh", "zh-to-en"] = "en-to-zh"
-    provider: Literal["manual", "offline", "openai-compatible"] = "manual"
+    provider: Literal["manual", "offline", "ollama", "openai-compatible"] = "manual"
     model: str = ""
     endpoint: str = ""
     batch_size: int = Field(default=40, ge=1, le=200)
@@ -58,6 +58,10 @@ class TranslationConfig(StrictModel):
     offline_device: Literal["auto", "cpu", "cuda"] = "auto"
     offline_compute_type: str = "auto"
     offline_auto_download: bool = True
+    ollama_endpoint: str = "http://localhost:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_auto_pull: bool = True
+    ollama_timeout_seconds: int = Field(default=600, ge=30, le=3600)
 
 
 class SubtitleConfig(StrictModel):

@@ -124,15 +124,20 @@ frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitl
 project dependency set includes Deno and `yt-dlp-ejs`; `python main.py doctor` must report
 `yt-dlp JavaScript support: ok` so YouTube's complete format list can be discovered.
 
-The desktop interface offers three translation modes:
+The desktop interface offers four translation modes:
 
 - **Free/manual mode** downloads the video, obtains or transcribes source-language subtitles, and
   exports translation chunks. You translate and import those chunks before rendering.
-- **Local offline mode** translates in the selected direction on this computer and continues
+- **Local fast mode** translates in the selected direction on this computer and continues
   through hard-subtitle rendering without an API. Each direction downloads its model on first
-  use; later runs work offline and reuse cached translations. Consecutive caption fragments are
-  translated as sentence groups and mapped back to their original timestamps; configured glossary
-  terms are enforced in the target text.
+  use; later runs work offline and reuse cached translations. Rolling caption fragments are grouped
+  into complete paragraphs before translation; configured glossary terms are enforced.
+- **Local AI paragraph mode** uses `qwen3:4b` through Ollama on `localhost`. It needs no API key,
+  sends no subtitle text to a cloud service, and can work without internet after the first model
+  download. The model translates a complete spoken paragraph first; the application then segments
+  the natural target paragraph at target-language punctuation and maps it across the source time
+  range. Install once with `winget install Ollama.Ollama`; the model is pulled automatically on
+  first use.
 - **API automatic mode** continues through target-language translation and hard-subtitle
   rendering. It requires an OpenAI-compatible endpoint, model name, and API key. Values
   entered in the window are passed to the processing run. The API key is never saved;
@@ -154,6 +159,10 @@ python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
 
 python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
   --translation-direction zh-to-en --translation-provider offline
+
+# Higher-quality local paragraph translation; no cloud API or API key.
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
+  --translation-provider ollama --prefer-youtube-chinese
 ```
 
 The offline models are stored under
@@ -270,9 +279,11 @@ transcription:
 
 translation:
   direction: en-to-zh   # en-to-zh or zh-to-en
-  provider: offline     # manual, offline, or openai-compatible
+  provider: ollama      # manual, offline, ollama, or openai-compatible
   batch_size: 40
   offline_device: auto  # auto uses reliable CPU; cuda must be selected explicitly
+  ollama_endpoint: http://localhost:11434
+  ollama_model: qwen3:4b
 
 download:
   format: bestvideo+bestaudio/best
@@ -465,9 +476,9 @@ exact matching project.
 
 - Public YouTube extraction depends on the current `yt-dlp` release and YouTube behavior.
 - Phase 1 does not authenticate to YouTube or bypass restrictions.
-- Translation quality and name choices require human review, especially for niche proper
-  nouns and humor. The compact local offline model is generally less fluent than a strong
-  cloud language model.
+- Translation quality and name choices require human review, especially for niche proper nouns
+  and humor. Local AI paragraph mode is more fluent than the compact fast model but still cannot
+  recover names that were seriously corrupted by automatic speech recognition.
 - Publishing drafts are conservative and deliberately mark titles/license text for review.
 - No automatic upload is implemented.
 - No automatic advanced subtitle retiming is performed.

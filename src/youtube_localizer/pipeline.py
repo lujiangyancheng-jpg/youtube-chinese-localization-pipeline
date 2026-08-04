@@ -36,7 +36,13 @@ from .translation.base import TranslationContext
 from .translation.cache import TranslationCache
 from .translation.glossary import load_glossary
 from .translation.manual import ManualExportProvider
-from .translation.offline import LocalOfflineProvider, translate_cues_contextually
+from .translation.offline import (
+    LocalOfflineProvider,
+    group_paragraph_cues,
+    paragraph_translation_to_cues,
+    translate_cues_contextually,
+)
+from .translation.ollama_local import LocalOllamaProvider
 from .translation.openai_compatible import OpenAICompatibleProvider
 from .utils.files import (
     atomic_write_json,
@@ -235,8 +241,6 @@ def _write_localized_subtitles(
     chinese: list[SubtitleCue],
     config: AppConfig,
     metadata: SourceMetadata | None = None,
-    *,
-    align_independent_tracks: bool = False,
 ) -> tuple[list[Path], list[str]]:
     video_size = _video_size(metadata)
     if config.translation.direction == "zh-to-en":
@@ -250,10 +254,10 @@ def _write_localized_subtitles(
         )
         outputs = [project.english_srt, project.english_ass]
         if config.subtitle_mode != "chinese":
-            bilingual_english, bilingual_chinese = (
-                align_bilingual_tracks(english, chinese, reference_language="en")
-                if align_independent_tracks
-                else (english, chinese)
+            bilingual_english, bilingual_chinese = align_bilingual_tracks(
+                english,
+                chinese,
+                reference_language="en",
             )
             bilingual = combine_bilingual(
                 bilingual_english, bilingual_chinese, mode=config.subtitle_mode
@@ -280,10 +284,10 @@ def _write_localized_subtitles(
     write_ass(chinese_ass, readable, config.subtitles, video_size=video_size)
     outputs = [project.chinese_srt, chinese_ass]
     if config.subtitle_mode != "chinese":
-        bilingual_english, bilingual_chinese = (
-            align_bilingual_tracks(english, readable, reference_language="zh")
-            if align_independent_tracks
-            else (english, readable)
+        bilingual_english, bilingual_chinese = align_bilingual_tracks(
+            english,
+            readable,
+            reference_language="zh",
         )
         bilingual = combine_bilingual(
             bilingual_english, bilingual_chinese, mode=config.subtitle_mode
@@ -407,6 +411,53 @@ def translate_with_offline(
         target_code=target_code,
         batch_size=batch_size,
     )
+    english = source_cues if source_code == "en" else translated
+    chinese = source_cues if source_code == "zh" else translated
+    return _write_localized_subtitles(project, english, chinese, config, metadata)
+
+
+def translate_with_local_ai(
+    project: ProjectPaths,
+    config: AppConfig,
+    metadata: SourceMetadata | None = None,
+) -> tuple[list[Path], list[str]]:
+    metadata = metadata or load_project_metadata(project)
+    source_code, target_code = _language_pair(config)
+    source_cues = parse_subtitle(_source_subtitle(project, config))
+    glossary_path = Path(config.translation.glossary_file)
+    if not glossary_path.is_absolute():
+        candidates = [project.root / glossary_path, Path.cwd() / glossary_path]
+        glossary_path = next((path for path in candidates if path.is_file()), candidates[0])
+    context = _translation_context(metadata, load_glossary(glossary_path))
+    provider = LocalOllamaProvider(
+        endpoint=config.translation.ollama_endpoint,
+        model=config.translation.ollama_model,
+        auto_pull=config.translation.ollama_auto_pull,
+        cache=TranslationCache(project.temp / "translation_cache"),
+        source_code=source_code,
+        target_code=target_code,
+        timeout=config.translation.ollama_timeout_seconds,
+    )
+    paragraphs = group_paragraph_cues(source_cues, source_code=source_code)
+    translated: list[SubtitleCue] = []
+    next_id = 1
+    max_characters = (
+        config.subtitles.max_chinese_chars_per_line * config.subtitles.max_lines
+        if target_code == "zh"
+        else 84
+    )
+    for index, paragraph in enumerate(paragraphs, start=1):
+        LOGGER.info("Local AI translating paragraph %s/%s…", index, len(paragraphs))
+        paragraph_translation = provider.translate_paragraph(paragraph, context)
+        paragraph_cues = paragraph_translation_to_cues(
+            paragraph_translation,
+            paragraph,
+            target_code=target_code,
+            first_id=next_id,
+            max_characters=max_characters,
+        )
+        translated.extend(paragraph_cues)
+        next_id += len(paragraph_cues)
     english = source_cues if source_code == "en" else translated
     chinese = source_cues if source_code == "zh" else translated
     return _write_localized_subtitles(project, english, chinese, config, metadata)
@@ -861,6 +912,10 @@ def process_pipeline(
                     translated_outputs, translation_warnings = translate_with_offline(
                         project, config, metadata
                     )
+                elif config.translation.provider == "ollama":
+                    translated_outputs, translation_warnings = translate_with_local_ai(
+                        project, config, metadata
+                    )
                 else:
                     translated_outputs, translation_warnings = translate_with_api(
                         project, config, metadata
@@ -874,7 +929,6 @@ def process_pipeline(
             parse_subtitle(project.chinese_srt),
             config,
             metadata,
-            align_independent_tracks=provided_chinese_is_target,
         )
         outputs.extend(localized_outputs)
         remember_warnings(localized_warnings)

@@ -22,6 +22,8 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     assert config.translation.direction == "en-to-zh"
     assert config.translation.offline_zh_en_model_directory.name == "translate-zh_en-1_9"
     assert config.translation.offline_device == "auto"
+    assert config.translation.ollama_model == "qwen3:4b"
+    assert config.translation.ollama_endpoint == "http://localhost:11434"
 
 
 def test_configuration_rejects_unknown_fields(tmp_path) -> None:

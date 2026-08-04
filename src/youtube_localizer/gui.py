@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
@@ -23,9 +24,20 @@ TRANSLATION_DIRECTIONS = {
 }
 TRANSLATION_MODES = {
     "免费模式（处理到人工翻译）": "manual",
-    "本地离线翻译并压制（无需 API）": "offline",
+    "本地快速翻译并压制（无需 API）": "offline",
+    "本地 AI 段落翻译并压制（高质量，无 API Key）": "ollama",
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
 }
+
+
+def local_ai_available() -> bool:
+    if shutil.which("ollama"):
+        return True
+    local_app_data = os.getenv("LOCALAPPDATA")
+    return bool(
+        local_app_data
+        and (Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe").is_file()
+    )
 
 
 def build_process_command(
@@ -110,7 +122,11 @@ class LocalizerWindow:
         self.active_direction = "en-to-zh"
 
         endpoint, model, api_key = api_configuration(os.environ)
-        default_translation = "本地离线翻译并压制（无需 API）"
+        default_translation = (
+            "本地 AI 段落翻译并压制（高质量，无 API Key）"
+            if local_ai_available()
+            else "本地快速翻译并压制（无需 API）"
+        )
 
         self.input_value = tk.StringVar()
         self.direction_label = tk.StringVar(value="英文 → 简体中文")
@@ -327,6 +343,12 @@ class LocalizerWindow:
                 self._append_log(
                     "当前为英文转中文离线模式：优先使用 YouTube 中文字幕；如需翻译，首次会下载英译中模型。\n\n"
                 )
+        elif provider == "ollama":
+            target_name = "英文" if self.active_direction == "zh-to-en" else "简体中文"
+            self._append_log(
+                f"当前为本地 AI 段落翻译：会先理解完整段落，再自然翻译成{target_name}。"
+                "不需要 API Key；首次使用会下载本地模型。\n\n"
+            )
         else:
             target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
             self._append_log(f"当前为自动模式：完成翻译后会继续压制{target_name}字幕。\n\n")

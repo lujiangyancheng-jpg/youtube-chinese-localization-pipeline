@@ -31,6 +31,7 @@ from .pipeline import (
     rendered_output,
     save_project_config,
     translate_with_api,
+    translate_with_local_ai,
     translate_with_offline,
 )
 from .publishing.metadata_generator import generate_publishing_assets
@@ -91,9 +92,9 @@ def _configured(
         changes["subtitle_mode"] = subtitle_mode
     translation_changes: dict[str, str] = {}
     if translation_provider:
-        if translation_provider not in {"manual", "offline", "openai-compatible"}:
+        if translation_provider not in {"manual", "offline", "ollama", "openai-compatible"}:
             raise LocalizerError(
-                "--translation-provider must be manual, offline, or openai-compatible."
+                "--translation-provider must be manual, offline, ollama, or openai-compatible."
             )
         translation_changes["provider"] = translation_provider
     if translation_direction:
@@ -127,7 +128,7 @@ def process_command(
         str | None,
         typer.Option(
             "--translation-provider",
-            help="manual, offline, or openai-compatible.",
+            help="manual, offline, ollama, or openai-compatible.",
         ),
     ] = None,
     translation_direction: Annotated[
@@ -398,15 +399,18 @@ def translate_command(
     project_path: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
     config_path: ConfigOption = None,
     provider: Annotated[
-        str | None, typer.Option("--provider", help="manual, offline, or openai-compatible.")
+        str | None,
+        typer.Option("--provider", help="manual, offline, ollama, or openai-compatible."),
     ] = None,
 ) -> None:
     """Export manual chunks or run configured OpenAI-compatible translation."""
     project = _project(project_path)
     config = load_config(config_path) if config_path else load_project_config(project)
     if provider:
-        if provider not in {"manual", "offline", "openai-compatible"}:
-            raise LocalizerError("--provider must be manual, offline, or openai-compatible.")
+        if provider not in {"manual", "offline", "ollama", "openai-compatible"}:
+            raise LocalizerError(
+                "--provider must be manual, offline, ollama, or openai-compatible."
+            )
         config = config.model_copy(
             update={"translation": config.translation.model_copy(update={"provider": provider})}
         )
@@ -422,6 +426,8 @@ def translate_command(
     ) as step_outputs:
         if config.translation.provider == "offline":
             outputs, warnings = translate_with_offline(project, config)
+        elif config.translation.provider == "ollama":
+            outputs, warnings = translate_with_local_ai(project, config)
         else:
             outputs, warnings = translate_with_api(project, config)
         step_outputs.extend(outputs)

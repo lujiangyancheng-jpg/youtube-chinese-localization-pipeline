@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from youtube_localizer.gui import api_configuration, build_process_command
+from youtube_localizer.gui import api_configuration, build_process_command, local_ai_available
 
 
 def test_build_process_command_uses_argument_array_and_resume() -> None:
@@ -78,3 +78,16 @@ def test_build_process_command_supports_offline_without_youtube_chinese() -> Non
     assert command[command.index("--translation-direction") + 1] == "zh-to-en"
     assert "--no-prefer-youtube-chinese" in command
     assert "--resume" not in command
+
+
+def test_build_process_command_supports_local_ai_without_api_key() -> None:
+    command = build_process_command(
+        "https://youtu.be/abc123def45",
+        subtitle_mode="chinese",
+        translation_provider="ollama",
+        python_executable="python.exe",
+        main_script=Path("main.py"),
+    )
+
+    assert command[command.index("--translation-provider") + 1] == "ollama"
+    assert isinstance(local_ai_available(), bool)
