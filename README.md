@@ -3,7 +3,8 @@
 A production-oriented local Python application that localizes authorized English- or
 Chinese-language YouTube and local videos in either direction. Each reusable project contains
 normalized English subtitles, Simplified Chinese subtitles, optional bilingual subtitles, and
-a validated hard-subtitled MP4.
+a validated hard-subtitled MP4. A download-only mode keeps the highest-quality merged source
+video without creating or burning subtitles.
 
 The pipeline is resumable, keeps intermediate files, never uploads content, and can complete
 English↔Chinese localization without an API by using local multilingual Whisper transcription
@@ -28,6 +29,7 @@ attribution requirements, and publishing-platform rules.
 ## Phase 1 capabilities
 
 - Public YouTube metadata inspection with `yt-dlp` before download
+- Highest-quality video plus audio direct-download mode with no subtitle processing
 - Consistent local English or Chinese transcription without YouTube caption requests
 - Local video validation and safe copying
 - VTT/SRT/ASS parsing and normalized UTF-8 SRT output
@@ -264,7 +266,7 @@ Important settings:
 
 ```yaml
 output_directory: output
-subtitle_mode: chinese  # chinese, bilingual_en_zh, bilingual_zh_en
+subtitle_mode: chinese  # download_only, chinese, bilingual_en_zh, bilingual_zh_en
 
 transcription:
   model: medium
@@ -298,6 +300,15 @@ render:
 ```
 
 Each project stores `config.resolved.json` so later project commands use the same settings.
+
+To download the best available video and audio without transcription, translation, or subtitle
+rendering:
+
+```powershell
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" --subtitle-mode download_only
+```
+
+The merged original is saved in the project's `source` directory.
 
 ## Project folder
 

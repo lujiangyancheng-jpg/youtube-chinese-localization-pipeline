@@ -85,9 +85,15 @@ def _configured(
     if output_dir:
         changes["output_directory"] = output_dir
     if subtitle_mode:
-        if subtitle_mode not in {"chinese", "bilingual_en_zh", "bilingual_zh_en"}:
+        if subtitle_mode not in {
+            "download_only",
+            "chinese",
+            "bilingual_en_zh",
+            "bilingual_zh_en",
+        }:
             raise LocalizerError(
-                "--subtitle-mode must be chinese, bilingual_en_zh, or bilingual_zh_en."
+                "--subtitle-mode must be download_only, chinese, bilingual_en_zh, "
+                "or bilingual_zh_en."
             )
         changes["subtitle_mode"] = subtitle_mode
     if subtitle_font is not None:
@@ -122,7 +128,7 @@ def process_command(
         str | None,
         typer.Option(
             "--subtitle-mode",
-            help="chinese, bilingual_en_zh, or bilingual_zh_en.",
+            help="download_only, chinese, bilingual_en_zh, or bilingual_zh_en.",
         ),
     ] = None,
     translation_provider: Annotated[
@@ -197,7 +203,9 @@ def process_command(
         verbose=verbose,
     )
     console.print(f"[bold green]Project:[/] {result.project.root}")
-    if result.status == "awaiting_manual_translation":
+    if result.status == "downloaded":
+        console.print(f"[bold green]Downloaded:[/] {find_source_video(result.project)}")
+    elif result.status == "awaiting_manual_translation":
         source_code, target_code = _language_pair(config)
         console.print(
             f"[bold yellow]{source_code.upper()} source subtitles are ready.[/] Translate every "

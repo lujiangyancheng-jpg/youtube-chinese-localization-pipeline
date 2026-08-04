@@ -99,7 +99,9 @@ class PublishingConfig(StrictModel):
 class AppConfig(StrictModel):
     output_directory: Path = Path("output")
     subtitle_language: str = "zh-CN"
-    subtitle_mode: Literal["chinese", "bilingual_en_zh", "bilingual_zh_en"] = "chinese"
+    subtitle_mode: Literal[
+        "download_only", "chinese", "bilingual_en_zh", "bilingual_zh_en"
+    ] = "chinese"
     download: DownloadConfig = DownloadConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
     translation: TranslationConfig = TranslationConfig()

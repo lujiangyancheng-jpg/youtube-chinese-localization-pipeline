@@ -39,6 +39,12 @@ def test_cli_configuration_overrides_subtitle_font() -> None:
     assert config.subtitles.font == "LXGW WenKai"
 
 
+def test_cli_configuration_supports_download_only_mode() -> None:
+    config = _configured(None, subtitle_mode="download_only")
+
+    assert config.subtitle_mode == "download_only"
+
+
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:
     with pytest.raises(InputValidationError, match="transalte"):
         process_pipeline("missing.mp4", AppConfig(), force_steps={"transalte"})

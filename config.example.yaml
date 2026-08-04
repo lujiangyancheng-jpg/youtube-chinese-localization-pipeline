@@ -1,6 +1,6 @@
 output_directory: output
 subtitle_language: zh-CN
-subtitle_mode: chinese
+subtitle_mode: chinese  # download_only skips transcription, translation, and rendering
 
 download:
   # Highest-resolution video + highest-quality audio, without restricting source codecs.

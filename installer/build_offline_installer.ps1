@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.3.1",
+    [string]$Version = "0.3.2",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
     [string]$WhisperModel = "medium",

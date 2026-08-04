@@ -11,6 +11,7 @@
 输入一个公开的 YouTube 视频链接或本地视频文件，软件可以生成：
 
 - 原始视频的安全副本或公开 YouTube 视频下载文件
+- 可选“仅下载原视频（无字幕）”，直接保存最高画质与最高质量音频的合并文件
 - 规范化的英文 SRT 字幕
 - 简体中文 SRT 字幕
 - 可选的中英双语字幕
@@ -24,6 +25,7 @@
 ```mermaid
 flowchart LR
     A["公开 YouTube 链接或本地视频"] --> B["检查并导入视频"]
+    B --> J["无字幕直接下载完成"]
     B --> C["本地 faster-whisper 识别原语言"]
     C --> D["清理与合并原文字幕"]
     D --> F["本地或 API 翻译"]
@@ -54,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.3.1-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.3.2-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -150,10 +152,10 @@ Start Localizer.cmd
 打开窗口后：
 
 1. 复制并粘贴一个你有权处理的公开 YouTube 视频链接，也可以选择本地视频。
-2. 选择“英文 → 简体中文”或“简体中文 → 英文”。
-3. 选择仅目标语言字幕或中英双语字幕。
-4. 选择 Noto Sans CJK SC、Noto Serif CJK SC、霞鹜文楷或微软雅黑字幕字体。
-5. 选择翻译方式并确认授权。
+2. 如果需要字幕，选择“英文 → 简体中文”或“简体中文 → 英文”。
+3. 选择“仅下载原视频（无字幕）”、仅目标语言字幕或中英双语字幕。
+4. 如果需要字幕，选择 Noto Sans CJK SC、Noto Serif CJK SC、霞鹜文楷或微软雅黑字幕字体。
+5. 如果需要字幕，选择翻译方式；然后确认授权。
 6. 点击“开始本地化”。
 
 窗口会实时显示下载、Whisper 本地转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目。英译中和中译英的最终视频分别位于：
@@ -165,6 +167,7 @@ output\项目名称\rendered\english_hardsub.mp4
 
 翻译方式说明：
 
+- “仅下载原视频（无字幕）”始终使用最高画质视频和最高质量音频并自动合并，完成后直接停下，不运行 Whisper、翻译或字幕压制；文件位于项目的 `source` 文件夹。
 - “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
 - “本地快速翻译并压制”不需要 API，会使用约 85 MB 的轻量模型在本机完成翻译。它现在会先合并完整段落再翻译，适合速度优先或配置较低的电脑。
 - “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。离线安装包自带 Ollama 和 `qwen3:4b`，先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
@@ -394,6 +397,14 @@ python main.py process "D:\Videos\owned-demo.mp4" --translation-provider openai-
 
 ## 8. 生成双语字幕
 
+只下载原视频、不生成字幕：
+
+```powershell
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" --subtitle-mode download_only
+```
+
+该模式不会调用 Whisper、翻译模型或 FFmpeg 字幕压制，下载完成的合并视频保存在 `output\项目名称\source`。
+
 英文在上、中文在下：
 
 ```powershell
@@ -456,7 +467,7 @@ python main.py process "D:\Videos\owned-demo.mp4" --config config.local.yaml
 
 ```yaml
 output_directory: output
-subtitle_mode: chinese
+subtitle_mode: chinese  # download_only 表示仅下载原视频，不生成字幕
 
 transcription:
   model: medium

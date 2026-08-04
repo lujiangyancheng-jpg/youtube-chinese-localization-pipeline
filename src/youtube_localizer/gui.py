@@ -15,6 +15,7 @@ from .resources import ollama_executable
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 SUBTITLE_MODES = {
+    "仅下载原视频（无字幕）": "download_only",
     "仅目标语言字幕": "chinese",
     "英文在上，中文在下": "bilingual_en_zh",
     "中文在上，英文在下": "bilingual_zh_en",
@@ -176,42 +177,47 @@ class LocalizerWindow:
         options = ttk.LabelFrame(outer, text="2. 输出设置", padding=12)
         options.pack(fill="x", pady=(12, 0))
         ttk.Label(options, text="翻译方向：").grid(row=0, column=0, sticky="w", pady=4)
-        direction_combo = ttk.Combobox(
+        self.direction_combo = ttk.Combobox(
             options,
             textvariable=self.direction_label,
             values=list(TRANSLATION_DIRECTIONS),
             state="readonly",
             width=34,
         )
-        direction_combo.grid(row=0, column=1, sticky="ew", pady=4)
-        ttk.Label(options, text="字幕样式：").grid(row=1, column=0, sticky="w", pady=4)
-        subtitle_combo = ttk.Combobox(
+        self.direction_combo.grid(row=0, column=1, sticky="ew", pady=4)
+        ttk.Label(options, text="字幕/下载模式：").grid(row=1, column=0, sticky="w", pady=4)
+        self.subtitle_combo = ttk.Combobox(
             options,
             textvariable=self.subtitle_label,
             values=list(SUBTITLE_MODES),
             state="readonly",
             width=34,
         )
-        subtitle_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        self.subtitle_combo.grid(row=1, column=1, sticky="ew", pady=4)
+        self.subtitle_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
+        )
         ttk.Label(options, text="字幕字体：").grid(row=2, column=0, sticky="w", pady=4)
-        font_combo = ttk.Combobox(
+        self.font_combo = ttk.Combobox(
             options,
             textvariable=self.font_label,
             values=list(SUBTITLE_FONTS),
             state="readonly",
             width=34,
         )
-        font_combo.grid(row=2, column=1, sticky="ew", pady=4)
+        self.font_combo.grid(row=2, column=1, sticky="ew", pady=4)
         ttk.Label(options, text="翻译方式：").grid(row=3, column=0, sticky="w", pady=4)
-        translation_combo = ttk.Combobox(
+        self.translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
             values=list(TRANSLATION_MODES),
             state="readonly",
             width=34,
         )
-        translation_combo.grid(row=3, column=1, sticky="ew", pady=4)
-        translation_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_translation_fields())
+        self.translation_combo.grid(row=3, column=1, sticky="ew", pady=4)
+        self.translation_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
+        )
         options.columnconfigure(1, weight=1)
 
         self.api_frame = ttk.LabelFrame(outer, text="自动翻译 API（API Key 不会保存）", padding=12)
@@ -292,7 +298,16 @@ class LocalizerWindow:
             self.input_value.set(path)
 
     def _update_translation_fields(self) -> None:
-        automatic = TRANSLATION_MODES[self.translation_label.get()] == "openai-compatible"
+        download_only = SUBTITLE_MODES[self.subtitle_label.get()] == "download_only"
+        selection_state = "disabled" if download_only else "readonly"
+        self.direction_combo.configure(state=selection_state)
+        self.font_combo.configure(state=selection_state)
+        self.translation_combo.configure(state=selection_state)
+        self.start_button.configure(text="开始下载" if download_only else "开始本地化")
+        automatic = (
+            not download_only
+            and TRANSLATION_MODES[self.translation_label.get()] == "openai-compatible"
+        )
         state = "normal" if automatic else "disabled"
         for entry in (self.endpoint_entry, self.model_entry, self.key_entry):
             entry.configure(state=state)
@@ -300,17 +315,18 @@ class LocalizerWindow:
     def _validate(self) -> tuple[list[str], dict[str, str], str]:
         if not self.authorized.get():
             raise ValueError("开始前请确认你拥有视频或已取得所需授权。")
+        subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
         provider = TRANSLATION_MODES[self.translation_label.get()]
         command = build_process_command(
             self.input_value.get(),
-            subtitle_mode=SUBTITLE_MODES[self.subtitle_label.get()],
+            subtitle_mode=subtitle_mode,
             translation_provider=provider,
             translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
             subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
             resume=self.resume.get(),
         )
         environment = os.environ.copy()
-        if provider == "openai-compatible":
+        if provider == "openai-compatible" and subtitle_mode != "download_only":
             endpoint = self.endpoint.get().strip()
             model = self.model.get().strip()
             api_key = self.api_key.get().strip()
@@ -319,7 +335,8 @@ class LocalizerWindow:
             environment["OPENAI_COMPATIBLE_ENDPOINT"] = endpoint
             environment["OPENAI_COMPATIBLE_MODEL"] = model
             environment["OPENAI_COMPATIBLE_API_KEY"] = api_key
-        return command, environment, provider
+        workflow = "download_only" if subtitle_mode == "download_only" else provider
+        return command, environment, workflow
 
     def _start(self) -> None:
         if self.process and self.process.poll() is None:
@@ -333,7 +350,12 @@ class LocalizerWindow:
         self._clear_log()
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self._append_log("正在启动本地化处理……\n")
-        if provider == "manual":
+        if provider == "download_only":
+            self._append_log(
+                "当前为无字幕直接下载：只下载并合并最高画质视频和最高质量音频，"
+                "不会运行语音识别、翻译或字幕压制。\n\n"
+            )
+        elif provider == "manual":
             source_name = "中文" if self.active_direction == "zh-to-en" else "英文"
             self._append_log(
                 f"当前为免费模式：程序会完成下载和{source_name}字幕，然后导出等待翻译的文件。\n\n"
@@ -444,7 +466,14 @@ class LocalizerWindow:
                 parent=self.root,
             )
             return
-        if provider == "manual":
+        if provider == "download_only":
+            self.status.set("原视频下载完成，没有生成字幕")
+            messagebox.showinfo(
+                "下载完成",
+                "最高画质原视频已经保存到 output 项目的 source 文件夹。",
+                parent=self.root,
+            )
+        elif provider == "manual":
             source_name = "中文" if self.active_direction == "zh-to-en" else "英文"
             target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
             self.status.set(f"下载和{source_name}字幕已完成，等待人工翻译")

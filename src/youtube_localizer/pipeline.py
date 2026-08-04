@@ -462,6 +462,11 @@ def translate_with_local_ai(
 
 
 def render_project(project: ProjectPaths, config: AppConfig) -> Path:
+    if config.subtitle_mode == "download_only":
+        raise LocalizerError(
+            "This project is configured for direct download without subtitles; "
+            "change subtitle_mode before rendering."
+        )
     metadata = load_project_metadata(project)
     source = find_source_video(project)
     if config.subtitle_mode == "chinese":
@@ -606,7 +611,11 @@ def process_pipeline(
                     metadata.chinese_subtitle_language = ""
                     metadata.chinese_subtitle_kind = ""
                     metadata.subtitle_language = ""
-                    metadata.subtitle_kind = "local faster-whisper transcription"
+                    metadata.subtitle_kind = (
+                        ""
+                        if config.subtitle_mode == "download_only"
+                        else "local faster-whisper transcription"
+                    )
                     subtitle_source = metadata.subtitle_kind
                     if config.download.download_metadata:
                         raw_path = project.source / "metadata.raw.json"
@@ -620,6 +629,27 @@ def process_pipeline(
                 atomic_write_json(project.metadata, metadata.model_dump(mode="json"))
                 step_outputs.extend([source_video, project.metadata])
         source_video = find_source_video(project)
+
+        if config.subtitle_mode == "download_only":
+            outputs = [source_video, project.metadata]
+            for optional_output in (
+                project.source / "metadata.raw.json",
+                project.source / "thumbnail.jpg",
+            ):
+                if optional_output.is_file():
+                    outputs.append(optional_output)
+            state.mark_status("downloaded")
+            report = build_report(
+                metadata,
+                state.data,
+                subtitle_source="not requested (download only)",
+                translation_provider="not requested (download only)",
+                output_paths=outputs,
+                warnings=warnings,
+            )
+            report["total_elapsed_seconds"] = round(monotonic() - started, 3)
+            write_report(project.logs, report)
+            return PipelineResult(project, "downloaded", outputs, warnings)
 
         source_code, target_code = _language_pair(config)
         chinese_to_english = source_code == "zh"

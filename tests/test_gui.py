@@ -110,3 +110,13 @@ def test_build_process_command_passes_selected_bundled_font() -> None:
     assert {"Noto Sans CJK SC", "Noto Serif CJK SC", "LXGW WenKai"}.issubset(
         SUBTITLE_FONTS.values()
     )
+
+
+def test_build_process_command_supports_direct_download_without_subtitles() -> None:
+    command = build_process_command(
+        "https://youtu.be/abc123def45",
+        subtitle_mode="download_only",
+        translation_provider="offline",
+    )
+
+    assert command[command.index("--subtitle-mode") + 1] == "download_only"
