@@ -35,6 +35,90 @@ def resolve_device_and_compute(config: TranscriptionConfig) -> tuple[str, str]:
     return device, compute
 
 
+def _is_cuda_runtime_failure(exc: RuntimeError) -> bool:
+    message = str(exc).lower()
+    indicators = (
+        "cuda",
+        "cublas",
+        "cudnn",
+        "nvrtc",
+        "nvidia",
+        "out of memory",
+    )
+    return any(indicator in message for indicator in indicators)
+
+
+def _run_whisper_attempt(
+    model_class: Any,
+    model_reference: str | Path,
+    audio_path: Path,
+    config: TranscriptionConfig,
+    *,
+    language: str,
+    device: str,
+    compute_type: str,
+    local_only: bool,
+) -> tuple[list[dict[str, Any]], list[SubtitleCue], Any]:
+    model = model_class(
+        model_reference,
+        device=device,
+        compute_type=compute_type,
+        local_files_only=local_only,
+    )
+    segments_iterator, info = model.transcribe(
+        str(audio_path),
+        language=language,
+        beam_size=config.beam_size,
+        vad_filter=config.vad_filter,
+        word_timestamps=config.word_timestamps,
+    )
+    raw_segments: list[dict[str, Any]] = []
+    cues: list[SubtitleCue] = []
+    for index, segment in enumerate(segments_iterator, start=1):
+        text = segment.text.strip()
+        if not text:
+            continue
+        confidence = None
+        if segment.avg_logprob is not None:
+            confidence = min(1.0, max(0.0, math.exp(float(segment.avg_logprob))))
+        words = [
+            {
+                "start": word.start,
+                "end": word.end,
+                "word": word.word,
+                "probability": word.probability,
+            }
+            for word in (segment.words or [])
+        ]
+        raw_segments.append(
+            {
+                "id": index,
+                "start": segment.start,
+                "end": segment.end,
+                "text": text,
+                "avg_logprob": segment.avg_logprob,
+                "no_speech_prob": segment.no_speech_prob,
+                "words": words,
+            }
+        )
+        start_ms = max(0, round(segment.start * 1000))
+        end_ms = max(start_ms + 1, round(segment.end * 1000))
+        cues.append(
+            SubtitleCue(
+                id=len(cues) + 1,
+                start_ms=start_ms,
+                end_ms=end_ms,
+                text=text,
+                confidence=confidence,
+            )
+        )
+    if not cues:
+        raise LocalizerError(
+            f"Whisper found no {language} speech. Check the source audio stream and language."
+        )
+    return raw_segments, cues, info
+
+
 def transcribe_audio(
     audio_path: Path,
     output_json: Path,
@@ -61,67 +145,41 @@ def transcribe_audio(
         model_reference, local_only = resolve_whisper_model(config.model)
         if local_only:
             LOGGER.info("Using bundled Whisper model at %s.", model_reference)
-        model = WhisperModel(
-            model_reference,
-            device=device,
-            compute_type=compute_type,
-            local_files_only=local_only,
-        )
-        segments_iterator, info = model.transcribe(
-            str(audio_path),
-            language=language,
-            beam_size=config.beam_size,
-            vad_filter=config.vad_filter,
-            word_timestamps=config.word_timestamps,
-        )
-        raw_segments: list[dict[str, Any]] = []
-        cues: list[SubtitleCue] = []
-        for index, segment in enumerate(segments_iterator, start=1):
-            text = segment.text.strip()
-            if not text:
-                continue
-            confidence = None
-            if segment.avg_logprob is not None:
-                confidence = min(1.0, max(0.0, math.exp(float(segment.avg_logprob))))
-            words = [
-                {
-                    "start": word.start,
-                    "end": word.end,
-                    "word": word.word,
-                    "probability": word.probability,
-                }
-                for word in (segment.words or [])
-            ]
-            raw_segments.append(
-                {
-                    "id": index,
-                    "start": segment.start,
-                    "end": segment.end,
-                    "text": text,
-                    "avg_logprob": segment.avg_logprob,
-                    "no_speech_prob": segment.no_speech_prob,
-                    "words": words,
-                }
-            )
-            start_ms = max(0, round(segment.start * 1000))
-            end_ms = max(start_ms + 1, round(segment.end * 1000))
-            cues.append(
-                SubtitleCue(
-                    id=len(cues) + 1,
-                    start_ms=start_ms,
-                    end_ms=end_ms,
-                    text=text,
-                    confidence=confidence,
+        attempts = [(device, compute_type)]
+        if device == "cuda":
+            attempts.append(("cpu", "int8"))
+        used_fallback = False
+        for attempt_device, attempt_compute_type in attempts:
+            try:
+                raw_segments, cues, info = _run_whisper_attempt(
+                    WhisperModel,
+                    model_reference,
+                    audio_path,
+                    config,
+                    language=language,
+                    device=attempt_device,
+                    compute_type=attempt_compute_type,
+                    local_only=local_only,
                 )
-            )
-        if not cues:
-            raise LocalizerError(
-                f"Whisper found no {language} speech. Check the source audio stream and language."
-            )
+                device = attempt_device
+                compute_type = attempt_compute_type
+                break
+            except RuntimeError as exc:
+                if attempt_device != "cuda" or not _is_cuda_runtime_failure(exc):
+                    raise
+                used_fallback = True
+                LOGGER.warning(
+                    "Whisper CUDA execution failed; automatically retrying on CPU (int8). "
+                    "No CUDA installation is required. Details: %s",
+                    exc,
+                )
+        else:  # pragma: no cover - every attempt either returns or raises
+            raise LocalizerError("Whisper did not complete a transcription attempt.")
         raw = {
             "model": config.model,
             "device": device,
             "compute_type": compute_type,
+            "cuda_fallback": used_fallback,
             "language": getattr(info, "language", language),
             "language_probability": getattr(info, "language_probability", None),
             "duration": getattr(info, "duration", None),
@@ -135,9 +193,7 @@ def transcribe_audio(
             flagged: list[int] = []
             for cue in cues:
                 if cue.confidence is not None and cue.confidence < 0.55:
-                    warnings.append(
-                        f"Cue {cue.id} has low ASR confidence ({cue.confidence:.2f})."
-                    )
+                    warnings.append(f"Cue {cue.id} has low ASR confidence ({cue.confidence:.2f}).")
                     flagged.append(cue.id)
             cleanup = CleanupResult(cues, warnings, flagged)
         write_srt(output_srt, cleanup.cues)
@@ -145,10 +201,9 @@ def transcribe_audio(
     except LocalizerError:
         raise
     except RuntimeError as exc:
-        message = str(exc)
-        if "out of memory" in message.lower() or "cuda" in message.lower():
+        if _is_cuda_runtime_failure(exc):
             raise LocalizerError(
-                "Whisper ran out of GPU memory or CUDA failed. Retry with transcription.device=cpu, "
-                "a smaller model, or a less memory-intensive compute_type."
+                "Whisper could not complete after automatic CUDA/CPU device handling. "
+                f"Try a smaller model. Details: {exc}"
             ) from exc
         raise LocalizerError(f"Whisper transcription failed: {exc}") from exc

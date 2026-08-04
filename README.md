@@ -35,6 +35,7 @@ attribution requirements, and publishing-platform rules.
 - VTT/SRT/ASS parsing and normalized UTF-8 SRT output
 - Rolling-caption overlap cleanup and conservative English cleanup
 - `faster-whisper` English or Chinese transcription with VAD and word timestamps
+- Automatic CUDA-to-CPU Whisper retry when NVIDIA runtime libraries are incomplete
 - Manual Markdown/JSONL translation chunks with strict cue/timestamp validation
 - Local offline English↔Simplified Chinese translation with directional model selection and caching
 - OpenAI-compatible subtitle translation with retries and deterministic response caching
@@ -399,9 +400,10 @@ required by your installed CTranslate2 release must be installed separately. Che
 python main.py doctor
 ```
 
-With `transcription.device: auto`, CUDA is used only when CTranslate2 detects it; otherwise
-CPU mode is used. CPU defaults to `int8`, CUDA defaults to `float16`. Avoid `large-v3` on CPU
-unless you understand the RAM/runtime cost.
+With `transcription.device: auto`, CUDA is tried when CTranslate2 detects it. If CUDA fails during
+model loading or lazy segment iteration because cuBLAS, cuDNN, the driver, or GPU memory is
+unavailable, transcription restarts automatically on CPU `int8`. No CUDA installation is required.
+Avoid `large-v3` on CPU unless you understand the RAM/runtime cost.
 
 Offline subtitle translation prioritizes reliability: `translation.offline_device: auto` uses
 CPU `int8`. Set it to `cuda` only when the CTranslate2 CUDA and cuDNN runtime is fully installed;

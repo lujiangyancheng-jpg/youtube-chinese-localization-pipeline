@@ -13,7 +13,7 @@ download:
 
 transcription:
   model: medium
-  device: auto
+  device: auto  # prefers CUDA, then automatically retries on CPU if its runtime is incomplete
   compute_type: auto
   beam_size: 5
   vad_filter: true

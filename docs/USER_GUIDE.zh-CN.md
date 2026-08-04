@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.4.1-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.4.2-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -523,11 +523,13 @@ render:
 
 - CPU：建议 `small` 或 `medium`
 - NVIDIA GPU：显存足够时可以使用 `large-v3`
-- `device: auto`：自动检测 CUDA，否则使用 CPU
+- `device: auto`：优先尝试 CUDA；CUDA 运行库缺失、加载失败或显存不足时自动改用 CPU `int8`
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线字幕翻译的 `offline_device: auto` 为避免 CUDA 运行库只安装一部分时卡住，稳定使用 CPU `int8`；只有完整安装 CTranslate2 所需的 CUDA 和 cuDNN 后，才建议明确设置为 `cuda`。
+Whisper 的设备选择与离线翻译相互独立。Whisper 即使检测到 NVIDIA 显卡，也会在
+`cublas64_12.dll`、cuDNN 或其他 CUDA 运行库不完整时自动从头用 CPU `int8` 重试，
+不需要用户手动安装 CUDA。离线字幕翻译的 `offline_device: auto` 则始终稳定使用 CPU `int8`。
 
 离线安装包已包含 Whisper Medium，首次识别不需要联网。从源码手动安装并改用
 其他 Whisper 尺寸时，才需要下载相应模型。
@@ -716,6 +718,13 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -e ".[transcription]"
 ```
+
+### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
+
+v0.4.2 起不需要安装 CUDA：`device: auto` 在显卡运行库不完整、显存不足或 CUDA
+执行失败时，会自动丢弃未完成的 GPU 结果并从头改用 CPU `int8`。日志中出现
+“automatically retrying on CPU” 后继续等待即可。旧版本用户请升级；临时办法是在
+`config.yaml` 中设置 `transcription.device: cpu`。
 
 ### 本地离线翻译模型无法下载或加载
 
