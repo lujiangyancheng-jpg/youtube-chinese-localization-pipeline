@@ -268,7 +268,7 @@ translation:
   direction: en-to-zh   # en-to-zh or zh-to-en
   provider: offline     # manual, offline, or openai-compatible
   batch_size: 40
-  offline_device: auto  # auto, cpu, or cuda; auto safely falls back to CPU
+  offline_device: auto  # auto uses reliable CPU; cuda must be selected explicitly
 
 download:
   format: bestvideo+bestaudio/best
@@ -372,6 +372,10 @@ With `transcription.device: auto`, CUDA is used only when CTranslate2 detects it
 CPU mode is used. CPU defaults to `int8`, CUDA defaults to `float16`. Avoid `large-v3` on CPU
 unless you understand the RAM/runtime cost.
 
+Offline subtitle translation prioritizes reliability: `translation.offline_device: auto` uses
+CPU `int8`. Set it to `cuda` only when the CTranslate2 CUDA and cuDNN runtime is fully installed;
+Whisper and video rendering keep their independent device settings.
+
 For rendering, set `render.codec: h264_nvenc` or `hevc_nvenc`. If the selected NVENC encoder
 fails, the application retries with `libx264`.
 
@@ -398,7 +402,7 @@ be missing.
 ### `faster-whisper` cannot be installed
 
 Use Python 3.11-3.13 in a new virtual environment. The rest of the pipeline works without
-it when usable English subtitles already exist. On a new Python release, CTranslate2 wheels
+it when usable source-language subtitles already exist. On a new Python release, CTranslate2 wheels
 may not yet be published.
 
 ### Whisper runs out of GPU memory
@@ -409,16 +413,24 @@ compute type. The error message identifies this recovery path.
 ### Offline translation model cannot download or load
 
 Install the lightweight runtime with `python -m pip install -e ".[offline-translation]"`.
-The model downloads only on the first offline run. If CUDA libraries are detected but cannot
-execute the model, `offline_device: auto` reloads it on CPU. Rerun `python main.py doctor` to
-confirm both the runtime and model. An interrupted or invalid model download is never treated
-as installed.
+The model downloads only on the first offline run. `offline_device: auto` uses CPU `int8` to
+avoid partial CUDA installations stalling translation; select `cuda` explicitly only after its
+runtime is complete. Rerun `python main.py doctor` to confirm both the runtime and model. An
+interrupted or invalid model download is never treated as installed.
 
 ### YouTube video is unavailable
 
 Confirm it is a public single-video URL. Private, authenticated, age-restricted, DRM, and
 currently-live sources are intentionally unsupported. The application does not accept
 cookies or browser-authentication bypasses.
+
+### YouTube subtitle download returns HTTP 429
+
+YouTube sometimes rate-limits caption endpoints more aggressively than video downloads. The
+pipeline treats captions as optional: it records a warning, retries the video without captions,
+and uses another source-caption track or local Whisper transcription. If YouTube also rate-limits
+the video request, wait before rerunning the same input with `--resume`; repeated immediate retries
+can extend a temporary rate limit.
 
 ### FFmpeg cannot render subtitles
 
@@ -427,8 +439,8 @@ the configured font is installed, and run `preview` before rendering the whole v
 
 ### A manual import is rejected
 
-Ask ChatGPT to return JSONL only. Do not change `id`, `start`, `end`, or `en`; fill every
-`zh`. Re-export the original chunk if needed.
+Ask ChatGPT to return JSONL only. Do not change `id`, `start`, `end`, or the source field
+(`en` or `zh`); fill every target field (`zh` or `en`). Re-export the original chunk if needed.
 
 ### Existing project error
 

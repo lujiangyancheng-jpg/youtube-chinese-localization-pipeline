@@ -8,6 +8,7 @@ import pytest
 from youtube_localizer.errors import LocalizerError
 from youtube_localizer.translation.offline import (
     install_offline_model_archive,
+    select_offline_translation_device,
     validate_offline_model,
 )
 
@@ -28,6 +29,12 @@ def _write_fake_model_archive(path, *, source_code="en", target_code="zh") -> No
         archive.writestr(f"{root}/sentencepiece.model", b"fake-tokenizer")
         archive.writestr(f"{root}/model/config.json", "{}")
         archive.writestr(f"{root}/model/model.bin", b"fake-model")
+
+
+def test_automatic_offline_translation_prefers_reliable_cpu() -> None:
+    assert select_offline_translation_device("auto") == "cpu"
+    assert select_offline_translation_device("cpu") == "cpu"
+    assert select_offline_translation_device("cuda") == "cuda"
 
 
 def test_install_offline_model_archive_validates_and_installs_atomically(tmp_path) -> None:

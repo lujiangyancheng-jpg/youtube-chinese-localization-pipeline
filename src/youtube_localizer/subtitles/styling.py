@@ -21,6 +21,8 @@ def write_ass(
 ) -> None:
     header = f"""[Script Info]
 ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 YCbCr Matrix: TV.709

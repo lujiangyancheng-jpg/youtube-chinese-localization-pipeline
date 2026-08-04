@@ -47,6 +47,9 @@ def test_offline_synthetic_video_can_be_hardsubbed(tmp_path) -> None:
         [SubtitleCue(id=1, start_ms=100, end_ms=1800, text="本地离线测试")],
         SubtitleConfig(font="Arial", font_size=32),
     )
+    ass_content = subtitle.read_text(encoding="utf-8")
+    assert "PlayResX: 1920" in ass_content
+    assert "PlayResY: 1080" in ass_content
     output = tmp_path / "rendered.mp4"
     render_hardsub(
         source,

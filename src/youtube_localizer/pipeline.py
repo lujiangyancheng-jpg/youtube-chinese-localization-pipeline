@@ -461,6 +461,7 @@ def process_pipeline(
                         project.source,
                         config.download,
                     )
+                    warnings.extend(download.warnings)
                     source_video = download.video
                     metadata.english_subtitle_language = download.english_language
                     metadata.english_subtitle_kind = download.english_kind

@@ -63,6 +63,33 @@ class FakeDownloadYDL:
         return str(Path(self.options["outtmpl"]).parent / "download.mp4")
 
 
+class FakeSubtitleLimitedYDL:
+    options_seen = []
+
+    def __init__(self, options):
+        self.options = options
+        FakeSubtitleLimitedYDL.options_seen.append(options)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def extract_info(self, url, download=True):
+        if self.options["writesubtitles"] or self.options["writeautomaticsub"]:
+            raise RuntimeError(
+                "ERROR: Unable to download video subtitles for 'zh-Hans': "
+                "HTTP Error 429: Too Many Requests"
+            )
+        destination = Path(self.options["outtmpl"]).parent
+        (destination / "download.mp4").write_bytes(b"video")
+        return {"id": "dQw4w9WgXcQ", "ext": "mp4", "webpage_url": url}
+
+    def prepare_filename(self, info):
+        return str(Path(self.options["outtmpl"]).parent / "download.mp4")
+
+
 def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
     info = {
         "subtitles": {"en": [{}]},
@@ -86,3 +113,34 @@ def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
     assert FakeDownloadYDL.last_options["merge_output_format"] == "mp4"
     assert FakeDownloadYDL.last_options["writesubtitles"] is True
     assert FakeDownloadYDL.last_options["writeautomaticsub"] is True
+
+
+def test_subtitle_rate_limit_falls_back_to_video_and_whisper(tmp_path) -> None:
+    FakeSubtitleLimitedYDL.options_seen = []
+    info = {
+        "subtitles": {"en": [{}]},
+        "automatic_captions": {"zh-Hans": [{}]},
+    }
+    with patch(
+        "youtube_localizer.download.youtube._youtube_dl",
+        side_effect=FakeSubtitleLimitedYDL,
+    ):
+        result = download_youtube(
+            "https://youtu.be/dQw4w9WgXcQ",
+            info,
+            tmp_path,
+            DownloadConfig(prefer_youtube_chinese=True),
+        )
+
+    assert result.video == tmp_path / "source_video.mp4"
+    assert result.english_subtitle is None
+    assert result.chinese_subtitle is None
+    assert result.english_language == ""
+    assert result.chinese_language == ""
+    assert len(result.warnings) == 1
+    assert "continue without the unavailable captions" in result.warnings[0]
+    assert len(FakeSubtitleLimitedYDL.options_seen) == 2
+    retry_options = FakeSubtitleLimitedYDL.options_seen[1]
+    assert retry_options["writesubtitles"] is False
+    assert retry_options["writeautomaticsub"] is False
+    assert retry_options["subtitleslangs"] == []

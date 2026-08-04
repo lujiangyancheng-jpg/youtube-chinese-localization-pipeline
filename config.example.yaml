@@ -32,7 +32,7 @@ translation:
   offline_model_url: https://argos-net.com/v1/translate-en_zh-1_9.argosmodel
   offline_zh_en_model_directory: ~/.youtube-chinese-localizer/models/translate-zh_en-1_9
   offline_zh_en_model_url: https://argos-net.com/v1/translate-zh_en-1_9.argosmodel
-  offline_device: auto
+  offline_device: auto  # auto uses reliable CPU; set cuda only with a complete CUDA runtime
   offline_compute_type: auto
   offline_auto_download: true
 

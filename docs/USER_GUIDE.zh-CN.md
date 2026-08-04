@@ -449,7 +449,7 @@ translation:
   direction: en-to-zh  # en-to-zh 或 zh-to-en
   provider: offline
   batch_size: 40
-  offline_device: auto
+  offline_device: auto  # 自动模式稳定使用 CPU；CUDA 需明确选择
 
 download:
   # 最高源画质：依次优先分辨率、帧率、码率和文件大小。
@@ -488,6 +488,8 @@ Windows 推荐：
 - `device: auto`：自动检测 CUDA，否则使用 CPU
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
+
+Whisper 的设备选择与离线翻译相互独立。离线字幕翻译的 `offline_device: auto` 为避免 CUDA 运行库只安装一部分时卡住，稳定使用 CPU `int8`；只有完整安装 CTranslate2 所需的 CUDA 和 cuDNN 后，才建议明确设置为 `cuda`。
 
 首次使用某个 Whisper 模型时需要联网下载模型文件。
 
@@ -685,7 +687,13 @@ python -m pip install -e ".[offline-translation]"
 python main.py doctor
 ```
 
-每个翻译方向的模型只在第一次使用时下载：英译中和中译英分别保存在 `translate-en_zh-1_9` 与 `translate-zh_en-1_9` 目录。`offline_device: auto` 会优先尝试 CUDA；CUDA 运行库不完整时会自动回退到 CPU。模型下载被中断时不会把残缺目录当成已安装，可以重新运行同一任务继续处理。
+每个翻译方向的模型只在第一次使用时下载：英译中和中译英分别保存在 `translate-en_zh-1_9` 与 `translate-zh_en-1_9` 目录。`offline_device: auto` 会稳定使用 CPU `int8`，避免 CUDA 运行库不完整时卡住；只有明确设置 `cuda` 才使用显卡翻译。模型下载被中断时不会把残缺目录当成已安装，可以重新运行同一任务继续处理。
+
+### YouTube 字幕下载出现 HTTP 429
+
+这是 YouTube 临时限制字幕请求，不是翻译模型或 FFmpeg 出错。程序会把 YouTube 字幕视为可选内容：记录警告后自动改为只下载视频，然后使用其他可用原文字幕或本地 Whisper 识别，不再让整个任务直接失败。
+
+如果视频下载本身也收到 429，请暂停一段时间，再对同一个输入勾选“断点续跑”后重试。不要连续反复点击开始，否则临时限制可能持续更久。
 
 ### Whisper 显存不足
 

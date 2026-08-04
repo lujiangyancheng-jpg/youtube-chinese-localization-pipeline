@@ -37,6 +37,60 @@ def test_vtt_to_srt_conversion_ignores_settings_and_decodes_entities() -> None:
     assert "-->" in serialize_srt(normalized)
 
 
+def test_youtube_word_timestamps_placeholders_and_rolling_flashes_are_removed() -> None:
+    content = """WEBVTT
+Kind: captions
+Language: en
+
+00:00:00.000 --> 00:00:02.350 align:start position:0%
+{space}
+Chelsea<00:00:00.840><c> are</c><00:00:01.080><c> once</c><00:00:01.440><c> again</c>
+
+00:00:02.350 --> 00:00:02.360 align:start position:0%
+Chelsea are once again
+
+00:00:02.360 --> 00:00:04.110 align:start position:0%
+Chelsea are once again
+busy<00:00:02.760><c> in</c><00:00:03.200><c> London</c>
+
+00:00:04.110 --> 00:00:04.120 align:start position:0%
+busy in London
+
+00:00:04.120 --> 00:00:04.130 align:start position:0%
+{space}
+{space}
+
+00:00:04.130 --> 00:00:06.000 align:start position:0%
+The next sentence
+""".replace("{space}", " ")
+
+    normalized = normalize_cues(parse_vtt_text(content))
+
+    assert [(cue.start_ms, cue.end_ms, cue.text) for cue in normalized] == [
+        (0, 2350, "Chelsea are once again"),
+        (2360, 4110, "busy in London"),
+        (4130, 6000, "The next sentence"),
+    ]
+    assert all("<" not in cue.text and cue.end_ms - cue.start_ms > 1000 for cue in normalized)
+
+
+def test_vtt_cue_identifiers_do_not_leak_into_previous_text() -> None:
+    content = """WEBVTT
+
+first-cue
+00:00:00.000 --> 00:00:01.000
+Hello
+
+second-cue
+00:00:01.000 --> 00:00:02.000
+World
+"""
+
+    cues = parse_vtt_text(content)
+
+    assert [cue.text for cue in cues] == ["Hello", "World"]
+
+
 def test_rolling_caption_deduplication() -> None:
     assert remove_rolling_overlap("we are building", "we are building a tool") == "a tool"
     assert remove_rolling_overlap("this is a test", "a test today") == "today"

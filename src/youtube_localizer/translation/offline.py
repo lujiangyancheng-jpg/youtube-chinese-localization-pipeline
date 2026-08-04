@@ -28,6 +28,11 @@ MODEL_REQUIRED_PATHS = (
 )
 
 
+def select_offline_translation_device(requested_device: str) -> str:
+    """Prefer reliable CPU translation unless CUDA was explicitly requested."""
+    return "cpu" if requested_device == "auto" else requested_device
+
+
 def validate_offline_model(
     model_directory: Path,
     *,
@@ -246,17 +251,11 @@ class LocalOfflineProvider(TranslationProvider):
         self.source_code = source_code
         self.target_code = target_code
         self.cache = cache
-        self._ctranslate2 = ctranslate2
-        self._requested_device = device
-        self._requested_compute_type = compute_type
         self.processor = spm.SentencePieceProcessor(
             model_proto=(self.model_directory / "sentencepiece.model").read_bytes()
         )
 
-        requested_device = device
-        selected_device = device
-        if device == "auto":
-            selected_device = "cuda" if ctranslate2.get_cuda_device_count() > 0 else "cpu"
+        selected_device = select_offline_translation_device(device)
         selected_compute_type = compute_type
         if compute_type == "auto" and selected_device == "cpu":
             selected_compute_type = "int8"
@@ -267,23 +266,9 @@ class LocalOfflineProvider(TranslationProvider):
                 compute_type=selected_compute_type,
             )
         except Exception as exc:
-            if requested_device != "auto" or selected_device == "cpu":
-                raise LocalizerError(
-                    f"Could not load the offline translation model on {selected_device}: {exc}"
-                ) from exc
-            LOGGER.warning("CUDA translation model load failed; falling back to CPU: %s", exc)
-            selected_device = "cpu"
-            selected_compute_type = "int8" if compute_type == "auto" else compute_type
-            try:
-                self.translator = ctranslate2.Translator(
-                    str(self.model_directory / "model"),
-                    device="cpu",
-                    compute_type=selected_compute_type,
-                )
-            except Exception as fallback_exc:
-                raise LocalizerError(
-                    f"Could not load the offline translation model on CPU: {fallback_exc}"
-                ) from fallback_exc
+            raise LocalizerError(
+                f"Could not load the offline translation model on {selected_device}: {exc}"
+            ) from exc
         self.device = selected_device
         self.compute_type = selected_compute_type
         LOGGER.info(
@@ -301,27 +286,7 @@ class LocalOfflineProvider(TranslationProvider):
             "num_hypotheses": 1,
             "length_penalty": 0.2,
         }
-        try:
-            return self.translator.translate_batch(tokenized, **arguments)
-        except Exception:
-            if self._requested_device != "auto" or self.device != "cuda":
-                raise
-            LOGGER.warning(
-                "CUDA translation execution failed; reloading the offline model on CPU."
-            )
-            self.device = "cpu"
-            self.compute_type = (
-                "int8"
-                if self._requested_compute_type == "auto"
-                else self._requested_compute_type
-            )
-            self.translator = self._ctranslate2.Translator(
-                str(self.model_directory / "model"),
-                device="cpu",
-                compute_type=self.compute_type,
-            )
-            LOGGER.info("Offline translation ready on CPU (%s).", self.compute_type)
-            return self.translator.translate_batch(tokenized, **arguments)
+        return self.translator.translate_batch(tokenized, **arguments)
 
     def translate_batch(
         self,

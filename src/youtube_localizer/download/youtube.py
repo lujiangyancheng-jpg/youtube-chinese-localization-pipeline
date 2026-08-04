@@ -38,6 +38,7 @@ class YouTubeDownloadResult:
     chinese_subtitle: Path | None = None
     chinese_language: str = ""
     chinese_kind: str = ""
+    warnings: tuple[str, ...] = ()
 
 
 def is_youtube_url(value: str) -> bool:
@@ -188,6 +189,18 @@ def _downloaded_subtitle(destination_dir: Path, language: str) -> Path | None:
     return candidates[0] if candidates else None
 
 
+def _run_youtube_download(url: str, options: dict[str, Any]) -> Path:
+    with _youtube_dl(options) as ydl:
+        downloaded_info = ydl.extract_info(url, download=True)
+        if not isinstance(downloaded_info, dict):
+            raise LocalizerError("yt-dlp did not return downloaded video information.")
+        return Path(ydl.prepare_filename(downloaded_info))
+
+
+def _is_optional_subtitle_failure(exc: BaseException) -> bool:
+    return "unable to download video subtitles" in str(exc).casefold()
+
+
 def download_youtube(
     url: str,
     info: dict[str, Any],
@@ -213,17 +226,41 @@ def download_youtube(
     }
     if config.prefer_mp4:
         options["merge_output_format"] = "mp4"
+    download_warnings: list[str] = []
     try:
-        with _youtube_dl(options) as ydl:
-            downloaded_info = ydl.extract_info(url, download=True)
-            prepared = Path(ydl.prepare_filename(downloaded_info))
+        prepared = _run_youtube_download(url, options)
     except Exception as exc:
         if isinstance(exc, LocalizerError):
             raise
-        raise LocalizerError(
-            "yt-dlp failed to download the public video. The partial download is retained so a "
-            f"later --resume can continue it. Details: {exc}"
-        ) from exc
+        if selections and _is_optional_subtitle_failure(exc):
+            warning = (
+                "YouTube temporarily rejected one or more optional subtitle downloads. "
+                "The video download will continue without the unavailable captions; the pipeline "
+                "will use another caption track or local Whisper transcription."
+            )
+            LOGGER.warning("%s Details: %s", warning, exc)
+            download_warnings.append(warning)
+            video_only_options = {
+                **options,
+                "writesubtitles": False,
+                "writeautomaticsub": False,
+                "subtitleslangs": [],
+            }
+            try:
+                prepared = _run_youtube_download(url, video_only_options)
+            except Exception as retry_exc:
+                if isinstance(retry_exc, LocalizerError):
+                    raise
+                raise LocalizerError(
+                    "yt-dlp failed to download the public video after the optional subtitle "
+                    "fallback. The partial download is retained so a later --resume can continue "
+                    f"it. Details: {retry_exc}"
+                ) from retry_exc
+        else:
+            raise LocalizerError(
+                "yt-dlp failed to download the public video. The partial download is retained so "
+                f"a later --resume can continue it. Details: {exc}"
+            ) from exc
 
     candidates = [
         path
@@ -255,11 +292,12 @@ def download_youtube(
     return YouTubeDownloadResult(
         video=destination,
         english_subtitle=english_file,
-        english_language=english[0] if english else "",
-        english_kind=english[1] if english else "",
+        english_language=english[0] if english and english_file else "",
+        english_kind=english[1] if english and english_file else "",
         chinese_subtitle=chinese_file,
-        chinese_language=chinese[0] if chinese else "",
-        chinese_kind=chinese[1] if chinese else "",
+        chinese_language=chinese[0] if chinese and chinese_file else "",
+        chinese_kind=chinese[1] if chinese and chinese_file else "",
+        warnings=tuple(download_warnings),
     )
 
 
