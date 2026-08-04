@@ -9,4 +9,7 @@ __pycache__/
 htmlcov/
 output/
 tools/models/
+build/
+dist/
+installer/*.partial
 *.partial.*

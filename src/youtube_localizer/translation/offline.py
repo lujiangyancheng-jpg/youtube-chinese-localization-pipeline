@@ -17,6 +17,7 @@ import httpx
 
 from ..errors import LocalizerError
 from ..models import SubtitleCue
+from ..resources import find_bundled_model
 from .base import TranslationContext, TranslationProvider
 from .cache import TranslationCache
 
@@ -448,10 +449,16 @@ def ensure_offline_model(
     source_code: str = "en",
     target_code: str = "zh",
 ) -> Path:
+    model_directory = model_directory.expanduser()
     if validate_offline_model(
         model_directory, source_code=source_code, target_code=target_code
     ) is not None:
         return model_directory
+    if (bundled := find_bundled_model(model_directory.name)) and validate_offline_model(
+        bundled, source_code=source_code, target_code=target_code
+    ) is not None:
+        LOGGER.info("Using bundled offline translation model at %s.", bundled)
+        return bundled
     if model_directory.exists():
         raise LocalizerError(
             f"Offline model directory exists but is incomplete: {model_directory}."

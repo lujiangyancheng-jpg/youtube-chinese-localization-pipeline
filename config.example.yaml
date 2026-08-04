@@ -10,7 +10,6 @@ download:
   prefer_mp4: true
   download_thumbnail: true
   download_metadata: true
-  prefer_youtube_chinese: true
 
 transcription:
   model: medium

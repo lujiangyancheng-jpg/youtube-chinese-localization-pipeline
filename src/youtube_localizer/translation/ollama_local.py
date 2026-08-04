@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import subprocess
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,11 +13,13 @@ import httpx
 
 from ..errors import LocalizerError
 from ..models import SubtitleCue
+from ..resources import bundled_ollama_models, ollama_executable
 from .base import TranslationContext, TranslationProvider
 from .cache import TranslationCache
 
 LOGGER = logging.getLogger(__name__)
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+BUNDLED_OLLAMA_ENDPOINT = "http://127.0.0.1:11436"
 
 
 def validate_local_ollama_endpoint(endpoint: str) -> str:
@@ -54,6 +59,13 @@ class LocalOllamaProvider(TranslationProvider):
         timeout: float = 600,
     ) -> None:
         self.endpoint = validate_local_ollama_endpoint(endpoint)
+        if bundled_ollama_models() and self.endpoint in {
+            "http://localhost:11434",
+            "http://127.0.0.1:11434",
+        }:
+            self.endpoint = validate_local_ollama_endpoint(
+                os.getenv("YOUTUBE_LOCALIZER_OLLAMA_ENDPOINT", BUNDLED_OLLAMA_ENDPOINT)
+            )
         self.model = model.strip()
         if not self.model:
             raise LocalizerError("A local Ollama model name is required.")
@@ -62,8 +74,52 @@ class LocalOllamaProvider(TranslationProvider):
         self.source_code = source_code
         self.target_code = target_code
         self.timeout = timeout
+        self._ensure_server()
         self._ensure_model()
         LOGGER.info("Local AI paragraph translation ready with Ollama model %s.", self.model)
+
+    def _server_ready(self, *, timeout: float) -> bool:
+        try:
+            response = httpx.get(f"{self.endpoint}/api/tags", timeout=timeout)
+            response.raise_for_status()
+            return True
+        except httpx.HTTPError:
+            return False
+
+    def _ensure_server(self) -> None:
+        if self._server_ready(timeout=2):
+            return
+        executable = ollama_executable()
+        if executable is None:
+            raise LocalizerError(
+                "Local AI translation could not find Ollama. Reinstall the offline package "
+                "or install Ollama, then retry."
+            )
+        environment = os.environ.copy()
+        if models := bundled_ollama_models():
+            environment["OLLAMA_MODELS"] = str(models)
+        parsed = urlparse(self.endpoint)
+        environment["OLLAMA_HOST"] = f"127.0.0.1:{parsed.port or 11434}"
+        creationflags = 0
+        if os.name == "nt":
+            creationflags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+        try:
+            subprocess.Popen(
+                [str(executable), "serve"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                creationflags=creationflags,
+            )
+        except OSError as exc:
+            raise LocalizerError(f"Could not start the bundled Ollama service: {exc}") from exc
+        for _ in range(80):
+            if self._server_ready(timeout=1):
+                LOGGER.info("Started local Ollama service with bundled runtime.")
+                return
+            time.sleep(0.25)
+        raise LocalizerError("The bundled Ollama service did not become ready within 20 seconds.")
 
     def _get_models(self) -> set[str]:
         try:

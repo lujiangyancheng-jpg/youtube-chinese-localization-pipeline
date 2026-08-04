@@ -78,7 +78,6 @@ def _configured(
     subtitle_mode: str | None = None,
     translation_provider: str | None = None,
     translation_direction: str | None = None,
-    prefer_youtube_chinese: bool | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
@@ -103,10 +102,6 @@ def _configured(
         translation_changes["direction"] = translation_direction
     if translation_changes:
         changes["translation"] = config.translation.model_copy(update=translation_changes)
-    if prefer_youtube_chinese is not None:
-        changes["download"] = config.download.model_copy(
-            update={"prefer_youtube_chinese": prefer_youtube_chinese}
-        )
     return config.model_copy(update=changes)
 
 
@@ -138,13 +133,6 @@ def process_command(
             help="en-to-zh or zh-to-en.",
         ),
     ] = None,
-    prefer_youtube_chinese: Annotated[
-        bool | None,
-        typer.Option(
-            "--prefer-youtube-chinese/--no-prefer-youtube-chinese",
-            help="Use provided Simplified Chinese YouTube subtitles before translation.",
-        ),
-    ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Replace an existing matching project.")
@@ -168,7 +156,6 @@ def process_command(
         subtitle_mode=subtitle_mode,
         translation_provider=translation_provider,
         translation_direction=translation_direction,
-        prefer_youtube_chinese=prefer_youtube_chinese,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "

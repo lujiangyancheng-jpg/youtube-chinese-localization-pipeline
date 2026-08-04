@@ -14,17 +14,16 @@ def test_implicit_process_command() -> None:
     assert normalize_argv(["--batch", "inputs.txt"]) == ["batch", "inputs.txt"]
 
 
-def test_cli_configuration_supports_offline_and_youtube_chinese() -> None:
+def test_cli_configuration_supports_offline_local_transcription() -> None:
     config = _configured(
         None,
         translation_provider="offline",
         translation_direction="zh-to-en",
-        prefer_youtube_chinese=True,
     )
 
     assert config.translation.provider == "offline"
     assert config.translation.direction == "zh-to-en"
-    assert config.download.prefer_youtube_chinese is True
+    assert "prefer_youtube_chinese" not in config.download.model_dump()
 
 
 def test_cli_configuration_supports_local_ai_without_api_key() -> None:

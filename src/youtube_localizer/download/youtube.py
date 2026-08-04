@@ -28,7 +28,6 @@ YOUTUBE_HOSTS = {
     "youtu.be",
 }
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
-SIMPLIFIED_CHINESE_LANGUAGES = ("zh-Hans", "zh-CN", "zh")
 JAVASCRIPT_RUNTIME_EXECUTABLES = {
     "deno": ("deno.exe", "deno"),
     "node": ("node.exe", "node"),
@@ -40,12 +39,6 @@ JAVASCRIPT_RUNTIME_EXECUTABLES = {
 @dataclass(frozen=True)
 class YouTubeDownloadResult:
     video: Path
-    english_subtitle: Path | None = None
-    english_language: str = ""
-    english_kind: str = ""
-    chinese_subtitle: Path | None = None
-    chinese_language: str = ""
-    chinese_kind: str = ""
     warnings: tuple[str, ...] = ()
 
 
@@ -88,9 +81,14 @@ def discover_javascript_runtimes() -> dict[str, str]:
     for runtime, executable_names in JAVASCRIPT_RUNTIME_EXECUTABLES.items():
         path: Path | None = None
         for executable_name in executable_names:
-            local = python_directory / executable_name
-            if local.is_file():
-                path = local
+            for local in (
+                python_directory / executable_name,
+                python_directory / "Scripts" / executable_name,
+            ):
+                if local.is_file():
+                    path = local
+                    break
+            if path:
                 break
             if located := shutil.which(executable_name):
                 path = Path(located)
@@ -174,57 +172,6 @@ def inspect_youtube(url: str) -> tuple[SourceMetadata, dict[str, Any]]:
     return metadata, info
 
 
-def choose_english_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
-    manual = info.get("subtitles") or {}
-    automatic = info.get("automatic_captions") or {}
-    manual_languages = [language for language in manual if language == "en"]
-    manual_languages += sorted(
-        language for language in manual if language.lower().startswith("en-")
-    )
-    if manual_languages:
-        return manual_languages[0], "creator"
-    automatic_languages = [language for language in automatic if language == "en"]
-    automatic_languages += sorted(
-        language for language in automatic if language.lower().startswith("en-")
-    )
-    if automatic_languages:
-        return automatic_languages[0], "automatic"
-    return None
-
-
-def _matching_language(catalog: dict[str, Any], wanted: tuple[str, ...]) -> str | None:
-    by_casefold = {language.casefold(): language for language in catalog}
-    for preferred in wanted:
-        match = by_casefold.get(preferred.casefold())
-        if match:
-            return match
-    return None
-
-
-def choose_chinese_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
-    """Prefer creator Simplified Chinese captions, then YouTube automatic captions."""
-    manual = info.get("subtitles") or {}
-    automatic = info.get("automatic_captions") or {}
-    manual_language = _matching_language(manual, SIMPLIFIED_CHINESE_LANGUAGES)
-    if manual_language:
-        return manual_language, "creator"
-    automatic_language = _matching_language(automatic, SIMPLIFIED_CHINESE_LANGUAGES)
-    if automatic_language:
-        return automatic_language, "automatic"
-    return None
-
-
-def _downloaded_subtitle(destination_dir: Path, language: str) -> Path | None:
-    wanted = f".{language}.".casefold()
-    candidates = sorted(
-        path
-        for path in destination_dir.glob("download*.*")
-        if path.suffix.lower() in {".vtt", ".srt", ".ass"}
-        and wanted in path.name.casefold()
-    )
-    return candidates[0] if candidates else None
-
-
 def _run_youtube_download(url: str, options: dict[str, Any]) -> Path:
     with _youtube_dl(options) as ydl:
         downloaded_info = ydl.extract_info(url, download=True)
@@ -233,20 +180,13 @@ def _run_youtube_download(url: str, options: dict[str, Any]) -> Path:
         return Path(ydl.prepare_filename(downloaded_info))
 
 
-def _is_optional_subtitle_failure(exc: BaseException) -> bool:
-    return "unable to download video subtitles" in str(exc).casefold()
-
-
 def download_youtube(
     url: str,
-    info: dict[str, Any],
+    _info: dict[str, Any],
     destination_dir: Path,
     config: DownloadConfig,
 ) -> YouTubeDownloadResult:
     destination_dir.mkdir(parents=True, exist_ok=True)
-    english = choose_english_subtitle(info)
-    chinese = choose_chinese_subtitle(info) if config.prefer_youtube_chinese else None
-    selections = [selection for selection in (english, chinese) if selection is not None]
     options: dict[str, Any] = {
         "quiet": False,
         "noplaylist": True,
@@ -255,49 +195,24 @@ def download_youtube(
         "format": config.format,
         "format_sort": list(config.format_sort),
         "outtmpl": str(destination_dir / "download.%(ext)s"),
-        "writesubtitles": any(selection[1] == "creator" for selection in selections),
-        "writeautomaticsub": any(selection[1] == "automatic" for selection in selections),
-        "subtitleslangs": list(dict.fromkeys(selection[0] for selection in selections)),
-        "subtitlesformat": "vtt/srt/best",
+        # Source captions are deliberately disabled. The pipeline always uses its bundled
+        # Whisper model so timing and recognition behavior are consistent and offline-capable.
+        "writesubtitles": False,
+        "writeautomaticsub": False,
+        "subtitleslangs": [],
     }
     _enable_javascript_runtime(options)
     if config.prefer_mp4:
         options["merge_output_format"] = "mp4"
-    download_warnings: list[str] = []
     try:
         prepared = _run_youtube_download(url, options)
     except Exception as exc:
         if isinstance(exc, LocalizerError):
             raise
-        if selections and _is_optional_subtitle_failure(exc):
-            warning = (
-                "YouTube temporarily rejected one or more optional subtitle downloads. "
-                "The video download will continue without the unavailable captions; the pipeline "
-                "will use another caption track or local Whisper transcription."
-            )
-            LOGGER.warning("%s Details: %s", warning, exc)
-            download_warnings.append(warning)
-            video_only_options = {
-                **options,
-                "writesubtitles": False,
-                "writeautomaticsub": False,
-                "subtitleslangs": [],
-            }
-            try:
-                prepared = _run_youtube_download(url, video_only_options)
-            except Exception as retry_exc:
-                if isinstance(retry_exc, LocalizerError):
-                    raise
-                raise LocalizerError(
-                    "yt-dlp failed to download the public video after the optional subtitle "
-                    "fallback. The partial download is retained so a later --resume can continue "
-                    f"it. Details: {retry_exc}"
-                ) from retry_exc
-        else:
-            raise LocalizerError(
-                "yt-dlp failed to download the public video. The partial download is retained so "
-                f"a later --resume can continue it. Details: {exc}"
-            ) from exc
+        raise LocalizerError(
+            "yt-dlp failed to download the public video. The partial download is retained so "
+            f"a later --resume can continue it. Details: {exc}"
+        ) from exc
 
     candidates = [
         path
@@ -314,28 +229,7 @@ def download_youtube(
     if video != destination:
         video.replace(destination)
 
-    english_file = None
-    if english:
-        original = _downloaded_subtitle(destination_dir, english[0])
-        if original:
-            english_file = destination_dir / f"source.en{original.suffix.lower()}"
-            original.replace(english_file)
-    chinese_file = None
-    if chinese:
-        original = _downloaded_subtitle(destination_dir, chinese[0])
-        if original:
-            chinese_file = destination_dir / f"source.zh{original.suffix.lower()}"
-            original.replace(chinese_file)
-    return YouTubeDownloadResult(
-        video=destination,
-        english_subtitle=english_file,
-        english_language=english[0] if english and english_file else "",
-        english_kind=english[1] if english and english_file else "",
-        chinese_subtitle=chinese_file,
-        chinese_language=chinese[0] if chinese and chinese_file else "",
-        chinese_kind=chinese[1] if chinese and chinese_file else "",
-        warnings=tuple(download_warnings),
-    )
+    return YouTubeDownloadResult(video=destination)
 
 
 def save_thumbnail(url: str, destination: Path) -> None:

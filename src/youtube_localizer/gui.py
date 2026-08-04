@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -10,6 +9,8 @@ import tkinter as tk
 from collections.abc import Mapping
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
+
+from .resources import ollama_executable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -31,13 +32,7 @@ TRANSLATION_MODES = {
 
 
 def local_ai_available() -> bool:
-    if shutil.which("ollama"):
-        return True
-    local_app_data = os.getenv("LOCALAPPDATA")
-    return bool(
-        local_app_data
-        and (Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe").is_file()
-    )
+    return ollama_executable() is not None
 
 
 def build_process_command(
@@ -46,7 +41,6 @@ def build_process_command(
     subtitle_mode: str,
     translation_provider: str,
     translation_direction: str = "en-to-zh",
-    prefer_youtube_chinese: bool = True,
     resume: bool = True,
     python_executable: str | None = None,
     main_script: Path | None = None,
@@ -72,11 +66,6 @@ def build_process_command(
         translation_provider,
         "--translation-direction",
         translation_direction,
-        (
-            "--prefer-youtube-chinese"
-            if prefer_youtube_chinese
-            else "--no-prefer-youtube-chinese"
-        ),
     ]
     if resume:
         command.append("--resume")
@@ -136,7 +125,6 @@ class LocalizerWindow:
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
         self.authorized = tk.BooleanVar(value=False)
-        self.prefer_youtube_chinese = tk.BooleanVar(value=True)
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
 
@@ -203,11 +191,6 @@ class LocalizerWindow:
         )
         translation_combo.grid(row=2, column=1, sticky="ew", pady=4)
         translation_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_translation_fields())
-        ttk.Checkbutton(
-            options,
-            text="优先使用 YouTube 提供的简体中文字幕（可作为中文成品或中文原文）",
-            variable=self.prefer_youtube_chinese,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(6, 2))
         options.columnconfigure(1, weight=1)
 
         self.api_frame = ttk.LabelFrame(outer, text="自动翻译 API（API Key 不会保存）", padding=12)
@@ -302,7 +285,6 @@ class LocalizerWindow:
             subtitle_mode=SUBTITLE_MODES[self.subtitle_label.get()],
             translation_provider=provider,
             translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
-            prefer_youtube_chinese=self.prefer_youtube_chinese.get(),
             resume=self.resume.get(),
         )
         environment = os.environ.copy()
@@ -337,11 +319,11 @@ class LocalizerWindow:
         elif provider == "offline":
             if self.active_direction == "zh-to-en":
                 self._append_log(
-                    "当前为中文转英文离线模式：优先读取中文字幕；没有时会用 Whisper 识别中文，首次会下载中译英模型。\n\n"
+                    "当前为中文转英文离线模式：使用本地 Whisper 识别中文，再进行中译英。\n\n"
                 )
             else:
                 self._append_log(
-                    "当前为英文转中文离线模式：优先使用 YouTube 中文字幕；如需翻译，首次会下载英译中模型。\n\n"
+                    "当前为英文转中文离线模式：使用本地 Whisper 识别英文，再进行英译中。\n\n"
                 )
         elif provider == "ollama":
             target_name = "英文" if self.active_direction == "zh-to-en" else "简体中文"

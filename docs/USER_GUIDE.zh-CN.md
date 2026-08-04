@@ -24,11 +24,9 @@
 ```mermaid
 flowchart LR
     A["公开 YouTube 链接或本地视频"] --> B["检查并导入视频"]
-    B --> C{"有可用英文字幕？"}
-    C -- "有" --> D["清理英文字幕"]
-    C -- "没有" --> E["faster-whisper 英文转录"]
-    E --> D
-    D --> F["人工翻译或 API 翻译"]
+    B --> C["本地 faster-whisper 识别原语言"]
+    C --> D["清理与合并原文字幕"]
+    D --> F["本地或 API 翻译"]
     F --> G["生成中文/双语字幕"]
     G --> H["FFmpeg 渲染 MP4"]
     H --> I["验证并生成报告"]
@@ -53,6 +51,15 @@ flowchart LR
 - 发布平台是否有额外规则
 
 ## 3. Windows 快速安装
+
+### 3.0 推荐：离线安装包
+
+把 `YouTube-Chinese-Localizer-0.3.0-Offline-Setup.exe` 和同目录下所有 `.bin`
+分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
+Ollama、Whisper Medium、Qwen3:4b 以及英中/中英两套快速翻译模型，首次
+使用不再下载模型。安装后从桌面或开始菜单打开即可。
+
+下面 3.1–3.6 是从 GitHub 源码手动安装时才需要的步骤。
 
 ### 3.1 安装 Git
 
@@ -112,12 +119,6 @@ python -m pip install --upgrade pip
 python -m pip install -e ".[transcription,offline-translation]"
 ```
 
-如果只处理已经带英文字幕的视频，不需要 Whisper：
-
-```powershell
-python -m pip install -e .
-```
-
 ### 3.6 检查环境
 
 ```powershell
@@ -133,8 +134,8 @@ python main.py doctor
 - yt-dlp JavaScript support：`ok`（Deno 与 yt-dlp-ejs 均已安装）
 - faster-whisper：`ok` 或 `optional`
 - Offline translation runtime：`ok`
-- Offline English→Chinese model：首次英译中前可为 `optional`，下载后为 `ok`
-- Offline Chinese-to-English model：首次中译英前可为 `optional`，下载后为 `ok`
+- Offline English→Chinese model：离线安装包中应为 `ok`
+- Offline Chinese-to-English model：离线安装包中应为 `ok`
 - 输出目录：`ok`
 - 中文字体：`ok` 或可接受的警告
 
@@ -154,7 +155,7 @@ Start Localizer.cmd
 4. 选择翻译方式并确认授权。
 5. 点击“开始本地化”。
 
-窗口会实时显示下载、字幕提取或 Whisper 转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目。英译中和中译英的最终视频分别位于：
+窗口会实时显示下载、Whisper 本地转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目。英译中和中译英的最终视频分别位于：
 
 ```text
 output\项目名称\rendered\chinese_hardsub.mp4
@@ -165,12 +166,12 @@ output\项目名称\rendered\english_hardsub.mp4
 
 - “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
 - “本地快速翻译并压制”不需要 API，会使用约 85 MB 的轻量模型在本机完成翻译。它现在会先合并完整段落再翻译，适合速度优先或配置较低的电脑。
-- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。它使用本机 Ollama 和 `qwen3:4b`，先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕。模型首次下载约 2.5 GB，之后可以断网运行，字幕文本只发送到本机 `localhost`。
+- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。离线安装包自带 Ollama 和 `qwen3:4b`，先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
 - 两种本地翻译都会应用 `glossary.yaml` 中的术语。
 - “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
-建议保持“优先使用 YouTube 提供的简体中文字幕”处于勾选状态。英译中时它可直接作为中文成品；中译英时它会作为中文原文进入翻译。中译英模式没有中文字幕时，程序会用本地 Whisper 识别中文语音。
+新版已取消“使用 YouTube 字幕”选项。无论链接是否提供字幕，程序都只下载视频/音频，再用本地 Whisper 识别英文或中文。
 
 ChatGPT Plus 不能直接作为本地程序的 API 使用，也不包含 OpenAI API 额度。
 
@@ -191,8 +192,8 @@ python main.py "D:\Videos\owned-demo.mp4"
 默认使用不需要 API Key 的人工翻译模式。第一次运行通常会：
 
 1. 检查并复制视频
-2. 查找英文字幕
-3. 没有字幕时调用 faster-whisper 转录
+2. 调用本地 faster-whisper 转录原语言
+3. 生成统一的原文时间轴
 4. 清理英文字幕
 5. 导出人工翻译分块
 6. 显示项目目录并等待翻译导入
@@ -299,31 +300,28 @@ python main.py validate "output\Owned demo_a1b2c3d4e5"
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-默认字幕优先顺序：
-
-1. 作者上传的简体中文字幕（`zh-Hans`、`zh-CN` 或 `zh`）
-2. YouTube 提供的简体中文自动字幕
-3. 作者上传的英文字幕
-4. 作者上传的 `en-US`、`en-GB` 等英文变体
-5. YouTube 自动生成的英文字幕
-6. 本地 faster-whisper 英文转录
+字幕来源固定为本地 `faster-whisper-medium`。程序不会请求、下载或使用
+YouTube 的作者字幕和自动字幕，因此原文时间轴在不同链接上保持同一套
+本地识别规则。
 
 完全不使用 API 的一站式命令：
 
 ```powershell
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
-  --translation-provider offline --prefer-youtube-chinese
+  --translation-provider offline
 ```
 
 更自然的本地 AI 段落翻译（不需要云端 API 或 API Key）：
 
 ```powershell
-winget install Ollama.Ollama
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
-  --translation-provider ollama --prefer-youtube-chinese
+  --translation-provider ollama
 ```
 
-Ollama 安装后会在本机 `http://localhost:11434` 运行。第一次选择该模式时，软件会自动下载 `qwen3:4b`；之后不联网也能翻译。程序只把视频标题作为理解语境，模型只输出字幕正文，不会把标题或翻译说明混入字幕。
+离线安装包会在独立的本机端口自动启动自带的 Ollama 服务并读取已打包的
+`qwen3:4b`；这样不会被电脑上另一个 Ollama 服务遮蔽，也不需要
+另外执行 `winget` 或 `ollama pull`。程序只把视频标题作为理解语境，模型只
+输出字幕正文，不会把标题或翻译说明混入字幕。
 
 把已获授权的中文视频本地化为英文：
 
@@ -332,18 +330,21 @@ python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
   --translation-direction zh-to-en --translation-provider offline
 ```
 
-中译英模式会优先使用视频已有的简体中文字幕；没有中文字幕时，用多语言 Whisper 以 `zh` 模式识别中文语音，然后使用本地中译英模型生成和压制英文字幕。
+中译英模式固定用多语言 Whisper 的 `zh` 模式识别中文语音，然后使用
+本地中译英模型生成和压制英文字幕。英译中模式同样先在本地识别英文，
+再进行英译中。
 
-如果已有简体中文字幕，程序直接压制，不运行翻译。如果只有英文字幕，程序使用本地离线模型翻译；如果没有字幕，则先用 Whisper 识别英文，再离线翻译并压制。
-
-首次离线翻译会把模型下载到：
+离线安装包内的模型位于安装目录 `models` 下。从源码手动安装时，缺少的
+快速翻译模型才会下载到：
 
 ```text
 %USERPROFILE%\.youtube-chinese-localizer\models\translate-en_zh-1_9
 %USERPROFILE%\.youtube-chinese-localizer\models\translate-zh_en-1_9
 ```
 
-两个方向的模型分别按需下载，每个安装后约占用 85 MB 磁盘。它们源自 OPUS-MT，模型包附带 CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话和专业术语仍需要人工复核。
+两个快速翻译模型每个约占用 85 MB 磁盘。它们源自 OPUS-MT，模型包附带
+CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话和专业术语仍需要
+人工复核。
 
 以下内容会被拒绝或无法处理：
 
@@ -417,7 +418,8 @@ subtitles\bilingual.srt
 subtitles\bilingual.ass
 ```
 
-如果 YouTube 提供的中英文字幕轨道数量或时间点不同，程序会按时间重叠自动对齐，并保留目标语言轨道的时间轴，不会再因 cue 数量不同而中止。
+双语字幕使用同一条本地 Whisper 时间轴进行翻译投影，不再合并两条互不匹配的
+YouTube 字幕轨道。
 
 ## 9. 先预览字幕样式
 
@@ -473,7 +475,6 @@ download:
   # 最高源画质：依次优先分辨率、帧率、码率和文件大小。
   format: bestvideo+bestaudio/best
   format_sort: [res, fps, br, size]
-  prefer_youtube_chinese: true
 
 subtitles:
   font: Microsoft YaHei
@@ -511,7 +512,8 @@ Windows 推荐：
 
 Whisper 的设备选择与离线翻译相互独立。离线字幕翻译的 `offline_device: auto` 为避免 CUDA 运行库只安装一部分时卡住，稳定使用 CPU `int8`；只有完整安装 CTranslate2 所需的 CUDA 和 cuDNN 后，才建议明确设置为 `cuda`。
 
-首次使用某个 Whisper 模型时需要联网下载模型文件。
+离线安装包已包含 Whisper Medium，首次识别不需要联网。从源码手动安装并改用
+其他 Whisper 尺寸时，才需要下载相应模型。
 
 ### 视频质量
 
@@ -538,7 +540,7 @@ python main.py process "D:\Videos\owned-demo.mp4" --resume
 
 匹配时会跳过已完成步骤。
 
-如果英文字幕发生变化，旧中文字幕、人工翻译缓存和渲染视频会被自动判定为过期，避免混用新旧内容。
+如果本地识别字幕发生变化，旧目标字幕、人工翻译缓存和渲染视频会被自动判定为过期，避免混用新旧内容。
 
 强制重做某一步：
 
@@ -707,13 +709,15 @@ python -m pip install -e ".[offline-translation]"
 python main.py doctor
 ```
 
-每个翻译方向的模型只在第一次使用时下载：英译中和中译英分别保存在 `translate-en_zh-1_9` 与 `translate-zh_en-1_9` 目录。`offline_device: auto` 会稳定使用 CPU `int8`，避免 CUDA 运行库不完整时卡住；只有明确设置 `cuda` 才使用显卡翻译。模型下载被中断时不会把残缺目录当成已安装，可以重新运行同一任务继续处理。
+离线安装包已包含 `translate-en_zh-1_9` 和 `translate-zh_en-1_9`。如果这两个
+目录缺失，请重新安装并确保所有 `.bin` 分卷与 Setup.exe 在同一目录。
+`offline_device: auto` 会稳定使用 CPU `int8`；只有明确设置 `cuda` 才使用显卡翻译。
 
-### YouTube 字幕下载出现 HTTP 429
+### YouTube 视频下载出现 HTTP 429
 
-这是 YouTube 临时限制字幕请求，不是翻译模型或 FFmpeg 出错。程序会把 YouTube 字幕视为可选内容：记录警告后自动改为只下载视频，然后使用其他可用原文字幕或本地 Whisper 识别，不再让整个任务直接失败。
-
-如果视频下载本身也收到 429，请暂停一段时间，再对同一个输入勾选“断点续跑”后重试。不要连续反复点击开始，否则临时限制可能持续更久。
+新版不请求 YouTube 字幕端点，因此不会再出现“字幕下载 429”。如果视频下载
+本身收到 429，请暂停一段时间，再对同一个输入勾选“断点续跑”后重试。不要连续
+反复点击开始，否则临时限制可能持续更久。
 
 ### FFmpeg 退出码为 `3221225786` 或 `0xC000013A`
 
@@ -833,11 +837,11 @@ PROJECT_PATH\logs\pipeline.log
 - 发布标题和许可文字必须由用户最终确认
 - 当前版本不自动上传视频到发布平台
 - 当前版本不自动进行高级字幕重定时
-- 首次下载 Whisper 模型需要网络和额外磁盘空间
+- 离线安装包约 5–6 GB，安装和运行需要足够磁盘空间
 
 ## 19. 推荐的首次测试顺序
 
-1. 安装 Python、FFmpeg 和项目依赖
+1. 运行离线 Setup.exe，并保持所有 `.bin` 分卷在同一目录
 2. 运行 `python main.py doctor`
 3. 用 30 秒到 2 分钟的自有本地视频测试
 4. 完成人工翻译导入

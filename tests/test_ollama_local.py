@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from unittest.mock import Mock, patch
 
+import httpx
 import pytest
 
 from youtube_localizer.errors import LocalizerError
@@ -98,3 +99,45 @@ def test_local_ai_retries_runaway_translation_output(tmp_path) -> None:
 
     assert translated == "自然的完整段落。"
     assert post.call_count == 2
+
+
+def test_bundled_ollama_server_starts_automatically(tmp_path) -> None:
+    executable = tmp_path / "runtime" / "ollama" / "ollama.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"")
+    models = tmp_path / "models" / "ollama"
+    (models / "blobs").mkdir(parents=True)
+    (models / "manifests").mkdir()
+    tags = _response({"models": [{"name": "qwen3:4b"}]})
+    connection_error = httpx.ConnectError("not running")
+
+    with (
+        patch(
+            "youtube_localizer.translation.ollama_local.httpx.get",
+            side_effect=[connection_error, tags, tags],
+        ),
+        patch(
+            "youtube_localizer.translation.ollama_local.ollama_executable",
+            return_value=executable,
+        ),
+        patch(
+            "youtube_localizer.translation.ollama_local.bundled_ollama_models",
+            return_value=models,
+        ),
+        patch("youtube_localizer.translation.ollama_local.subprocess.Popen") as popen,
+    ):
+        provider = LocalOllamaProvider(
+            endpoint="http://localhost:11434",
+            model="qwen3:4b",
+            auto_pull=False,
+            cache=TranslationCache(tmp_path / "cache"),
+            source_code="en",
+            target_code="zh",
+        )
+
+    command = popen.call_args.args[0]
+    environment = popen.call_args.kwargs["env"]
+    assert command == [str(executable), "serve"]
+    assert environment["OLLAMA_MODELS"] == str(models)
+    assert provider.endpoint == "http://127.0.0.1:11436"
+    assert environment["OLLAMA_HOST"] == "127.0.0.1:11436"

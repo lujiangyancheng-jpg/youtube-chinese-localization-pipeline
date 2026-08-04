@@ -10,7 +10,7 @@ from youtube_localizer.subtitles.cleanup import CleanupResult
 from youtube_localizer.subtitles.parser import parse_subtitle, write_srt
 
 
-def test_pipeline_translates_provided_chinese_to_english(tmp_path) -> None:
+def test_pipeline_ignores_provided_chinese_and_transcribes_locally(tmp_path) -> None:
     project = ProjectPaths(tmp_path / "project")
     project.create()
     url = "https://youtu.be/dQw4w9WgXcQ"
@@ -28,17 +28,18 @@ def test_pipeline_translates_provided_chinese_to_english(tmp_path) -> None:
     def fake_download(*_args, **_kwargs):
         video = project.source / "source_video.mp4"
         video.write_bytes(b"synthetic video")
-        subtitle = project.source / "source.zh.vtt"
-        subtitle.write_text(
-            "WEBVTT\n\n00:00:00.100 --> 00:00:01.900\n欢迎来到我的频道\n",
+        # A stale caption file from an older project must not be consumed.
+        (project.source / "source.zh.vtt").write_text(
+            "WEBVTT\n\n00:00:00.100 --> 00:00:01.900\nYouTube 字幕\n",
             encoding="utf-8",
         )
-        return YouTubeDownloadResult(
-            video=video,
-            chinese_subtitle=subtitle,
-            chinese_language="zh-Hans",
-            chinese_kind="creator",
-        )
+        return YouTubeDownloadResult(video=video)
+
+    def fake_transcribe(_audio, _json, output_srt, _config, *, language):
+        assert language == "zh"
+        cues = [SubtitleCue(id=1, start_ms=100, end_ms=1900, text="本地识别字幕")]
+        write_srt(output_srt, cues)
+        return CleanupResult(cues, [], [])
 
     def fake_translate(active_project, active_config, _metadata):
         chinese = parse_subtitle(active_project.chinese_srt)
@@ -56,7 +57,6 @@ def test_pipeline_translates_provided_chinese_to_english(tmp_path) -> None:
 
     config = AppConfig.model_validate(
         {
-            "download": {"prefer_youtube_chinese": True},
             "translation": {"provider": "offline", "direction": "zh-to-en"},
             "publishing": {"generate_metadata": False},
         }
@@ -68,18 +68,19 @@ def test_pipeline_translates_provided_chinese_to_english(tmp_path) -> None:
         ),
         patch("youtube_localizer.pipeline.download_youtube", side_effect=fake_download),
         patch("youtube_localizer.pipeline.translate_with_offline", side_effect=fake_translate),
-        patch("youtube_localizer.pipeline.transcribe_audio") as transcribe,
+        patch("youtube_localizer.pipeline.extract_transcription_audio"),
+        patch("youtube_localizer.pipeline.transcribe_audio", side_effect=fake_transcribe) as transcribe,
         patch("youtube_localizer.pipeline.render_project", side_effect=fake_render),
     ):
         result = process_pipeline(url, config)
 
     assert result.status == "completed"
-    assert parse_subtitle(project.chinese_srt)[0].text == "欢迎来到我的频道"
+    assert parse_subtitle(project.chinese_srt)[0].text == "本地识别字幕"
     assert parse_subtitle(project.english_srt)[0].text == "Welcome to my channel"
     assert project.english_ass.is_file()
     assert project.english_hardsub.is_file()
     assert not project.chinese_hardsub.exists()
-    transcribe.assert_not_called()
+    transcribe.assert_called_once()
 
 
 def test_pipeline_transcribes_chinese_when_no_caption_track_exists(tmp_path) -> None:

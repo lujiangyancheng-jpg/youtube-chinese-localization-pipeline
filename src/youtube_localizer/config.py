@@ -23,7 +23,6 @@ class DownloadConfig(StrictModel):
     prefer_mp4: bool = True
     download_thumbnail: bool = True
     download_metadata: bool = True
-    prefer_youtube_chinese: bool = True
 
 
 class TranscriptionConfig(StrictModel):
@@ -109,6 +108,24 @@ class AppConfig(StrictModel):
     publishing: PublishingConfig = PublishingConfig()
 
 
+def migrate_config_data(data: dict) -> dict:
+    """Remove retired settings while keeping saved projects forward-compatible."""
+    migrated = dict(data)
+    download = migrated.get("download")
+    if isinstance(download, dict) and "prefer_youtube_chinese" in download:
+        migrated_download = dict(download)
+        migrated_download.pop("prefer_youtube_chinese", None)
+        migrated["download"] = migrated_download
+    return migrated
+
+
+def validate_config_data(data: dict) -> AppConfig:
+    try:
+        return AppConfig.model_validate(migrate_config_data(data))
+    except ValidationError as exc:
+        raise ConfigurationError(f"Invalid configuration:\n{exc}") from exc
+
+
 def load_config(path: Path | None = None) -> AppConfig:
     load_dotenv(override=False)
     data: dict = {}
@@ -133,7 +150,4 @@ def load_config(path: Path | None = None) -> AppConfig:
             translation["model"] = model
         data["translation"] = translation
 
-    try:
-        return AppConfig.model_validate(data)
-    except ValidationError as exc:
-        raise ConfigurationError(f"Invalid configuration:\n{exc}") from exc
+    return validate_config_data(data)

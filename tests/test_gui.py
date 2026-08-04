@@ -27,7 +27,6 @@ def test_build_process_command_uses_argument_array_and_resume() -> None:
         "manual",
         "--translation-direction",
         "en-to-zh",
-        "--prefer-youtube-chinese",
         "--resume",
     ]
 
@@ -62,13 +61,12 @@ def test_api_configuration_does_not_require_or_mutate_environment() -> None:
     assert environment["OPENAI_COMPATIBLE_API_KEY"] == "secret"
 
 
-def test_build_process_command_supports_offline_without_youtube_chinese() -> None:
+def test_build_process_command_supports_offline_local_transcription() -> None:
     command = build_process_command(
         "https://youtu.be/abc123def45",
         subtitle_mode="bilingual_en_zh",
         translation_provider="offline",
         translation_direction="zh-to-en",
-        prefer_youtube_chinese=False,
         resume=False,
         python_executable="python.exe",
         main_script=Path("main.py"),
@@ -76,7 +74,7 @@ def test_build_process_command_supports_offline_without_youtube_chinese() -> Non
 
     assert "offline" in command
     assert command[command.index("--translation-direction") + 1] == "zh-to-en"
-    assert "--no-prefer-youtube-chinese" in command
+    assert not any("youtube-chinese" in argument for argument in command)
     assert "--resume" not in command
 
 

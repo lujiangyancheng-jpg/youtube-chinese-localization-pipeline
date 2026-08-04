@@ -6,9 +6,9 @@ normalized English subtitles, Simplified Chinese subtitles, optional bilingual s
 a validated hard-subtitled MP4.
 
 The pipeline is resumable, keeps intermediate files, never uploads content, and can complete
-English↔Chinese localization without an API by using provided YouTube captions, multilingual
-Whisper transcription, and local offline translation models. Manual ChatGPT export/import
-remains available.
+English↔Chinese localization without an API by using local multilingual Whisper transcription
+and local translation models. YouTube caption tracks are never downloaded or consumed. Manual
+ChatGPT export/import remains available.
 
 > 中文用户：请阅读完整的[中文使用说明书](docs/USER_GUIDE.zh-CN.md)。
 
@@ -28,12 +28,11 @@ attribution requirements, and publishing-platform rules.
 ## Phase 1 capabilities
 
 - Public YouTube metadata inspection with `yt-dlp` before download
-- Creator Simplified Chinese subtitle preference with direct hard-subtitle rendering
-- Creator English subtitle preference, then English variants, then auto-captions
+- Consistent local English or Chinese transcription without YouTube caption requests
 - Local video validation and safe copying
 - VTT/SRT/ASS parsing and normalized UTF-8 SRT output
 - Rolling-caption overlap cleanup and conservative English cleanup
-- `faster-whisper` English or Chinese transcription fallback with VAD and word timestamps
+- `faster-whisper` English or Chinese transcription with VAD and word timestamps
 - Manual Markdown/JSONL translation chunks with strict cue/timestamp validation
 - Local offline English↔Simplified Chinese translation with directional model selection and caching
 - OpenAI-compatible subtitle translation with retries and deterministic response caching
@@ -51,6 +50,14 @@ platform-specific metadata generation remain future enhancements. Timestamps are
 not changed in Phase 1.
 
 ## Windows quick start
+
+For a normal Windows installation, use the split offline setup set from `dist`: keep the setup
+`.exe` and all adjacent `.bin` files together, then run the `.exe`. It installs its own Python,
+FFmpeg, Ollama runtime, Whisper Medium, Qwen3:4b, and both fast translation models. No model is
+downloaded on first use. See [installer/README.md](installer/README.md) for reproducible build
+instructions.
+
+The following steps are for running directly from a source checkout:
 
 The recommended interpreter is Python 3.11, 3.12, or 3.13. Python 3.14 may run the core
 application, but `faster-whisper`/CTranslate2 wheels may not yet be available for it.
@@ -74,12 +81,6 @@ application, but `faster-whisper`/CTranslate2 wheels may not yet be available fo
    .\.venv\Scripts\Activate.ps1
    python -m pip install --upgrade pip
    python -m pip install -e ".[transcription,offline-translation]"
-   ```
-
-   For download/subtitle processing without Whisper:
-
-   ```powershell
-   python -m pip install -e .
    ```
 
 4. Check the environment:
@@ -111,12 +112,8 @@ project folder. You can then:
 
 The window streams progress from the existing resumable pipeline and provides a button for
 opening the `output` folder. Closing or stopping a run keeps completed stages so the same
-input can be resumed later.
-
-Keep **优先使用 YouTube 提供的简体中文字幕** selected. In English→Chinese mode it can be
-used directly as the target subtitle; in Chinese→English mode it becomes the Chinese source
-for translation. When no Chinese source exists in Chinese→English mode, Whisper transcribes
-the Chinese speech locally.
+input can be resumed later. There is no YouTube-caption option: both directions always transcribe
+the source audio with the local bundled Whisper model.
 
 YouTube downloads default to the highest-resolution video stream and the best available audio
 stream without restricting the source codec to MP4/M4A. Formats are ranked by resolution,
@@ -129,15 +126,15 @@ The desktop interface offers four translation modes:
 - **Free/manual mode** downloads the video, obtains or transcribes source-language subtitles, and
   exports translation chunks. You translate and import those chunks before rendering.
 - **Local fast mode** translates in the selected direction on this computer and continues
-  through hard-subtitle rendering without an API. Each direction downloads its model on first
-  use; later runs work offline and reuse cached translations. Rolling caption fragments are grouped
-  into complete paragraphs before translation; configured glossary terms are enforced.
-- **Local AI paragraph mode** uses `qwen3:4b` through Ollama on `localhost`. It needs no API key,
-  sends no subtitle text to a cloud service, and can work without internet after the first model
-  download. The model translates a complete spoken paragraph first; the application then segments
-  the natural target paragraph at target-language punctuation and maps it across the source time
-  range. Install once with `winget install Ollama.Ollama`; the model is pulled automatically on
-  first use.
+  through hard-subtitle rendering without an API. The offline installer includes both directional
+  models. Rolling transcript fragments are grouped into complete paragraphs before translation;
+  configured glossary terms are enforced.
+- **Local AI paragraph mode** uses the bundled `qwen3:4b` and standalone Ollama runtime on
+  a dedicated loopback port. It needs no API key and sends no subtitle text to a cloud service.
+  This dedicated service prevents an existing system Ollama installation from hiding the bundled
+  model. The model
+  translates a complete spoken paragraph first; the application then segments the natural target
+  paragraph at target-language punctuation and maps it across the source time range.
 - **API automatic mode** continues through target-language translation and hard-subtitle
   rendering. It requires an OpenAI-compatible endpoint, model name, and API key. Values
   entered in the window are passed to the processing run. The API key is never saved;
@@ -155,14 +152,14 @@ The equivalent no-API command is:
 
 ```powershell
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
-  --translation-provider offline --prefer-youtube-chinese
+  --translation-provider offline
 
 python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
   --translation-direction zh-to-en --translation-provider offline
 
 # Higher-quality local paragraph translation; no cloud API or API key.
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
-  --translation-provider ollama --prefer-youtube-chinese
+  --translation-provider ollama
 ```
 
 The offline models are stored under
@@ -288,7 +285,6 @@ translation:
 download:
   format: bestvideo+bestaudio/best
   format_sort: [res, fps, br, size]
-  prefer_youtube_chinese: true
 
 subtitles:
   font: Microsoft YaHei
@@ -375,9 +371,9 @@ python main.py preview "output\PROJECT_NAME" --start 60 --duration 15
 The readability pass wraps long Chinese text without changing timestamps and reports high
 characters-per-second cues. ASS canvas width and Chinese line length follow the source video's
 display aspect ratio, including rotation metadata, so portrait video does not crop a landscape
-subtitle layout. Bilingual YouTube tracks with different cue boundaries are aligned by temporal
-overlap while keeping the target-language timeline. The pass does not invent or rewrite factual
-content.
+subtitle layout. Bilingual output projects the translated paragraph onto the same local Whisper
+timeline, so independent platform-caption boundaries cannot drift apart. The pass does not invent
+or rewrite factual content.
 
 ## Optional NVIDIA/CUDA setup
 
@@ -433,10 +429,10 @@ compute type. The error message identifies this recovery path.
 ### Offline translation model cannot download or load
 
 Install the lightweight runtime with `python -m pip install -e ".[offline-translation]"`.
-The model downloads only on the first offline run. `offline_device: auto` uses CPU `int8` to
+The offline installer already contains both directional models. A source-checkout installation
+downloads a missing model only on its first offline run. `offline_device: auto` uses CPU `int8` to
 avoid partial CUDA installations stalling translation; select `cuda` explicitly only after its
-runtime is complete. Rerun `python main.py doctor` to confirm both the runtime and model. An
-interrupted or invalid model download is never treated as installed.
+runtime is complete.
 
 ### YouTube video is unavailable
 
@@ -444,13 +440,11 @@ Confirm it is a public single-video URL. Private, authenticated, age-restricted,
 currently-live sources are intentionally unsupported. The application does not accept
 cookies or browser-authentication bypasses.
 
-### YouTube subtitle download returns HTTP 429
+### YouTube video download returns HTTP 429
 
-YouTube sometimes rate-limits caption endpoints more aggressively than video downloads. The
-pipeline treats captions as optional: it records a warning, retries the video without captions,
-and uses another source-caption track or local Whisper transcription. If YouTube also rate-limits
-the video request, wait before rerunning the same input with `--resume`; repeated immediate retries
-can extend a temporary rate limit.
+The application does not request YouTube captions, so caption-endpoint rate limits no longer apply.
+If the video request itself is rate-limited, wait before rerunning the same input with `--resume`;
+repeated immediate retries can extend a temporary rate limit.
 
 ### FFmpeg cannot render subtitles
 

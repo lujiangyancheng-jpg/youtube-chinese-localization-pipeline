@@ -4,7 +4,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from youtube_localizer.config import DownloadConfig
-from youtube_localizer.download.youtube import download_youtube, inspect_youtube
+from youtube_localizer.download.youtube import (
+    discover_javascript_runtimes,
+    download_youtube,
+    inspect_youtube,
+)
 
 
 class FakeYDL:
@@ -34,6 +38,20 @@ def test_youtube_inspection_uses_metadata_without_downloading() -> None:
     assert metadata.title == "Owned demo"
     assert metadata.channel == "Creator"
     assert raw["id"] == "dQw4w9WgXcQ"
+
+
+def test_javascript_runtime_is_discovered_in_embedded_python_scripts(tmp_path) -> None:
+    python = tmp_path / "python.exe"
+    python.write_bytes(b"")
+    scripts = tmp_path / "Scripts"
+    scripts.mkdir()
+    deno = scripts / "deno.exe"
+    deno.write_bytes(b"")
+
+    with patch("youtube_localizer.download.youtube.sys.executable", str(python)):
+        runtimes = discover_javascript_runtimes()
+
+    assert runtimes["deno"] == str(deno.resolve())
 
 
 class FakeDownloadYDL:
@@ -90,7 +108,7 @@ class FakeSubtitleLimitedYDL:
         return str(Path(self.options["outtmpl"]).parent / "download.mp4")
 
 
-def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
+def test_download_never_requests_youtube_subtitles(tmp_path) -> None:
     info = {
         "subtitles": {"en": [{}]},
         "automatic_captions": {"zh-Hans": [{}]},
@@ -106,25 +124,23 @@ def test_download_gets_english_and_provided_chinese_subtitles(tmp_path) -> None:
             "https://youtu.be/dQw4w9WgXcQ",
             info,
             tmp_path,
-            DownloadConfig(prefer_youtube_chinese=True),
+            DownloadConfig(),
         )
 
     assert result.video.name == "source_video.mp4"
-    assert result.english_subtitle == tmp_path / "source.en.vtt"
-    assert result.chinese_subtitle == tmp_path / "source.zh.vtt"
-    assert result.chinese_language == "zh-Hans"
-    assert result.chinese_kind == "automatic"
     assert FakeDownloadYDL.last_options["format"] == "bestvideo+bestaudio/best"
     assert FakeDownloadYDL.last_options["format_sort"] == ["res", "fps", "br", "size"]
     assert FakeDownloadYDL.last_options["merge_output_format"] == "mp4"
     assert FakeDownloadYDL.last_options["js_runtimes"] == {
         "deno": {"path": r"C:\tools\deno.exe"}
     }
-    assert FakeDownloadYDL.last_options["writesubtitles"] is True
-    assert FakeDownloadYDL.last_options["writeautomaticsub"] is True
+    assert FakeDownloadYDL.last_options["writesubtitles"] is False
+    assert FakeDownloadYDL.last_options["writeautomaticsub"] is False
+    assert FakeDownloadYDL.last_options["subtitleslangs"] == []
+    assert not list(tmp_path.glob("source.*.vtt"))
 
 
-def test_subtitle_rate_limit_falls_back_to_video_and_whisper(tmp_path) -> None:
+def test_video_download_runs_once_when_caption_catalog_exists(tmp_path) -> None:
     FakeSubtitleLimitedYDL.options_seen = []
     info = {
         "subtitles": {"en": [{}]},
@@ -138,18 +154,13 @@ def test_subtitle_rate_limit_falls_back_to_video_and_whisper(tmp_path) -> None:
             "https://youtu.be/dQw4w9WgXcQ",
             info,
             tmp_path,
-            DownloadConfig(prefer_youtube_chinese=True),
+            DownloadConfig(),
         )
 
     assert result.video == tmp_path / "source_video.mp4"
-    assert result.english_subtitle is None
-    assert result.chinese_subtitle is None
-    assert result.english_language == ""
-    assert result.chinese_language == ""
-    assert len(result.warnings) == 1
-    assert "continue without the unavailable captions" in result.warnings[0]
-    assert len(FakeSubtitleLimitedYDL.options_seen) == 2
-    retry_options = FakeSubtitleLimitedYDL.options_seen[1]
-    assert retry_options["writesubtitles"] is False
-    assert retry_options["writeautomaticsub"] is False
-    assert retry_options["subtitleslangs"] == []
+    assert result.warnings == ()
+    assert len(FakeSubtitleLimitedYDL.options_seen) == 1
+    options = FakeSubtitleLimitedYDL.options_seen[0]
+    assert options["writesubtitles"] is False
+    assert options["writeautomaticsub"] is False
+    assert options["subtitleslangs"] == []

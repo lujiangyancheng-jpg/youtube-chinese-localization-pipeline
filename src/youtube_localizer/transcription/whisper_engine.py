@@ -8,6 +8,7 @@ from typing import Any
 from ..config import TranscriptionConfig
 from ..errors import LocalizerError
 from ..models import SubtitleCue
+from ..resources import resolve_whisper_model
 from ..subtitles.cleanup import CleanupResult, cleanup_english
 from ..subtitles.parser import write_srt
 from ..utils.files import atomic_write_json
@@ -57,7 +58,15 @@ def transcribe_audio(
             "substantial RAM; medium or small is recommended."
         )
     try:
-        model = WhisperModel(config.model, device=device, compute_type=compute_type)
+        model_reference, local_only = resolve_whisper_model(config.model)
+        if local_only:
+            LOGGER.info("Using bundled Whisper model at %s.", model_reference)
+        model = WhisperModel(
+            model_reference,
+            device=device,
+            compute_type=compute_type,
+            local_files_only=local_only,
+        )
         segments_iterator, info = model.transcribe(
             str(audio_path),
             language=language,

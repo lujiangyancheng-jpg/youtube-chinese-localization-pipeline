@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .download.youtube import discover_javascript_runtimes
+from .resources import find_bundled_model, ollama_executable, resolve_whisper_model
 from .transcription.whisper_engine import cuda_available
 from .translation.offline import validate_offline_model
 from .utils.subprocesses import resolve_executable
@@ -118,6 +119,10 @@ def run_doctor(
         offline_model_directory
         or Path("~/.youtube-chinese-localizer/models/translate-en_zh-1_9")
     ).expanduser()
+    if validate_offline_model(default_offline_model) is None:
+        default_offline_model = (
+            find_bundled_model("translate-en_zh-1_9") or default_offline_model
+        )
     model_ready = validate_offline_model(default_offline_model) is not None
     checks.append(
         DoctorCheck(
@@ -135,6 +140,11 @@ def run_doctor(
         offline_zh_en_model_directory
         or Path("~/.youtube-chinese-localizer/models/translate-zh_en-1_9")
     ).expanduser()
+    if (
+        validate_offline_model(zh_en_model, source_code="zh", target_code="en")
+        is None
+    ):
+        zh_en_model = find_bundled_model("translate-zh_en-1_9") or zh_en_model
     zh_en_model_ready = (
         validate_offline_model(zh_en_model, source_code="zh", target_code="en")
         is not None
@@ -151,20 +161,25 @@ def run_doctor(
             False,
         )
     )
-    ollama_path = resolve_executable("ollama")
-    if not ollama_path and os.name == "nt" and (local_app_data := os.getenv("LOCALAPPDATA")):
-        installed_ollama = Path(local_app_data) / "Programs" / "Ollama" / "ollama.exe"
-        if installed_ollama.is_file():
-            ollama_path = str(installed_ollama)
+    ollama_path = ollama_executable()
     checks.append(
         DoctorCheck(
             "Local AI paragraph translation",
             "ok" if ollama_path else "optional",
-            ollama_path or "install with: winget install Ollama.Ollama",
+            str(ollama_path) if ollama_path else "install with: winget install Ollama.Ollama",
             False,
         )
     )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
+    whisper_model, whisper_is_local = resolve_whisper_model("medium")
+    checks.append(
+        DoctorCheck(
+            "Whisper medium model",
+            "ok" if whisper_is_local else "optional",
+            whisper_model if whisper_is_local else "downloads on first source-checkout use",
+            False,
+        )
+    )
     checks.append(
         DoctorCheck(
             "CUDA for faster-whisper",
