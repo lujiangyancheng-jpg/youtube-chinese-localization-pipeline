@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from math import ceil
 
 from ..models import SubtitleCue
 
@@ -40,10 +41,11 @@ def wrap_chinese(text: str, *, width: int = 20, max_lines: int = 2) -> str:
         text = "".join(parts)
     if len(text) <= width:
         return text
+    balanced_width = max(width, ceil(len(text) / max_lines))
     lines: list[str] = []
     remaining = text
     while remaining and len(lines) < max_lines - 1:
-        position = _break_position(remaining, width)
+        position = _break_position(remaining, balanced_width)
         line = remaining[:position].strip()
         remaining = remaining[position:].strip()
         if remaining and remaining[0] in PUNCTUATION and line:

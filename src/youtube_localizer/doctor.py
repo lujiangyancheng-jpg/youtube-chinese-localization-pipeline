@@ -7,7 +7,15 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .download.youtube import discover_javascript_runtimes
+from .resources import (
+    bundled_fonts_directory,
+    find_bundled_model,
+    ollama_executable,
+    resolve_whisper_model,
+)
 from .transcription.whisper_engine import cuda_available
+from .translation.offline import validate_offline_model
 from .utils.subprocesses import resolve_executable
 
 
@@ -30,7 +38,14 @@ def _module_check(module: str, label: str, *, required: bool = True) -> DoctorCh
 
 
 def _font_check() -> DoctorCheck:
-    candidates = ["Microsoft YaHei", "SimHei", "Noto Sans CJK SC"]
+    if bundled := bundled_fonts_directory():
+        return DoctorCheck("Chinese subtitle font", "ok", f"bundled fonts: {bundled}", False)
+    candidates = [
+        "Noto Sans CJK SC",
+        "Noto Serif CJK SC",
+        "LXGW WenKai",
+        "Microsoft YaHei",
+    ]
     font_files: list[Path] = []
     if os.name == "nt":
         fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
@@ -48,7 +63,12 @@ def _font_check() -> DoctorCheck:
     )
 
 
-def run_doctor(output_directory: Path) -> list[DoctorCheck]:
+def run_doctor(
+    output_directory: Path,
+    *,
+    offline_model_directory: Path | None = None,
+    offline_zh_en_model_directory: Path | None = None,
+) -> list[DoctorCheck]:
     version_ok = sys.version_info >= (3, 11)
     checks = [
         DoctorCheck(
@@ -75,7 +95,103 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
             ytdlp_path or ("Python module installed" if ytdlp_module else "install package yt-dlp"),
         )
     )
+    runtimes = discover_javascript_runtimes()
+    ejs_available = importlib.util.find_spec("yt_dlp_ejs") is not None
+    javascript_ready = bool(runtimes) and ejs_available
+    runtime_detail = ", ".join(f"{name}: {path}" for name, path in runtimes.items())
+    checks.append(
+        DoctorCheck(
+            "yt-dlp JavaScript support",
+            "ok" if javascript_ready else "missing",
+            (
+                f"{runtime_detail}; yt-dlp-ejs installed"
+                if javascript_ready
+                else "Install project dependencies with yt-dlp[default,deno] so all YouTube "
+                "formats can be discovered."
+            ),
+        )
+    )
+    offline_runtime = all(
+        importlib.util.find_spec(module) is not None
+        for module in ("ctranslate2", "sentencepiece")
+    )
+    checks.append(
+        DoctorCheck(
+            "Offline translation runtime",
+            "ok" if offline_runtime else "optional",
+            (
+                "CTranslate2 and SentencePiece installed"
+                if offline_runtime
+                else 'install with: python -m pip install -e ".[offline-translation]"'
+            ),
+            False,
+        )
+    )
+    default_offline_model = (
+        offline_model_directory
+        or Path("~/.youtube-chinese-localizer/models/translate-en_zh-1_9")
+    ).expanduser()
+    if validate_offline_model(default_offline_model) is None:
+        default_offline_model = (
+            find_bundled_model("translate-en_zh-1_9") or default_offline_model
+        )
+    model_ready = validate_offline_model(default_offline_model) is not None
+    checks.append(
+        DoctorCheck(
+            "Offline English→Chinese model",
+            "ok" if model_ready else "optional",
+            (
+                str(default_offline_model)
+                if model_ready
+                else "downloads automatically on first offline translation"
+            ),
+            False,
+        )
+    )
+    zh_en_model = (
+        offline_zh_en_model_directory
+        or Path("~/.youtube-chinese-localizer/models/translate-zh_en-1_9")
+    ).expanduser()
+    if (
+        validate_offline_model(zh_en_model, source_code="zh", target_code="en")
+        is None
+    ):
+        zh_en_model = find_bundled_model("translate-zh_en-1_9") or zh_en_model
+    zh_en_model_ready = (
+        validate_offline_model(zh_en_model, source_code="zh", target_code="en")
+        is not None
+    )
+    checks.append(
+        DoctorCheck(
+            "Offline Chinese-to-English model",
+            "ok" if zh_en_model_ready else "optional",
+            (
+                str(zh_en_model)
+                if zh_en_model_ready
+                else "downloads automatically on first Chinese-to-English translation"
+            ),
+            False,
+        )
+    )
+    ollama_path = ollama_executable()
+    checks.append(
+        DoctorCheck(
+            "Local AI paragraph translation",
+            "ok" if ollama_path else "optional",
+            str(ollama_path) if ollama_path else "install with: winget install Ollama.Ollama",
+            False,
+        )
+    )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
+    whisper_model, whisper_is_local = resolve_whisper_model("medium")
+    checks.append(
+        DoctorCheck(
+            "Whisper medium model",
+            "ok" if whisper_is_local else "optional",
+            whisper_model if whisper_is_local else "downloads on first source-checkout use",
+            False,
+        )
+    )
     checks.append(
         DoctorCheck(
             "CUDA for faster-whisper",
@@ -88,11 +204,15 @@ def run_doctor(output_directory: Path) -> list[DoctorCheck]:
     checks.append(
         DoctorCheck(
             "Translation configuration",
-            "ok" if api_key else "optional",
+            "ok" if api_key or model_ready or zh_en_model_ready or ollama_path else "optional",
             (
                 "API key detected"
                 if api_key
-                else "manual export/import available; ChatGPT Plus does not include API credits"
+                else (
+                    "local translation ready; a cloud API is optional"
+                    if model_ready or zh_en_model_ready or ollama_path
+                    else "manual export/import available; ChatGPT Plus does not include API credits"
+                )
             ),
             False,
         )

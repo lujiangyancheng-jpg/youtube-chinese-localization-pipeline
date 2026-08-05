@@ -8,4 +8,8 @@ __pycache__/
 .coverage
 htmlcov/
 output/
+tools/models/
+build/
+dist/
+installer/*.partial
 *.partial.*

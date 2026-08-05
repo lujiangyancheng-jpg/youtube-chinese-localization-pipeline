@@ -16,6 +16,11 @@ from .errors import LocalizerError
 from .logging_config import configure_logging
 from .models import ProjectPaths
 from .pipeline import (
+    FORCE_STEPS,
+    _language_pair,
+    _source_subtitle,
+    _target_ass,
+    _target_subtitle,
     _write_localized_subtitles,
     export_manual_translation,
     find_source_video,
@@ -23,8 +28,11 @@ from .pipeline import (
     load_project_metadata,
     process_pipeline,
     render_project,
+    rendered_output,
     save_project_config,
     translate_with_api,
+    translate_with_local_ai,
+    translate_with_offline,
 )
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.preview import render_preview
@@ -43,7 +51,7 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
     help=(
-        "Create Chinese localization assets from public, authorized YouTube videos or local "
+        "Create bilingual localization assets from public, authorized YouTube videos or local "
         "video files. Do not use it for content you lack permission to translate/redistribute."
     ),
 )
@@ -69,23 +77,43 @@ def _configured(
     output_dir: Path | None = None,
     subtitle_mode: str | None = None,
     translation_provider: str | None = None,
+    translation_direction: str | None = None,
+    subtitle_font: str | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
     if output_dir:
         changes["output_directory"] = output_dir
     if subtitle_mode:
-        if subtitle_mode not in {"chinese", "bilingual_en_zh", "bilingual_zh_en"}:
+        if subtitle_mode not in {
+            "download_only",
+            "chinese",
+            "bilingual_en_zh",
+            "bilingual_zh_en",
+        }:
             raise LocalizerError(
-                "--subtitle-mode must be chinese, bilingual_en_zh, or bilingual_zh_en."
+                "--subtitle-mode must be download_only, chinese, bilingual_en_zh, "
+                "or bilingual_zh_en."
             )
         changes["subtitle_mode"] = subtitle_mode
+    if subtitle_font is not None:
+        normalized_font = subtitle_font.strip()
+        if not normalized_font or "\n" in normalized_font or "\r" in normalized_font:
+            raise LocalizerError("--subtitle-font must be a non-empty font family name.")
+        changes["subtitles"] = config.subtitles.model_copy(update={"font": normalized_font})
+    translation_changes: dict[str, str] = {}
     if translation_provider:
-        if translation_provider not in {"manual", "openai-compatible"}:
-            raise LocalizerError("--translation-provider must be manual or openai-compatible.")
-        changes["translation"] = config.translation.model_copy(
-            update={"provider": translation_provider}
-        )
+        if translation_provider not in {"manual", "offline", "ollama", "openai-compatible"}:
+            raise LocalizerError(
+                "--translation-provider must be manual, offline, ollama, or openai-compatible."
+            )
+        translation_changes["provider"] = translation_provider
+    if translation_direction:
+        if translation_direction not in {"en-to-zh", "zh-to-en"}:
+            raise LocalizerError("--translation-direction must be en-to-zh or zh-to-en.")
+        translation_changes["direction"] = translation_direction
+    if translation_changes:
+        changes["translation"] = config.translation.model_copy(update=translation_changes)
     return config.model_copy(update=changes)
 
 
@@ -100,14 +128,31 @@ def process_command(
         str | None,
         typer.Option(
             "--subtitle-mode",
-            help="chinese, bilingual_en_zh, or bilingual_zh_en.",
+            help="download_only, chinese, bilingual_en_zh, or bilingual_zh_en.",
         ),
     ] = None,
     translation_provider: Annotated[
         str | None,
         typer.Option(
             "--translation-provider",
-            help="manual or openai-compatible.",
+            help="manual, offline, ollama, or openai-compatible.",
+        ),
+    ] = None,
+    translation_direction: Annotated[
+        str | None,
+        typer.Option(
+            "--translation-direction",
+            help="en-to-zh or zh-to-en.",
+        ),
+    ] = None,
+    subtitle_font: Annotated[
+        str | None,
+        typer.Option(
+            "--subtitle-font",
+            help=(
+                "ASS font family, for example Noto Sans CJK SC, "
+                "Noto Serif CJK SC, or LXGW WenKai."
+            ),
         ),
     ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
@@ -118,42 +163,61 @@ def process_command(
         list[str] | None,
         typer.Option(
             "--force-step",
-            help="Repeat one stage: acquire, english_subtitles, transcribe, translate, or render.",
+            help=(
+                "Repeat one stage: acquire, english_subtitles, chinese_subtitles, "
+                "transcribe, translate, or render."
+            ),
         ),
     ] = None,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
 ) -> None:
-    """Run acquisition, English subtitles/transcription, translation, and rendering."""
+    """Run acquisition, source subtitles/transcription, translation, and rendering."""
     config = _configured(
         config_path,
         output_dir=output_dir,
         subtitle_mode=subtitle_mode,
         translation_provider=translation_provider,
+        translation_direction=translation_direction,
+        subtitle_font=subtitle_font,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "
         "content you have explicit permission to translate and redistribute."
     )
+    requested_force_steps = set(force_step or [])
+    unknown_force_steps = requested_force_steps - FORCE_STEPS
+    if unknown_force_steps:
+        raise LocalizerError(
+            "Unknown --force-step value(s): "
+            + ", ".join(sorted(unknown_force_steps))
+            + ". Expected one of: "
+            + ", ".join(sorted(FORCE_STEPS))
+            + "."
+        )
     result = process_pipeline(
         input_value,
         config,
         resume=resume,
         overwrite=overwrite,
-        force_steps=set(force_step or []),
+        force_steps=requested_force_steps,
         verbose=verbose,
     )
     console.print(f"[bold green]Project:[/] {result.project.root}")
-    if result.status == "awaiting_manual_translation":
+    if result.status == "downloaded":
+        console.print(f"[bold green]Downloaded:[/] {find_source_video(result.project)}")
+    elif result.status == "awaiting_manual_translation":
+        source_code, target_code = _language_pair(config)
         console.print(
-            "[bold yellow]English subtitles are ready.[/] Translate every Markdown chunk in "
-            f"{result.project.translation_chunks}, then run `translate-import` for each response."
+            f"[bold yellow]{source_code.upper()} source subtitles are ready.[/] Translate every "
+            f"Markdown chunk to {target_code.upper()} in {result.project.translation_chunks}, "
+            "then run `translate-import` for each response."
         )
         console.print(
             "ChatGPT Plus does not include OpenAI API credits; this manual workflow uses no API key."
         )
     else:
         console.print(
-            f"[bold green]Completed:[/] {result.project.rendered / 'chinese_hardsub.mp4'}"
+            f"[bold green]Completed:[/] {rendered_output(result.project, config)}"
         )
 
 
@@ -224,34 +288,40 @@ def transcribe_command(
     source = find_source_video(project)
     configure_logging(project.logs / "pipeline.log")
     state = PipelineState(project.state_file)
+    source_code, _ = _language_pair(config)
+    source_subtitle = _source_subtitle(project, config)
     audio = project.audio / "transcription_audio.wav"
     raw_transcription = project.subtitles / "transcription.raw.json"
+    subtitle_step = "chinese_subtitles" if source_code == "zh" else "english_subtitles"
     with state.step(
-        "english_subtitles",
+        subtitle_step,
         input_hash=hash_file(source),
-        config_hash=stable_hash(config.transcription),
+        config_hash=stable_hash(
+            {"transcription": config.transcription, "language": source_code}
+        ),
     ) as outputs:
         extract_transcription_audio(source, audio)
         cleanup = transcribe_audio(
             audio,
             raw_transcription,
-            project.english_srt,
+            source_subtitle,
             config.transcription,
+            language=source_code,
         )
-        outputs.extend([audio, raw_transcription, project.english_srt])
+        outputs.extend([audio, raw_transcription, source_subtitle])
     for stale in (
-        project.chinese_srt,
-        project.subtitles / "chinese.ass",
+        _target_subtitle(project, config),
+        _target_ass(project, config),
         project.bilingual_srt,
         project.bilingual_ass,
         project.temp / "manual_translations.json",
-        project.rendered / "chinese_hardsub.mp4",
+        rendered_output(project, config),
     ):
         stale.unlink(missing_ok=True)
     export_manual_translation(project, config)
     state.mark_status("awaiting_manual_translation")
     console.print(
-        f"[green]Transcribed {len(cleanup.cues)} cues:[/] {project.english_srt}\n"
+        f"[green]Transcribed {len(cleanup.cues)} cues:[/] {source_subtitle}\n"
         f"Manual translation chunks: {project.translation_chunks}"
     )
 
@@ -267,7 +337,7 @@ def translate_export_command(
     state = PipelineState(project.state_file)
     with state.step(
         "translation_export",
-        input_hash=hash_file(project.english_srt),
+        input_hash=hash_file(_source_subtitle(project, config)),
         config_hash=stable_hash(config.translation),
     ) as outputs:
         exported = export_manual_translation(project, config)
@@ -290,6 +360,7 @@ def translate_import_command(
     """Validate and import a translated JSONL chunk without changing timestamps."""
     project = _project(project_path)
     config = load_config(config_path) if config_path else load_project_config(project)
+    source_code, target_code = _language_pair(config)
     state = PipelineState(project.state_file)
     with state.step(
         "translation_import",
@@ -303,19 +374,28 @@ def translate_import_command(
             max_lines=config.subtitles.max_lines,
             subtitle_mode=config.subtitle_mode,
             subtitle_config=config.subtitles,
+            source_code=source_code,
+            target_code=target_code,
         )
         outputs.append(project.temp / "manual_translations.json")
-        if project.chinese_srt.is_file():
+        if _target_subtitle(project, config).is_file():
             english = parse_subtitle(project.english_srt)
             chinese = parse_subtitle(project.chinese_srt)
-            localized, additional = _write_localized_subtitles(project, english, chinese, config)
+            localized, additional = _write_localized_subtitles(
+                project,
+                english,
+                chinese,
+                config,
+                load_project_metadata(project),
+            )
             outputs.extend(localized)
             warnings.extend(additional)
             state.mark_status("translation_ready")
     console.print(f"[green]Imported translations:[/] {imported}/{total} cues")
     if imported == total:
         console.print(
-            f"[bold green]Chinese subtitles are complete:[/] {project.chinese_srt}\n"
+            f"[bold green]Target subtitles are complete:[/] "
+            f"{_target_subtitle(project, config)}\n"
             f'Next: python main.py render "{project.root}"'
         )
     else:
@@ -331,15 +411,18 @@ def translate_command(
     project_path: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
     config_path: ConfigOption = None,
     provider: Annotated[
-        str | None, typer.Option("--provider", help="manual or openai-compatible.")
+        str | None,
+        typer.Option("--provider", help="manual, offline, ollama, or openai-compatible."),
     ] = None,
 ) -> None:
     """Export manual chunks or run configured OpenAI-compatible translation."""
     project = _project(project_path)
     config = load_config(config_path) if config_path else load_project_config(project)
     if provider:
-        if provider not in {"manual", "openai-compatible"}:
-            raise LocalizerError("--provider must be manual or openai-compatible.")
+        if provider not in {"manual", "offline", "ollama", "openai-compatible"}:
+            raise LocalizerError(
+                "--provider must be manual, offline, ollama, or openai-compatible."
+            )
         config = config.model_copy(
             update={"translation": config.translation.model_copy(update={"provider": provider})}
         )
@@ -350,10 +433,15 @@ def translate_command(
     state = PipelineState(project.state_file)
     with state.step(
         "translate",
-        input_hash=hash_file(project.english_srt),
+        input_hash=hash_file(_source_subtitle(project, config)),
         config_hash=stable_hash(config.translation),
     ) as step_outputs:
-        outputs, warnings = translate_with_api(project, config)
+        if config.translation.provider == "offline":
+            outputs, warnings = translate_with_offline(project, config)
+        elif config.translation.provider == "ollama":
+            outputs, warnings = translate_with_local_ai(project, config)
+        else:
+            outputs, warnings = translate_with_api(project, config)
         step_outputs.extend(outputs)
     state.mark_status("translation_ready")
     console.print(f"[green]Translation complete:[/] {', '.join(str(path) for path in outputs)}")
@@ -372,7 +460,7 @@ def render_command(
     state = PipelineState(project.state_file)
     source = find_source_video(project)
     subtitle = (
-        project.subtitles / "chinese.ass"
+        _target_ass(project, config)
         if config.subtitle_mode == "chinese"
         else project.bilingual_ass
     )
@@ -404,7 +492,7 @@ def preview_command(
     config = load_config(config_path) if config_path else load_project_config(project)
     metadata = load_project_metadata(project)
     subtitle = (
-        project.subtitles / "chinese.ass"
+        _target_ass(project, config)
         if config.subtitle_mode == "chinese"
         else project.bilingual_ass
     )
@@ -462,11 +550,11 @@ def validate_command(
                 raise LocalizerError(f"{subtitle.name} is invalid:\n" + "\n".join(errors))
             console.print(f"[green]Valid:[/] {subtitle}")
             checked += 1
-    rendered = project.rendered / "chinese_hardsub.mp4"
-    if rendered.is_file():
-        validate_rendered_video(rendered, expected_duration=metadata.duration, decode=decode)
-        console.print(f"[green]Valid and decodable:[/] {rendered}")
-        checked += 1
+    for rendered in (project.chinese_hardsub, project.english_hardsub):
+        if rendered.is_file():
+            validate_rendered_video(rendered, expected_duration=metadata.duration, decode=decode)
+            console.print(f"[green]Valid and decodable:[/] {rendered}")
+            checked += 1
     if not checked:
         raise LocalizerError("No subtitle or rendered output files exist yet.")
 
@@ -502,7 +590,11 @@ def doctor_command(
 ) -> None:
     """Check Python, FFmpeg, yt-dlp, Whisper/CUDA, fonts, and output access."""
     config = load_config(config_path)
-    checks = run_doctor(config.output_directory.expanduser())
+    checks = run_doctor(
+        config.output_directory.expanduser(),
+        offline_model_directory=config.translation.offline_model_directory,
+        offline_zh_en_model_directory=config.translation.offline_zh_en_model_directory,
+    )
     table = Table("Check", "Status", "Details")
     styles = {"ok": "green", "missing": "red", "warning": "yellow", "optional": "cyan"}
     for check in checks:
@@ -522,6 +614,14 @@ def version_command() -> None:
     console.print(__version__)
 
 
+@app.command("gui")
+def gui_command() -> None:
+    """Open the local paste-a-link desktop interface."""
+    from .gui import run_gui
+
+    run_gui()
+
+
 KNOWN_COMMANDS = {
     "process",
     "batch",
@@ -536,6 +636,7 @@ KNOWN_COMMANDS = {
     "validate",
     "clean",
     "doctor",
+    "gui",
     "version",
 }
 

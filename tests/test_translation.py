@@ -31,6 +31,27 @@ def test_translation_batch_serialization(cues: list[SubtitleCue]) -> None:
     }
 
 
+def test_chinese_to_english_serialization_and_import() -> None:
+    cues = [SubtitleCue(id=1, start_ms=0, end_ms=1200, text="欢迎来到我的频道。")]
+    records = serialize_translation_batch(
+        cues,
+        source_code="zh",
+        target_code="en",
+    )
+    source = json.loads(records)
+    assert source["zh"] == "欢迎来到我的频道。"
+    assert source["en"] == ""
+
+    source["en"] = "Welcome to my channel."
+    imported = parse_imported_translations(
+        json.dumps(source, ensure_ascii=False),
+        cues,
+        source_code="zh",
+        target_code="en",
+    )
+    assert imported[1].text == "Welcome to my channel."
+
+
 def test_translation_import_validates_ids_and_timestamps(cues: list[SubtitleCue]) -> None:
     content = "\n".join(
         [

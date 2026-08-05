@@ -44,6 +44,10 @@ class SourceMetadata(BaseModel):
     audio_streams: list[dict[str, Any]] = Field(default_factory=list)
     subtitle_language: str = ""
     subtitle_kind: str = ""
+    english_subtitle_language: str = ""
+    english_subtitle_kind: str = ""
+    chinese_subtitle_language: str = ""
+    chinese_subtitle_kind: str = ""
 
 
 class StepRecord(BaseModel):
@@ -65,6 +69,7 @@ class PipelineStateData(BaseModel):
     project_status: str = "incomplete"
     updated_at: str = ""
     steps: dict[str, StepRecord] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -116,12 +121,28 @@ class ProjectPaths:
         return self.subtitles / "chinese.srt"
 
     @property
+    def english_ass(self) -> Path:
+        return self.subtitles / "english.ass"
+
+    @property
+    def chinese_ass(self) -> Path:
+        return self.subtitles / "chinese.ass"
+
+    @property
     def bilingual_srt(self) -> Path:
         return self.subtitles / "bilingual.srt"
 
     @property
     def bilingual_ass(self) -> Path:
         return self.subtitles / "bilingual.ass"
+
+    @property
+    def chinese_hardsub(self) -> Path:
+        return self.rendered / "chinese_hardsub.mp4"
+
+    @property
+    def english_hardsub(self) -> Path:
+        return self.rendered / "english_hardsub.mp4"
 
     @property
     def state_file(self) -> Path:

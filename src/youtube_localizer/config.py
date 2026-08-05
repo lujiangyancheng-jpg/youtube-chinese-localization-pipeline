@@ -16,7 +16,10 @@ class StrictModel(BaseModel):
 
 
 class DownloadConfig(StrictModel):
-    format: str = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+    format: str = "bestvideo+bestaudio/best"
+    format_sort: list[str] = Field(
+        default_factory=lambda: ["res", "fps", "br", "size"], min_length=1
+    )
     prefer_mp4: bool = True
     download_thumbnail: bool = True
     download_metadata: bool = True
@@ -32,17 +35,37 @@ class TranscriptionConfig(StrictModel):
 
 
 class TranslationConfig(StrictModel):
-    provider: Literal["manual", "openai-compatible"] = "manual"
+    direction: Literal["en-to-zh", "zh-to-en"] = "en-to-zh"
+    provider: Literal["manual", "offline", "ollama", "openai-compatible"] = "manual"
     model: str = ""
     endpoint: str = ""
     batch_size: int = Field(default=40, ge=1, le=200)
     preserve_timestamps: bool = True
     glossary_file: str = "glossary.yaml"
+    offline_model_directory: Path = Path(
+        "~/.youtube-chinese-localizer/models/translate-en_zh-1_9"
+    )
+    offline_model_url: str = (
+        "https://argos-net.com/v1/translate-en_zh-1_9.argosmodel"
+    )
+    offline_zh_en_model_directory: Path = Path(
+        "~/.youtube-chinese-localizer/models/translate-zh_en-1_9"
+    )
+    offline_zh_en_model_url: str = (
+        "https://argos-net.com/v1/translate-zh_en-1_9.argosmodel"
+    )
+    offline_device: Literal["auto", "cpu", "cuda"] = "auto"
+    offline_compute_type: str = "auto"
+    offline_auto_download: bool = True
+    ollama_endpoint: str = "http://localhost:11434"
+    ollama_model: str = "qwen3:4b"
+    ollama_auto_pull: bool = True
+    ollama_timeout_seconds: int = Field(default=600, ge=30, le=3600)
 
 
 class SubtitleConfig(StrictModel):
     format: Literal["srt", "ass"] = "ass"
-    font: str = "Microsoft YaHei"
+    font: str = "Noto Sans CJK SC"
     font_size: int = Field(default=48, ge=12, le=120)
     english_font_size: int = Field(default=34, ge=10, le=100)
     outline: int = Field(default=3, ge=0, le=10)
@@ -76,13 +99,33 @@ class PublishingConfig(StrictModel):
 class AppConfig(StrictModel):
     output_directory: Path = Path("output")
     subtitle_language: str = "zh-CN"
-    subtitle_mode: Literal["chinese", "bilingual_en_zh", "bilingual_zh_en"] = "chinese"
+    subtitle_mode: Literal[
+        "download_only", "chinese", "bilingual_en_zh", "bilingual_zh_en"
+    ] = "chinese"
     download: DownloadConfig = DownloadConfig()
     transcription: TranscriptionConfig = TranscriptionConfig()
     translation: TranslationConfig = TranslationConfig()
     subtitles: SubtitleConfig = SubtitleConfig()
     render: RenderConfig = RenderConfig()
     publishing: PublishingConfig = PublishingConfig()
+
+
+def migrate_config_data(data: dict) -> dict:
+    """Remove retired settings while keeping saved projects forward-compatible."""
+    migrated = dict(data)
+    download = migrated.get("download")
+    if isinstance(download, dict) and "prefer_youtube_chinese" in download:
+        migrated_download = dict(download)
+        migrated_download.pop("prefer_youtube_chinese", None)
+        migrated["download"] = migrated_download
+    return migrated
+
+
+def validate_config_data(data: dict) -> AppConfig:
+    try:
+        return AppConfig.model_validate(migrate_config_data(data))
+    except ValidationError as exc:
+        raise ConfigurationError(f"Invalid configuration:\n{exc}") from exc
 
 
 def load_config(path: Path | None = None) -> AppConfig:
@@ -109,7 +152,4 @@ def load_config(path: Path | None = None) -> AppConfig:
             translation["model"] = model
         data["translation"] = translation
 
-    try:
-        return AppConfig.model_validate(data)
-    except ValidationError as exc:
-        raise ConfigurationError(f"Invalid configuration:\n{exc}") from exc
+    return validate_config_data(data)

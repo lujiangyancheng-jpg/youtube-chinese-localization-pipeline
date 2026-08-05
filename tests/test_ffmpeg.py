@@ -4,7 +4,10 @@ import os
 import subprocess
 from unittest.mock import patch
 
+import pytest
+
 from youtube_localizer.config import RenderConfig
+from youtube_localizer.errors import ExternalToolError
 from youtube_localizer.rendering.ffmpeg import build_hardsub_command
 from youtube_localizer.utils.subprocesses import resolve_executable, run_command
 
@@ -22,11 +25,32 @@ def test_ffmpeg_command_is_argument_array_and_escapes_windows_drive(tmp_path) ->
     )
     assert command[0] == "ffmpeg"
     assert "-vf" in command
+    assert command[command.index("-progress") + 1] == "pipe:1"
     subtitle_filter = command[command.index("-vf") + 1]
     assert "filename='" in subtitle_filter
     assert "-c:a" in command
     assert command[command.index("-c:a") + 1] == "copy"
     assert command[-1] == str(output)
+
+
+def test_ffmpeg_command_loads_bundled_fonts_directory(tmp_path) -> None:
+    source = tmp_path / "source.mp4"
+    subtitle = tmp_path / "subtitle.ass"
+    output = tmp_path / "output.mp4"
+    fonts = tmp_path / "pretty fonts"
+    fonts.mkdir()
+
+    command = build_hardsub_command(
+        source,
+        subtitle,
+        output,
+        RenderConfig(),
+        fonts_directory=fonts,
+    )
+
+    subtitle_filter = command[command.index("-vf") + 1]
+    assert ":fontsdir='" in subtitle_filter
+    assert "pretty fonts" in subtitle_filter
 
 
 def test_subprocess_wrapper_never_uses_shell() -> None:
@@ -38,6 +62,20 @@ def test_subprocess_wrapper_never_uses_shell() -> None:
     assert result.stdout == "ok"
     assert run.call_args.kwargs["shell"] is False
     assert run.call_args.kwargs["check"] is False
+
+
+def test_subprocess_wrapper_explains_windows_control_c_exit() -> None:
+    completed = subprocess.CompletedProcess(
+        ["ffmpeg"], 3221225786, stdout="", stderr=""
+    )
+    with (
+        patch(
+            "youtube_localizer.utils.subprocesses.subprocess.run",
+            return_value=completed,
+        ),
+        pytest.raises(ExternalToolError, match="interrupted.*0xC000013A"),
+    ):
+        run_command(["ffmpeg", "-version"])
 
 
 def test_resolve_executable_detects_winget_ffmpeg(tmp_path, monkeypatch) -> None:
