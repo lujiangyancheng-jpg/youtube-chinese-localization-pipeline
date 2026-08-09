@@ -13,8 +13,9 @@ download:
 
 transcription:
   model: medium
-  device: auto  # prefers CUDA, then automatically retries on CPU if its runtime is incomplete
+  device: auto  # uses CUDA only after its runtime preflight succeeds; otherwise starts safely on CPU
   compute_type: auto
+  cpu_threads: 6  # keeps two CPU threads free on common 8-core desktop CPUs
   beam_size: 5
   vad_filter: true
   word_timestamps: true

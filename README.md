@@ -35,7 +35,8 @@ attribution requirements, and publishing-platform rules.
 - VTT/SRT/ASS parsing and normalized UTF-8 SRT output
 - Rolling-caption overlap cleanup and conservative English cleanup
 - `faster-whisper` English or Chinese transcription with VAD and word timestamps
-- Automatic CUDA-to-CPU Whisper retry when NVIDIA runtime libraries are incomplete
+- CUDA runtime preflight and bundled-runtime discovery for reliable GPU Whisper acceleration
+- Responsiveness-preserving CPU Whisper fallback (six threads by default)
 - Manual Markdown/JSONL translation chunks with strict cue/timestamp validation
 - Local offline English↔Simplified Chinese translation with directional model selection and caching
 - OpenAI-compatible subtitle translation with retries and deterministic response caching
@@ -393,17 +394,23 @@ or rewrite factual content.
 
 ## Optional NVIDIA/CUDA setup
 
-`faster-whisper` uses CTranslate2. A compatible NVIDIA driver and the CUDA/cuDNN versions
-required by your installed CTranslate2 release must be installed separately. Check:
+`faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.4.3 registers
+that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
+Check the chosen device with:
 
 ```powershell
 python main.py doctor
 ```
 
-With `transcription.device: auto`, CUDA is tried when CTranslate2 detects it. If CUDA fails during
-model loading or lazy segment iteration because cuBLAS, cuDNN, the driver, or GPU memory is
-unavailable, transcription restarts automatically on CPU `int8`. No CUDA installation is required.
-Avoid `large-v3` on CPU unless you understand the RAM/runtime cost.
+With `transcription.device: auto`, CUDA is selected only when CTranslate2 detects a device and
+the CUDA 12 libraries can be loaded. Otherwise Whisper starts directly on CPU `int8`, avoiding an
+unsafe partial GPU attempt. If a later GPU execution error occurs, transcription restarts on CPU.
+CPU fallback uses six threads by default, leaving the desktop responsive. Avoid `large-v3` on CPU
+unless you understand the RAM/runtime cost.
+
+For a source-checkout installation, install Ollama or set `YOUTUBE_LOCALIZER_CUDA_RUNTIME` to a
+folder that contains the CUDA 12 libraries. The offline installer needs no separate CUDA setup.
 
 Offline subtitle translation prioritizes reliability: `translation.offline_device: auto` uses
 CPU `int8`. Set it to `cuda` only when the CTranslate2 CUDA and cuDNN runtime is fully installed;

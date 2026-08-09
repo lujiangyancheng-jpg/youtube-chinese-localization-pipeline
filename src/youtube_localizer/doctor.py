@@ -14,7 +14,7 @@ from .resources import (
     ollama_executable,
     resolve_whisper_model,
 )
-from .transcription.whisper_engine import cuda_available
+from .transcription.whisper_engine import cuda_runtime_status
 from .translation.offline import validate_offline_model
 from .utils.subprocesses import resolve_executable
 
@@ -192,11 +192,12 @@ def run_doctor(
             False,
         )
     )
+    cuda_ready, cuda_detail = cuda_runtime_status()
     checks.append(
         DoctorCheck(
             "CUDA for faster-whisper",
-            "ok" if cuda_available() else "optional",
-            "available" if cuda_available() else "not detected; CPU mode remains supported",
+            "ok" if cuda_ready else "optional",
+            cuda_detail if cuda_ready else f"{cuda_detail}; CPU mode remains supported",
             False,
         )
     )

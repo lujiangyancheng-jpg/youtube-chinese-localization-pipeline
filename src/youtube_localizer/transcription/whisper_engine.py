@@ -1,34 +1,101 @@
 from __future__ import annotations
 
+import ctypes
 import logging
 import math
+import os
 from pathlib import Path
 from typing import Any
 
 from ..config import TranscriptionConfig
 from ..errors import LocalizerError
 from ..models import SubtitleCue
-from ..resources import resolve_whisper_model
+from ..resources import cuda_runtime_directories, resolve_whisper_model
 from ..subtitles.cleanup import CleanupResult, cleanup_english
 from ..subtitles.parser import write_srt
 from ..utils.files import atomic_write_json
 
 LOGGER = logging.getLogger(__name__)
+CUDA_12_LIBRARIES = ("cublas64_12.dll", "cublasLt64_12.dll", "cudart64_12.dll")
+_CUDA_DLL_DIRECTORY_HANDLES: list[Any] = []
+_CUDA_DLL_DIRECTORIES: set[str] = set()
+
+
+def _configure_windows_cuda_runtime() -> list[Path]:
+    """Make the bundled CUDA 12 runtime visible before CTranslate2 starts."""
+    if os.name != "nt" or not hasattr(os, "add_dll_directory"):
+        return []
+
+    configured: list[Path] = []
+    for directory in cuda_runtime_directories():
+        key = str(directory).casefold()
+        if key not in _CUDA_DLL_DIRECTORIES:
+            try:
+                # Keep the handle alive for the full process lifetime.  Otherwise
+                # Windows may remove the directory before lazy CUDA loading starts.
+                _CUDA_DLL_DIRECTORY_HANDLES.append(os.add_dll_directory(str(directory)))
+                _CUDA_DLL_DIRECTORIES.add(key)
+            except OSError as exc:
+                LOGGER.debug("Could not register CUDA runtime directory %s: %s", directory, exc)
+                continue
+        configured.append(directory)
+    return configured
+
+
+def cuda_runtime_status() -> tuple[bool, str]:
+    """Return whether faster-whisper can safely use the detected NVIDIA GPU."""
+    runtime_directories = _configure_windows_cuda_runtime()
+    try:
+        import ctranslate2
+    except ImportError:
+        return False, "CTranslate2 is not installed"
+
+    try:
+        device_count = ctranslate2.get_cuda_device_count()
+    except RuntimeError as exc:
+        return False, f"CUDA device probe failed: {exc}"
+    if device_count < 1:
+        return False, "no NVIDIA CUDA device was detected"
+
+    if os.name == "nt":
+        missing: list[str] = []
+        for library in CUDA_12_LIBRARIES:
+            try:
+                ctypes.WinDLL(library)
+            except OSError:
+                missing.append(library)
+        if missing:
+            location = (
+                f" (checked bundled runtime: {', '.join(str(path) for path in runtime_directories)})"
+                if runtime_directories
+                else ""
+            )
+            return False, f"missing CUDA 12 runtime library: {', '.join(missing)}{location}"
+
+    return True, f"{device_count} CUDA device(s) ready"
 
 
 def cuda_available() -> bool:
-    try:
-        import ctranslate2
-
-        return ctranslate2.get_cuda_device_count() > 0
-    except (ImportError, RuntimeError):
-        return False
+    return cuda_runtime_status()[0]
 
 
 def resolve_device_and_compute(config: TranscriptionConfig) -> tuple[str, str]:
     device = config.device
     if device == "auto":
-        device = "cuda" if cuda_available() else "cpu"
+        cuda_ready, cuda_reason = cuda_runtime_status()
+        device = "cuda" if cuda_ready else "cpu"
+        if not cuda_ready:
+            LOGGER.info(
+                "Whisper GPU acceleration is unavailable (%s); starting directly on CPU (int8).",
+                cuda_reason,
+            )
+    elif device == "cuda":
+        cuda_ready, cuda_reason = cuda_runtime_status()
+        if not cuda_ready:
+            raise LocalizerError(
+                "CUDA transcription was explicitly selected, but its runtime is not ready: "
+                f"{cuda_reason}. Select CPU or reinstall the offline package."
+            )
     compute = config.compute_type
     if compute == "auto":
         compute = "float16" if device == "cuda" else "int8"
@@ -63,6 +130,7 @@ def _run_whisper_attempt(
         model_reference,
         device=device,
         compute_type=compute_type,
+        cpu_threads=config.cpu_threads if device == "cpu" else 0,
         local_files_only=local_only,
     )
     segments_iterator, info = model.transcribe(
@@ -127,6 +195,7 @@ def transcribe_audio(
     *,
     language: str = "en",
 ) -> CleanupResult:
+    device, compute_type = resolve_device_and_compute(config)
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
@@ -135,7 +204,6 @@ def transcribe_audio(
             'and run: python -m pip install -e ".[transcription]"'
         ) from exc
 
-    device, compute_type = resolve_device_and_compute(config)
     if device == "cpu" and config.model.lower() in {"large", "large-v2", "large-v3"}:
         LOGGER.warning(
             "A large Whisper model was selected on CPU. This may be very slow and require "

@@ -104,3 +104,37 @@ def ollama_executable() -> Path | None:
         if candidate.is_file():
             return candidate.resolve()
     return None
+
+
+def cuda_runtime_directories() -> list[Path]:
+    """Find CUDA 12 DLL folders shipped with a local Ollama installation.
+
+    CTranslate2 dynamically loads CUDA on Windows.  The offline bundle already
+    includes the matching CUDA 12 redistributable with Ollama, but the DLLs live
+    in Ollama's ``lib/ollama/cuda_v12`` folder rather than beside ``ollama.exe``.
+    Returning this explicitly lets Whisper safely opt into the bundled runtime.
+    """
+    candidates: list[Path] = []
+    if configured := os.getenv("YOUTUBE_LOCALIZER_CUDA_RUNTIME"):
+        candidates.extend(Path(item).expanduser() for item in configured.split(os.pathsep) if item)
+    if executable := ollama_executable():
+        candidates.extend(
+            [
+                executable.parent / "lib" / "ollama" / "cuda_v12",
+                executable.parent,
+            ]
+        )
+
+    unique: list[Path] = []
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if (
+            resolved.is_dir()
+            and (resolved / "cublas64_12.dll").is_file()
+            and resolved not in unique
+        ):
+            unique.append(resolved)
+    return unique

@@ -5,9 +5,13 @@ import logging
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from youtube_localizer.config import TranscriptionConfig
+from youtube_localizer.errors import LocalizerError
 from youtube_localizer.transcription.whisper_engine import (
     _is_cuda_runtime_failure,
+    resolve_device_and_compute,
     transcribe_audio,
 )
 
@@ -19,8 +23,31 @@ def test_cuda_runtime_errors_include_missing_cublas() -> None:
     assert not _is_cuda_runtime_failure(RuntimeError("unsupported audio format"))
 
 
+def test_auto_device_starts_on_cpu_when_cuda_runtime_preflight_fails() -> None:
+    config = TranscriptionConfig(device="auto", compute_type="auto")
+
+    with patch(
+        "youtube_localizer.transcription.whisper_engine.cuda_runtime_status",
+        return_value=(False, "missing CUDA 12 runtime library: cublas64_12.dll"),
+    ):
+        assert resolve_device_and_compute(config) == ("cpu", "int8")
+
+
+def test_explicit_cuda_reports_an_actionable_preflight_failure() -> None:
+    config = TranscriptionConfig(device="cuda", compute_type="auto")
+
+    with (
+        patch(
+            "youtube_localizer.transcription.whisper_engine.cuda_runtime_status",
+            return_value=(False, "missing CUDA 12 runtime library: cublas64_12.dll"),
+        ),
+        pytest.raises(LocalizerError, match="runtime is not ready"),
+    ):
+        resolve_device_and_compute(config)
+
+
 def test_transcription_retries_on_cpu_after_lazy_cuda_failure(tmp_path, caplog) -> None:
-    calls: list[tuple[str, str]] = []
+    calls: list[tuple[str, str, int]] = []
 
     class FakeWhisperModel:
         def __init__(
@@ -29,9 +56,10 @@ def test_transcription_retries_on_cpu_after_lazy_cuda_failure(tmp_path, caplog) 
             *,
             device: str,
             compute_type: str,
+            cpu_threads: int,
             local_files_only: bool,
         ) -> None:
-            calls.append((device, compute_type))
+            calls.append((device, compute_type, cpu_threads))
             self.device = device
             assert local_files_only
 
@@ -71,8 +99,8 @@ def test_transcription_retries_on_cpu_after_lazy_cuda_failure(tmp_path, caplog) 
             return_value=(tmp_path / "model", True),
         ),
         patch(
-            "youtube_localizer.transcription.whisper_engine.cuda_available",
-            return_value=True,
+            "youtube_localizer.transcription.whisper_engine.cuda_runtime_status",
+            return_value=(True, "1 CUDA device ready"),
         ),
         caplog.at_level(logging.WARNING),
     ):
@@ -83,7 +111,7 @@ def test_transcription_retries_on_cpu_after_lazy_cuda_failure(tmp_path, caplog) 
             config,
         )
 
-    assert calls == [("cuda", "float16"), ("cpu", "int8")]
+    assert calls == [("cuda", "float16", 0), ("cpu", "int8", 6)]
     assert [cue.text for cue in result.cues] == ["Hello world."]
     metadata = json.loads(output_json.read_text(encoding="utf-8"))
     assert metadata["device"] == "cpu"

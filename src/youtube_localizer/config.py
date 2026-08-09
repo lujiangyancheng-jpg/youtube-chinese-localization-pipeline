@@ -29,6 +29,7 @@ class TranscriptionConfig(StrictModel):
     model: str = "medium"
     device: Literal["auto", "cpu", "cuda"] = "auto"
     compute_type: str = "auto"
+    cpu_threads: int = Field(default=6, ge=1, le=32)
     beam_size: int = Field(default=5, ge=1, le=20)
     vad_filter: bool = True
     word_timestamps: bool = True
