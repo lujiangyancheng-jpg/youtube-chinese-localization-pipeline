@@ -1,19 +1,24 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.5.6",
+    [string]$Version = "0.5.7",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
     [string]$PythonInstallerSha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB",
+    [string]$GetPipSha256 = "25B5C39ADE96BAB5EABE6404CE83CAB6DA2DEB5FE3C07D9881F43803EDB6F9C8",
     [string]$WixArchiveSha256 = "6AC824E1642D6F7277D0ED7EA09411A508F6116BA6FAE0AA5F2C7DAA2FF43D31",
     [string]$WhisperModel = "medium",
     [string]$WhisperRevision = "08e178d48790749d25932bbc082711ddcfdfbc4f",
+    [string]$WhisperModelSha256 = "9B45E1009DCC4AB601EFF815B61D80E60CE3FD8C74C1A14F4A282258286B51AE",
     [string]$OllamaVersion = "v0.32.5",
     [string]$FfmpegCompatibilityVersion = "8.0",
     [string]$FfmpegCompatibilityArchiveSha256 = "48CA5E824D2660A94F89FD55287B7C35129B55BBE680C4330EFEED5269C4820F",
     [string]$NotoCjkRevision = "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
     [string]$LxgwWenKaiRevision = "ed634e2291ff8adcffbab553d6c26cc95a0e4a0c",
     [string]$ArgosModelRoot = "$env:USERPROFILE\.youtube-chinese-localizer\models",
+    [string]$ArgosEnZhModelSha256 = "1A039114D9456B6528FABB65B455B6F156319634A0F984B1F6018F7737D67598",
+    [string]$ArgosZhEnModelSha256 = "EDD8C8A6863D36959613FF291074627A1635FAB2F51B872EF437E924D238921A",
     [string]$OllamaModelRoot = "$env:USERPROFILE\.ollama\models",
+    [string]$QwenModelBlobSha256 = "3E4CB14174460404E7A233E531675303B2FBF7749C02F91864FE311AB6344E4F",
     [switch]$SkipInstaller,
     [switch]$SkipSmokeTest
 )
@@ -23,6 +28,7 @@ $ProgressPreference = "SilentlyContinue"
 $env:PYTHONUTF8 = "1"
 
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$RuntimeRequirements = Join-Path $PSScriptRoot "requirements-runtime.lock"
 $BuildRoot = Join-Path $ProjectRoot "build\offline-installer"
 $StageRoot = Join-Path $BuildRoot "stage"
 $CacheRoot = Join-Path $BuildRoot "download-cache"
@@ -95,6 +101,9 @@ Get-ChildItem -LiteralPath $AppRoot -Directory -Recurse -Filter "__pycache__" |
     }
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Launch Localizer.cmd") -Destination $StageRoot
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "YouTube Localizer CLI.cmd") -Destination $StageRoot
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "test_offline_install.ps1") `
+    -Destination (Join-Path $StageRoot "Verify Offline Install.ps1")
+Copy-Item -LiteralPath $RuntimeRequirements -Destination (Join-Path $StageRoot "runtime-dependencies.lock")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "THIRD_PARTY_MODELS.md") -Destination $LicenseRoot
 
 Write-Host "[2/9] Installing the embedded Python/Tk runtime and application dependencies..."
@@ -161,7 +170,7 @@ Copy-RequiredDirectory (Join-Path $PythonMsiRoot "Lib\tkinter") (Join-Path $Pyth
 Copy-RequiredDirectory (Join-Path $PythonMsiRoot "tcl") (Join-Path $PythonRoot "tcl")
 
 $GetPip = Join-Path $CacheRoot "get-pip.py"
-Download-File "https://bootstrap.pypa.io/get-pip.py" $GetPip
+Download-VerifiedFile "https://bootstrap.pypa.io/get-pip.py" $GetPip $GetPipSha256
 $EmbeddedPython = Join-Path $PythonRoot "python.exe"
 & $EmbeddedPython -c "import tkinter as tk; root=tk.Tk(); root.withdraw(); root.update_idletasks(); root.destroy(); print('embedded tkinter: ok')"
 if ($LASTEXITCODE -ne 0) { throw "The embedded Python tkinter runtime is incomplete." }
@@ -169,9 +178,11 @@ if ($LASTEXITCODE -ne 0) { throw "The embedded Python tkinter runtime is incompl
 if ($LASTEXITCODE -ne 0) { throw "Could not bootstrap pip in the embedded Python runtime." }
 Push-Location $ProjectRoot
 try {
-    & $EmbeddedPython -m pip install --disable-pip-version-check --no-cache-dir "hatchling>=1.26"
-    if ($LASTEXITCODE -ne 0) { throw "Could not install the local build backend." }
-    & $EmbeddedPython -m pip install --disable-pip-version-check --no-cache-dir --no-build-isolation ".[transcription,offline-translation]"
+    & $EmbeddedPython -m pip install --disable-pip-version-check --no-cache-dir --only-binary=:all: `
+        -r $RuntimeRequirements
+    if ($LASTEXITCODE -ne 0) { throw "Could not install locked runtime dependencies." }
+    & $EmbeddedPython -m pip install --disable-pip-version-check --no-cache-dir --no-deps `
+        --no-build-isolation ".[transcription,offline-translation]"
     if ($LASTEXITCODE -ne 0) { throw "Could not install application dependencies." }
 } finally {
     Pop-Location
@@ -181,6 +192,9 @@ Write-Host "[3/9] Downloading the multilingual Whisper $WhisperModel model..."
 $WhisperDestination = Join-Path $ModelsRoot "faster-whisper-$WhisperModel"
 & $EmbeddedPython -c "from faster_whisper.utils import download_model; download_model('$WhisperModel', output_dir=r'$WhisperDestination', revision='$WhisperRevision')"
 if ($LASTEXITCODE -ne 0) { throw "Could not download the faster-whisper model." }
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $WhisperDestination "model.bin")).Hash -ne $WhisperModelSha256) {
+    throw "Whisper model checksum mismatch."
+}
 Download-File "https://huggingface.co/Systran/faster-whisper-$WhisperModel/raw/main/README.md" (Join-Path $LicenseRoot "faster-whisper-$WhisperModel-README.md")
 Download-File "https://raw.githubusercontent.com/openai/whisper/main/LICENSE" (Join-Path $LicenseRoot "Whisper-MIT.txt")
 
@@ -189,6 +203,12 @@ foreach ($name in @("translate-en_zh-1_9", "translate-zh_en-1_9")) {
     $source = Join-Path $ArgosModelRoot $name
     Copy-RequiredDirectory $source (Join-Path $ModelsRoot $name)
     Copy-Item -LiteralPath (Join-Path $source "README.md") -Destination (Join-Path $LicenseRoot "$name-README.md") -Force
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $ModelsRoot "translate-en_zh-1_9\model\model.bin")).Hash -ne $ArgosEnZhModelSha256) {
+    throw "English-to-Chinese Argos model checksum mismatch."
+}
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $ModelsRoot "translate-zh_en-1_9\model\model.bin")).Hash -ne $ArgosZhEnModelSha256) {
+    throw "Chinese-to-English Argos model checksum mismatch."
 }
 Download-File "https://creativecommons.org/licenses/by/4.0/legalcode.txt" (Join-Path $LicenseRoot "CC-BY-4.0.txt")
 
@@ -222,6 +242,9 @@ Download-File "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevi
 Download-File "https://raw.githubusercontent.com/lxgw/LxgwWenKai/$LxgwWenKaiRevision/OFL.txt" (Join-Path $LicenseRoot "LXGW-WenKai-OFL-1.1.txt")
 
 Write-Host "[6/9] Copying Qwen3:4b and downloading the standalone Ollama runtime..."
+if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $OllamaModelRoot "blobs\sha256-$($QwenModelBlobSha256.ToLowerInvariant())")).Hash -ne $QwenModelBlobSha256) {
+    throw "Qwen3:4b model checksum mismatch."
+}
 Copy-RequiredDirectory $OllamaModelRoot (Join-Path $ModelsRoot "ollama")
 $QwenLicenseBlob = Get-ChildItem -LiteralPath (Join-Path $OllamaModelRoot "blobs") -File |
     Where-Object { $_.Length -gt 10000 -and $_.Length -lt 13000 } |
@@ -287,6 +310,7 @@ $ManifestAssets = @(
     @{ name = "argos-en-zh-1.9"; path = "models/translate-en_zh-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "argos-zh-en-1.9"; path = "models/translate-zh_en-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "qwen3-4b-q4_k_m"; path = "models/ollama/blobs/sha256-3e4cb14174460404e7a233e531675303b2fbf7749c02f91864fe311ab6344e4f"; license = "Apache-2.0" }
+    @{ name = "runtime-dependencies-lock"; path = "runtime-dependencies.lock"; license = "N/A" }
     @{ name = "noto-sans-cjk-sc-regular"; path = "fonts/NotoSansCJKsc-Regular.otf"; license = "OFL-1.1" }
     @{ name = "noto-serif-cjk-sc-regular"; path = "fonts/NotoSerifCJKsc-Regular.otf"; license = "OFL-1.1" }
     @{ name = "lxgw-wenkai-regular"; path = "fonts/LXGWWenKai-Regular.ttf"; license = "OFL-1.1" }

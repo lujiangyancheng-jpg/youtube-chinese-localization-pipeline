@@ -473,7 +473,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.6 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.7 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 
@@ -484,8 +484,9 @@ python main.py doctor
 With `transcription.device: auto`, CUDA is selected only when CTranslate2 detects a device and
 the CUDA 12 libraries can be loaded. Otherwise Whisper starts directly on CPU `int8`, avoiding an
 unsafe partial GPU attempt. If a later GPU execution error occurs, transcription restarts on CPU.
-CPU fallback uses six threads by default, leaving the desktop responsive. Avoid `large-v3` on CPU
-unless you understand the RAM/runtime cost.
+CPU fallback chooses a conservative thread count from the available cores and RAM, leaving the
+desktop responsive. Set `transcription.cpu_threads` to `1`–`32` only when an explicit override is
+needed. Avoid `large-v3` on CPU unless you understand the RAM/runtime cost.
 
 For a source-checkout installation, install Ollama or set `YOUTUBE_LOCALIZER_CUDA_RUNTIME` to a
 folder that contains the CUDA 12 libraries. The offline installer needs no separate CUDA setup.
@@ -498,6 +499,18 @@ For rendering, leave `render.codec: auto` to test NVIDIA NVENC, Intel Quick Sync
 the current computer. NVENC is checked in the normal FFmpeg and then the bundled compatibility
 encoder. If no hardware path works, the application retries with `libx264`. You may still set an
 explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a reproducible setup.
+
+## Release verification
+
+Version 0.5.7 locks the Windows offline runtime dependencies and verifies its fixed model
+binaries during construction. After installation, run **Verify YouTube Localizer Installation**
+from the Start menu to validate the packaged model/font manifest and load the desktop app without
+processing a video. The full repository verification command also starts bundled Qwen once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installer\test_offline_install.ps1 `
+  -InstallRoot "C:\path\to\YouTube Chinese Localizer"
+```
 
 ## Running tests
 

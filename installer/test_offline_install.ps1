@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = "Stop"
 $env:PYTHONUTF8 = "1"
 $Root = (Resolve-Path -LiteralPath $InstallRoot).Path
+$ManifestPath = Join-Path $Root "offline-assets.json"
 $Python = Join-Path $Root "runtime\python\python.exe"
 $Ollama = Join-Path $Root "runtime\ollama\ollama.exe"
 $Models = Join-Path $Root "models"
@@ -16,6 +17,11 @@ $Fonts = Join-Path $Root "fonts"
 $RequiredFiles = @(
     $Python
     $Ollama
+    $ManifestPath
+    (Join-Path $Root "runtime-dependencies.lock")
+    (Join-Path $Root "app\main.py")
+    (Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe")
+    (Join-Path $Root "runtime\ffmpeg-nvenc-compat\bin\ffmpeg.exe")
     (Join-Path $Root "runtime\python\_tkinter.pyd")
     (Join-Path $Root "runtime\python\tcl86t.dll")
     (Join-Path $Root "runtime\python\tk86t.dll")
@@ -33,18 +39,63 @@ foreach ($required in $RequiredFiles) {
     }
 }
 
+function Test-OfflineAssetManifest([string]$RootPath, [string]$Path) {
+    try {
+        $manifest = Get-Content -LiteralPath $Path -Raw -Encoding utf8 | ConvertFrom-Json
+    } catch {
+        throw "Offline asset manifest cannot be read: $($_.Exception.Message)"
+    }
+    if ($manifest.application -ne "YouTube Chinese Localizer" -or -not $manifest.version) {
+        throw "Offline asset manifest has an unexpected application identity."
+    }
+    $assets = @($manifest.assets)
+    if ($assets.Count -lt 8) {
+        throw "Offline asset manifest is incomplete."
+    }
+    $resolvedRoot = [IO.Path]::GetFullPath($RootPath).TrimEnd('\')
+    foreach ($asset in $assets) {
+        $relative = [string]$asset.relative_path
+        if ([string]::IsNullOrWhiteSpace($relative) -or [IO.Path]::IsPathRooted($relative)) {
+            throw "Offline asset manifest has an unsafe path: $relative"
+        }
+        $candidate = [IO.Path]::GetFullPath((Join-Path $resolvedRoot ($relative -replace '/', '\')))
+        if (-not $candidate.StartsWith("$resolvedRoot\", [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Offline asset manifest points outside the installation: $relative"
+        }
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) {
+            throw "Bundled asset is missing: $relative"
+        }
+        $item = Get-Item -LiteralPath $candidate
+        if ($item.Length -ne [int64]$asset.bytes) {
+            throw "Bundled asset size mismatch: $relative"
+        }
+        $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $candidate).Hash.ToLowerInvariant()
+        if ($actual -ne ([string]$asset.sha256).ToLowerInvariant()) {
+            throw "Bundled asset checksum mismatch: $relative"
+        }
+    }
+    return $manifest
+}
+
+$Manifest = Test-OfflineAssetManifest $Root $ManifestPath
+Write-Host "offline asset manifest: ok ($(@($Manifest.assets).Count) verified assets)"
+
 $env:YOUTUBE_LOCALIZER_HOME = $Root
 $env:YOUTUBE_LOCALIZER_MODELS = $Models
 $env:YOUTUBE_LOCALIZER_FONTS = $Fonts
 $env:FFMPEG_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe"
 $env:FFPROBE_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffprobe.exe"
 $env:OLLAMA_PATH = $Ollama
+$env:YOUTUBE_LOCALIZER_EXPECTED_VERSION = [string]$Manifest.version
 
 & $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('installed desktop interface: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }
 
-& $Python -c "from pathlib import Path; from youtube_localizer.resources import bundled_fonts_directory, resolve_whisper_model; from youtube_localizer.translation.offline import validate_offline_model; p,local=resolve_whisper_model('medium'); assert local; assert bundled_fonts_directory() == Path(r'$Fonts').resolve(); assert validate_offline_model(Path(r'$Models')/'translate-en_zh-1_9'); assert validate_offline_model(Path(r'$Models')/'translate-zh_en-1_9', source_code='zh', target_code='en'); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('installed offline models and fonts: ok')"
+& $Python -c "import os; from pathlib import Path; from youtube_localizer import __version__; from youtube_localizer.resources import bundled_fonts_directory, resolve_whisper_model; from youtube_localizer.translation.offline import validate_offline_model; models=Path(os.environ['YOUTUBE_LOCALIZER_MODELS']); fonts=Path(os.environ['YOUTUBE_LOCALIZER_FONTS']).resolve(); assert __version__ == os.environ['YOUTUBE_LOCALIZER_EXPECTED_VERSION']; p,local=resolve_whisper_model('medium'); assert local; assert bundled_fonts_directory() == fonts; assert validate_offline_model(models/'translate-en_zh-1_9'); assert validate_offline_model(models/'translate-zh_en-1_9', source_code='zh', target_code='en'); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('installed offline models and fonts: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed model loading failed." }
+
+& $Python (Join-Path $Root "app\main.py") --help | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Installed command-line interface loading failed." }
 
 if ($SkipInference) {
     return

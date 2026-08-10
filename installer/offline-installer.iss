@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.5.6"
+  #define AppVersion "0.5.7"
 #endif
 
 [Setup]
@@ -42,6 +42,7 @@ Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs c
 [Icons]
 Name: "{autoprograms}\YouTube Chinese Localizer"; Filename: "{app}\Launch Localizer.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
 Name: "{autoprograms}\YouTube Localizer CLI"; Filename: "{app}\YouTube Localizer CLI.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
+Name: "{autoprograms}\Verify YouTube Localizer Installation"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Verify Offline Install.ps1"" -InstallRoot ""{app}"" -SkipInference"; WorkingDir: "{app}"
 Name: "{userdesktop}\YouTube Chinese Localizer"; Filename: "{app}\Launch Localizer.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"; Tasks: desktopicon
 
 [Tasks]
