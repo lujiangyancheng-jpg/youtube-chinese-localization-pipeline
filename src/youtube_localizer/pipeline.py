@@ -20,12 +20,13 @@ from .errors import InputValidationError, LocalizerError, ProjectExistsError
 from .logging_config import configure_logging
 from .models import ProjectPaths, SourceMetadata, SubtitleCue
 from .publishing.metadata_generator import generate_publishing_assets
-from .rendering.ffmpeg import render_hardsub
+from .rendering.ffmpeg import render_hardsub, render_softsub
 from .rendering.validation import validate_rendered_video
 from .reporting import build_report, write_report
 from .state import PipelineState
 from .subtitles.bilingual import align_bilingual_tracks, combine_bilingual
 from .subtitles.parser import parse_subtitle, write_srt
+from .subtitles.quality import audit_subtitles
 from .subtitles.readability import readability_pass
 from .subtitles.styling import chinese_line_width, write_ass, write_bilingual_ass
 from .transcription.audio import extract_transcription_audio
@@ -231,6 +232,11 @@ def _target_ass(project: ProjectPaths, config: AppConfig) -> Path:
 def rendered_output(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
     return project.english_hardsub if target_code == "en" else project.chinese_hardsub
+
+
+def softsub_output(project: ProjectPaths, config: AppConfig) -> Path:
+    _, target_code = _language_pair(config)
+    return project.english_softsub if target_code == "en" else project.chinese_softsub
 
 
 def _write_localized_subtitles(
@@ -507,6 +513,30 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
         config.render,
         source_audio_codec=metadata.audio_codec,
         expected_duration=metadata.duration,
+    )
+    validate_rendered_video(output, expected_duration=metadata.duration)
+    return output
+
+
+def render_softsub_project(project: ProjectPaths, config: AppConfig) -> Path:
+    """Create an MP4 with a selectable subtitle track after the styled MP4 is rendered."""
+    if config.subtitle_mode == "download_only":
+        raise LocalizerError("This project is configured for direct download without subtitles.")
+    metadata = load_project_metadata(project)
+    subtitle = (
+        _target_subtitle(project, config)
+        if config.subtitle_mode == "chinese"
+        else project.bilingual_srt
+    )
+    if not subtitle.is_file():
+        raise LocalizerError("Subtitle file is not ready for soft-subtitle muxing.")
+    _, target_code = _language_pair(config)
+    output = softsub_output(project, config)
+    render_softsub(
+        find_source_video(project),
+        subtitle,
+        output,
+        language="eng" if target_code == "en" else "zho",
     )
     validate_rendered_video(output, expected_duration=metadata.duration)
     return output
@@ -862,6 +892,25 @@ def process_pipeline(
             )
             outputs.extend(metadata_outputs)
 
+        target_cues = parse_subtitle(_target_subtitle(project, config))
+        quality = audit_subtitles(
+            target_cues,
+            language=target_code,
+            max_lines=config.subtitles.max_lines,
+            preferred_line_length=config.subtitles.max_chinese_chars_per_line,
+        )
+        flagged_cues.extend(quality["flagged_cue_ids"])
+        quality_path = project.logs / "subtitle_quality.json"
+        atomic_write_json(quality_path, quality)
+        outputs.append(quality_path)
+        if quality["flagged_cue_count"]:
+            remember_warnings(
+                [
+                    "Subtitle quality check flagged "
+                    f"{quality['flagged_cue_count']} cue(s); review logs/subtitle_quality.json."
+                ]
+            )
+
         render_hash = stable_hash(
             {
                 "video": hash_file(source_video),
@@ -874,18 +923,32 @@ def process_pipeline(
         )
         render_config_hash = stable_hash(config.render)
         rendered = rendered_output(project, config)
+        render_outputs = [rendered]
         if not state.can_skip(
             "render",
             input_hash=render_hash,
             config_hash=render_config_hash,
-            output_files=[rendered],
+            output_files=render_outputs,
             force="render" in force_steps,
         ):
             with state.step(
                 "render", input_hash=render_hash, config_hash=render_config_hash
             ) as step_outputs:
                 step_outputs.append(render_project(project, config))
-        outputs.append(rendered)
+                if config.render.soft_subtitles:
+                    try:
+                        step_outputs.append(render_softsub_project(project, config))
+                    except LocalizerError as exc:
+                        remember_warnings(
+                            [
+                                "Selectable subtitle MP4 was not created; the hard-subtitle "
+                                f"video is still ready. Details: {exc}"
+                            ]
+                        )
+        softsub = softsub_output(project, config)
+        if softsub.is_file():
+            render_outputs.append(softsub)
+        outputs.extend(render_outputs)
         state.mark_status("completed")
         report = build_report(
             metadata,
@@ -902,8 +965,9 @@ def process_pipeline(
                 else config.translation.provider
             ),
             cue_count=cue_count,
-            flagged_cues=flagged_cues,
+            flagged_cues=sorted(set(flagged_cues)),
             render_parameters=config.render.model_dump(mode="json"),
+            subtitle_quality=quality,
             output_paths=outputs,
             warnings=warnings,
         )

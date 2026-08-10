@@ -59,6 +59,7 @@ def test_pipeline_ignores_provided_chinese_and_transcribes_locally(tmp_path) -> 
         {
             "translation": {"provider": "offline", "direction": "zh-to-en"},
             "publishing": {"generate_metadata": False},
+            "render": {"soft_subtitles": False},
         }
     )
     with (
@@ -128,6 +129,7 @@ def test_pipeline_transcribes_chinese_when_no_caption_track_exists(tmp_path) -> 
         {
             "translation": {"provider": "offline", "direction": "zh-to-en"},
             "publishing": {"generate_metadata": False},
+            "render": {"soft_subtitles": False},
         }
     )
     with (

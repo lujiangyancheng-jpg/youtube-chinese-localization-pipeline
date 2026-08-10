@@ -8,7 +8,7 @@ import pytest
 
 from youtube_localizer.config import RenderConfig
 from youtube_localizer.errors import ExternalToolError
-from youtube_localizer.rendering.ffmpeg import build_hardsub_command
+from youtube_localizer.rendering.ffmpeg import build_hardsub_command, build_softsub_command
 from youtube_localizer.utils.subprocesses import resolve_executable, run_command
 
 
@@ -51,6 +51,20 @@ def test_ffmpeg_command_loads_bundled_fonts_directory(tmp_path) -> None:
     subtitle_filter = command[command.index("-vf") + 1]
     assert ":fontsdir='" in subtitle_filter
     assert "pretty fonts" in subtitle_filter
+
+
+def test_softsub_command_stream_copies_media_and_sets_language(tmp_path) -> None:
+    command = build_softsub_command(
+        tmp_path / "source.mp4",
+        tmp_path / "subtitle.srt",
+        tmp_path / "output.mp4",
+        language="eng",
+    )
+
+    assert command[command.index("-c:v") + 1] == "copy"
+    assert command[command.index("-c:a") + 1] == "copy"
+    assert command[command.index("-c:s") + 1] == "mov_text"
+    assert command[command.index("-metadata:s:s:0") + 1] == "language=eng"
 
 
 def test_subprocess_wrapper_never_uses_shell() -> None:

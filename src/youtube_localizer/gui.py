@@ -52,6 +52,14 @@ SUBTITLE_FONTS = {
 }
 
 
+PROCESSING_PROFILES = {
+    "快速（更少等待，适合预览）": "fast",
+    "均衡（推荐，GPU 编码优先）": "balanced",
+    "精品（更细致的识别与成片）": "quality",
+    "CPU 安全（低压力，避免占满电脑）": "safe_cpu",
+}
+
+
 def local_ai_available() -> bool:
     return ollama_executable() is not None
 
@@ -69,6 +77,16 @@ def mode_description(subtitle_mode: str, translation_provider: str) -> str:
     return descriptions.get(translation_provider, "选择处理方式后即可开始。")
 
 
+def profile_description(profile: str) -> str:
+    descriptions = {
+        "fast": "快速：Small Whisper、快速识别、优先使用显卡编码；适合先出结果。",
+        "balanced": "均衡：Medium Whisper、稳定断句、优先使用显卡编码；适合大多数视频。",
+        "quality": "精品：Medium Whisper 加强搜索与更高码率成片；更慢，但更适合正式发布。",
+        "safe_cpu": "CPU 安全：限制为低压力 CPU 处理，不会与其他显卡任务争抢资源。",
+    }
+    return descriptions.get(profile, "选择性能预设后即可开始。")
+
+
 def build_process_command(
     input_value: str,
     *,
@@ -76,6 +94,7 @@ def build_process_command(
     translation_provider: str,
     translation_direction: str = "en-to-zh",
     subtitle_font: str = "Noto Sans CJK SC",
+    processing_profile: str | None = None,
     resume: bool = True,
     python_executable: str | None = None,
     main_script: Path | None = None,
@@ -92,6 +111,8 @@ def build_process_command(
         raise ValueError("未知的翻译方向。")
     if subtitle_font not in SUBTITLE_FONTS.values():
         raise ValueError("未知的字幕字体。")
+    if processing_profile is not None and processing_profile not in PROCESSING_PROFILES.values():
+        raise ValueError("Unknown processing profile.")
     command = [
         python_executable or sys.executable,
         str(main_script or PROJECT_ROOT / "main.py"),
@@ -106,6 +127,8 @@ def build_process_command(
         "--subtitle-font",
         subtitle_font,
     ]
+    if processing_profile:
+        command.extend(["--processing-profile", processing_profile])
     if resume:
         command.append("--resume")
     return command
@@ -162,6 +185,7 @@ class LocalizerWindow:
         self.subtitle_label = tk.StringVar(value="仅目标语言字幕")
         self.translation_label = tk.StringVar(value=default_translation)
         self.font_label = tk.StringVar(value="Noto Sans CJK SC（现代无衬线，推荐）")
+        self.profile_label = tk.StringVar(value="均衡（推荐，GPU 编码优先）")
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
@@ -169,6 +193,7 @@ class LocalizerWindow:
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
         self.mode_hint = tk.StringVar()
+        self.profile_hint = tk.StringVar()
         self.workflow_summary = tk.StringVar()
         self.settings_visible = False
         self.log_visible = False
@@ -176,6 +201,7 @@ class LocalizerWindow:
         self._configure_style()
         self._build_layout()
         self._update_translation_fields()
+        self._update_processing_profile()
         self.input_value.trace_add("write", self._update_input_state)
         self._update_input_state()
         self.root.after(100, self._poll_events)
@@ -451,6 +477,24 @@ class LocalizerWindow:
             row=2, column=0, columnspan=4, sticky="w", pady=(9, 0)
         )
 
+        ttk.Label(options, text="性能与画质", style="Field.TLabel").grid(
+            row=3, column=0, sticky="w", pady=(12, 5), padx=(0, 6)
+        )
+        self.profile_combo = ttk.Combobox(
+            options,
+            textvariable=self.profile_label,
+            values=list(PROCESSING_PROFILES),
+            state="readonly",
+            style="Modern.TCombobox",
+        )
+        self.profile_combo.grid(row=3, column=1, columnspan=2, sticky="ew", padx=6)
+        self.profile_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_processing_profile()
+        )
+        ttk.Label(options, textvariable=self.profile_hint, style="Muted.TLabel").grid(
+            row=4, column=0, columnspan=4, sticky="w", pady=(5, 0)
+        )
+
         self.api_frame = ttk.Frame(
             outer,
             style="Card.TFrame",
@@ -697,7 +741,7 @@ class LocalizerWindow:
             }
             self.workflow_summary.set(
                 f"当前方案：{self.direction_label.get()} · {self.subtitle_label.get()} · "
-                f"{provider_names[provider]}"
+                f"{provider_names[provider]} · {self.profile_label.get()}"
             )
         automatic = not download_only and provider == "openai-compatible"
         if automatic and self.settings_visible:
@@ -707,6 +751,11 @@ class LocalizerWindow:
         state = "normal" if automatic else "disabled"
         for entry in (self.endpoint_entry, self.model_entry, self.key_entry):
             entry.configure(state=state)
+
+    def _update_processing_profile(self) -> None:
+        profile = PROCESSING_PROFILES[self.profile_label.get()]
+        self.profile_hint.set(profile_description(profile))
+        self._update_translation_fields()
 
     def _validate(self) -> tuple[list[str], dict[str, str], str]:
         if not self.authorized.get():
@@ -719,6 +768,7 @@ class LocalizerWindow:
             translation_provider=provider,
             translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
             subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
+            processing_profile=PROCESSING_PROFILES[self.profile_label.get()],
             resume=self.resume.get(),
         )
         environment = os.environ.copy()

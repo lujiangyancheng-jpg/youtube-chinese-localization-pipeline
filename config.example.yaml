@@ -62,6 +62,7 @@ render:
   audio_bitrate: 192k
   faststart: true
   copy_audio_when_possible: true
+  soft_subtitles: true  # also create a selectable subtitle MP4 without re-encoding video/audio
 
 publishing:
   generate_metadata: true

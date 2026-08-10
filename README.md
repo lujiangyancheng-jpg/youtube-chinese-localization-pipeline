@@ -43,15 +43,28 @@ attribution requirements, and publishing-platform rules.
 - English or Simplified Chinese target SRT and styled ASS output
 - Target-only, English-above-Chinese, and Chinese-above-English subtitle modes
 - H.264/AAC hard-subtitled MP4 rendering with NVENC-to-libx264 fallback
+- Selectable soft-subtitle MP4 output without recompressing the source video or audio
 - Preview rendering and output stream/duration/decode validation
+- Final-target subtitle quality report for fast-reading, duplicate, flash, and line-length cues
 - Atomic state/report writes and hash-based resume decisions
 - Structured JSONL file logs plus readable console output
 - Conservative publishing metadata drafts marked for human review
 - Offline unit tests and an FFmpeg synthetic-video integration test
 
-Advanced retiming, thumbnail overlays, soft-subtitle MP4 creation, and polished
-platform-specific metadata generation remain future enhancements. Timestamps are deliberately
-not changed in Phase 1.
+Advanced retiming, thumbnail overlays, and polished platform-specific metadata generation remain
+future enhancements. Timestamps are deliberately not changed in Phase 1.
+
+## Who this is for
+
+- Learners who want a private, offline way to understand English YouTube videos with Chinese
+  subtitles.
+- Creators and editors working with videos they own or are authorized to localize, who need
+  Chinese, English, bilingual, hard-subtitle, and selectable-subtitle deliverables.
+- Course, interview, and podcast editors who need an auditable project folder, a terminology
+  glossary, resumable processing, and focused subtitle-review flags.
+
+It is not intended for mass unattended redistribution, bypassing platform restrictions, or use
+with material that you are not authorized to translate or publish.
 
 ## Windows quick start
 
@@ -102,6 +115,27 @@ application, but `faster-whisper`/CTranslate2 wheels may not yet be available fo
 
 The command-line default translation provider is `manual`. Add `--translation-provider
 offline` for a no-API end-to-end run. The desktop interface defaults to offline translation.
+
+## Performance and quality presets
+
+The desktop interface exposes four task-level presets. They preserve your translation provider,
+languages, subtitle layout, font, and API settings; only Whisper and video-rendering workload
+change.
+
+- **Fast** uses the smaller local Whisper model and a faster encode for quick drafts.
+- **Balanced** uses the bundled Medium Whisper model and requests NVENC hardware encoding, with
+  automatic libx264 fallback if hardware encoding is unavailable. This is the desktop default.
+- **Quality** keeps Medium Whisper but uses a larger recognition search and a higher-quality
+  encode for final review.
+- **CPU safe** uses a smaller int8 CPU transcription and a veryfast CPU encode, for computers
+  that need to remain responsive or are already using the GPU.
+
+The equivalent CLI switch is:
+
+```powershell
+python main.py process "D:\Videos\authorized-video.mp4" `
+  --translation-provider offline --processing-profile balanced
+```
 
 ## Windows paste-a-link desktop interface
 
@@ -301,6 +335,7 @@ render:
   codec: libx264        # h264_nvenc/hevc_nvenc are also accepted
   crf: 18
   preset: medium
+  soft_subtitles: true  # also create a selectable-subtitle MP4 without re-encoding media
 ```
 
 Each project stores `config.resolved.json` so later project commands use the same settings.
@@ -340,6 +375,8 @@ output/
     rendered/
       chinese_hardsub.mp4
       english_hardsub.mp4
+      chinese_softsub.mp4
+      english_softsub.mp4
       preview_START_DURATION.mp4
     publishing/
       title.txt
@@ -350,6 +387,7 @@ output/
       pipeline.log
       report.json
       report.md
+      subtitle_quality.json
     temp/
     config.resolved.json
     pipeline_state.json
@@ -392,10 +430,18 @@ subtitle layout. Bilingual output projects the translated paragraph onto the sam
 timeline, so independent platform-caption boundaries cannot drift apart. The pass does not invent
 or rewrite factual content.
 
+Every completed localized project also attempts to produce a selectable-subtitle MP4. Its video
+and audio are stream-copied, so it is much faster than a hard-subtitle render and lets viewers
+turn captions on or off in compatible players. If a source container cannot be remuxed safely,
+the hard-subtitle video still succeeds and the report records the soft-subtitle warning.
+`logs/subtitle_quality.json` and the corresponding section in
+`logs/report.md` list only the cues that warrant review: overly fast reading, flashes under 0.7s,
+overlong lines, and adjacent duplicate text. These findings do not alter the subtitle automatically.
+
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.4.3 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.0 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 

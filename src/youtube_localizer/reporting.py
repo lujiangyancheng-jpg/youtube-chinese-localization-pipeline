@@ -18,6 +18,7 @@ def build_report(
     cue_count: int = 0,
     flagged_cues: list[int] | None = None,
     render_parameters: dict[str, Any] | None = None,
+    subtitle_quality: dict[str, Any] | None = None,
     output_paths: list[Path] | None = None,
     warnings: list[str] | None = None,
     errors: list[str] | None = None,
@@ -33,6 +34,7 @@ def build_report(
         "subtitle_cue_count": cue_count,
         "manually_flagged_cue_ids": flagged_cues or [],
         "render_parameters": render_parameters or {},
+        "subtitle_quality": subtitle_quality or {},
         "output_paths": [str(path.resolve()) for path in (output_paths or []) if path.exists()],
         "processing_time_by_stage": {
             name: record.elapsed_seconds for name, record in state.steps.items()
@@ -72,6 +74,24 @@ def write_report(logs_dir: Path, report: dict[str, Any]) -> tuple[Path, Path]:
         lines.extend(f"- {error}" for error in report["errors"])
     else:
         lines.append("- None")
+    lines += ["", "## Subtitle quality check", ""]
+    quality = report["subtitle_quality"]
+    if quality:
+        lines.extend(
+            [
+                f"- Target language: {quality.get('target_language', 'unknown')}",
+                f"- Flagged cues: {quality.get('flagged_cue_count', 0)}",
+                f"- Findings: {quality.get('finding_count', 0)}",
+            ]
+        )
+        categories = quality.get("findings_by_category", {})
+        if categories:
+            lines.append(
+                "- By category: "
+                + ", ".join(f"{name}={count}" for name, count in categories.items())
+            )
+    else:
+        lines.append("- Not available")
     lines += ["", "## Stage timings", ""]
     lines.extend(
         f"- {name}: {elapsed if elapsed is not None else 'n/a'} s"

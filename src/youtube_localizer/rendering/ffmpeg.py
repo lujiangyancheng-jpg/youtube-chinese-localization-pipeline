@@ -6,7 +6,7 @@ from pathlib import Path
 from ..config import RenderConfig
 from ..errors import ExternalToolError, LocalizerError
 from ..resources import bundled_fonts_directory
-from ..utils.subprocesses import run_streaming_command
+from ..utils.subprocesses import run_command, run_streaming_command
 
 LOGGER = logging.getLogger(__name__)
 
@@ -185,6 +185,7 @@ def build_softsub_command(
     subtitle_file: Path,
     output_file: Path,
     *,
+    language: str = "zho",
     ffmpeg: str = "ffmpeg",
 ) -> list[str]:
     return [
@@ -210,8 +211,37 @@ def build_softsub_command(
         "-c:s",
         "mov_text",
         "-metadata:s:s:0",
-        "language=zho",
+        f"language={language}",
         "-movflags",
         "+faststart",
         str(output_file),
     ]
+
+
+def render_softsub(
+    source_video: Path,
+    subtitle_file: Path,
+    output_file: Path,
+    *,
+    language: str,
+    ffmpeg: str = "ffmpeg",
+) -> Path:
+    """Mux a selectable subtitle track without recompressing video or audio."""
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    temp = output_file.with_name(f"{output_file.stem}.partial{output_file.suffix}")
+    try:
+        run_command(
+            build_softsub_command(
+                source_video,
+                subtitle_file,
+                temp,
+                language=language,
+                ffmpeg=ffmpeg,
+            )
+        )
+    except ExternalToolError as exc:
+        raise LocalizerError(f"FFmpeg soft-subtitle muxing failed.\n{exc}") from exc
+    if not temp.is_file() or temp.stat().st_size == 0:
+        raise LocalizerError("FFmpeg reported success but did not create a soft-subtitle video.")
+    temp.replace(output_file)
+    return output_file

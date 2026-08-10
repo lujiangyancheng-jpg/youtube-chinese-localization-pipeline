@@ -145,6 +145,14 @@ class ProjectPaths:
         return self.rendered / "english_hardsub.mp4"
 
     @property
+    def chinese_softsub(self) -> Path:
+        return self.rendered / "chinese_softsub.mp4"
+
+    @property
+    def english_softsub(self) -> Path:
+        return self.rendered / "english_softsub.mp4"
+
+    @property
     def state_file(self) -> Path:
         return self.root / "pipeline_state.json"
 

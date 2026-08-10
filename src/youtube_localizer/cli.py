@@ -28,22 +28,26 @@ from .pipeline import (
     load_project_metadata,
     process_pipeline,
     render_project,
+    render_softsub_project,
     rendered_output,
     save_project_config,
     translate_with_api,
     translate_with_local_ai,
     translate_with_offline,
 )
+from .profiles import ProcessingProfile, apply_processing_profile
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.preview import render_preview
 from .rendering.validation import validate_rendered_video
+from .reporting import build_report, write_report
 from .state import PipelineState
 from .subtitles.normalize import validate_cues
 from .subtitles.parser import parse_subtitle
+from .subtitles.quality import audit_subtitles
 from .transcription.audio import extract_transcription_audio
 from .transcription.whisper_engine import transcribe_audio
 from .translation.manual import import_translation_file
-from .utils.files import ensure_within
+from .utils.files import atomic_write_json, ensure_within
 from .utils.hashing import hash_file, stable_hash
 
 app = typer.Typer(
@@ -79,6 +83,7 @@ def _configured(
     translation_provider: str | None = None,
     translation_direction: str | None = None,
     subtitle_font: str | None = None,
+    processing_profile: ProcessingProfile | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
@@ -114,7 +119,8 @@ def _configured(
         translation_changes["direction"] = translation_direction
     if translation_changes:
         changes["translation"] = config.translation.model_copy(update=translation_changes)
-    return config.model_copy(update=changes)
+    resolved = config.model_copy(update=changes)
+    return apply_processing_profile(resolved, processing_profile) if processing_profile else resolved
 
 
 @app.command("process")
@@ -155,6 +161,13 @@ def process_command(
             ),
         ),
     ] = None,
+    processing_profile: Annotated[
+        ProcessingProfile | None,
+        typer.Option(
+            "--processing-profile",
+            help="fast, balanced, quality, or safe_cpu. Preserves translation and subtitle choices.",
+        ),
+    ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Replace an existing matching project.")
@@ -179,6 +192,7 @@ def process_command(
         translation_provider=translation_provider,
         translation_direction=translation_direction,
         subtitle_font=subtitle_font,
+        processing_profile=processing_profile,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "
@@ -228,10 +242,16 @@ def batch_command(
         typer.Argument(exists=True, dir_okay=False, help="UTF-8 file with one input per line."),
     ],
     config_path: ConfigOption = None,
+    processing_profile: Annotated[
+        ProcessingProfile | None,
+        typer.Option("--processing-profile", help="fast, balanced, quality, or safe_cpu."),
+    ] = None,
     resume: Annotated[bool, typer.Option("--resume")] = False,
 ) -> None:
     """Process multiple URLs/local paths sequentially."""
     config = load_config(config_path)
+    if processing_profile:
+        config = apply_processing_profile(config, processing_profile)
     lines = [
         line.strip()
         for line in inputs_file.read_text(encoding="utf-8-sig").splitlines()
@@ -457,6 +477,7 @@ def render_command(
     """Render and validate the final hard-subtitled MP4."""
     project = _project(project_path)
     config = load_config(config_path) if config_path else load_project_config(project)
+    metadata = load_project_metadata(project)
     state = PipelineState(project.state_file)
     source = find_source_video(project)
     subtitle = (
@@ -476,8 +497,49 @@ def render_command(
     ) as outputs:
         output = render_project(project, config)
         outputs.append(output)
+        if config.render.soft_subtitles:
+            try:
+                outputs.append(render_softsub_project(project, config))
+            except LocalizerError as exc:
+                console.print(
+                    "[yellow]Selectable subtitle version was not created; the hard-subtitle "
+                    f"video is still ready. Details: {exc}[/]"
+                )
+    _, target_code = _language_pair(config)
+    target_cues = parse_subtitle(_target_subtitle(project, config))
+    quality = audit_subtitles(
+        target_cues,
+        language=target_code,
+        max_lines=config.subtitles.max_lines,
+        preferred_line_length=config.subtitles.max_chinese_chars_per_line,
+    )
+    atomic_write_json(project.logs / "subtitle_quality.json", quality)
     state.mark_status("completed")
+    report = build_report(
+        metadata,
+        state.data,
+        subtitle_source=metadata.subtitle_kind,
+        whisper_model=(
+            config.transcription.model
+            if metadata.subtitle_kind.startswith("faster-whisper")
+            else ""
+        ),
+        translation_provider=config.translation.provider,
+        cue_count=len(target_cues),
+        flagged_cues=quality["flagged_cue_ids"],
+        render_parameters=config.render.model_dump(mode="json"),
+        subtitle_quality=quality,
+        output_paths=outputs,
+    )
+    write_report(project.logs, report)
     console.print(f"[bold green]Rendered and validated:[/] {output}")
+    if len(outputs) > 1:
+        console.print("[green]Selectable subtitle version:[/] " + str(outputs[-1]))
+    if quality["flagged_cue_count"]:
+        console.print(
+            "[yellow]Subtitle review:[/] "
+            f"{quality['flagged_cue_count']} cue(s) flagged in {project.logs / 'subtitle_quality.json'}"
+        )
 
 
 @app.command("preview")

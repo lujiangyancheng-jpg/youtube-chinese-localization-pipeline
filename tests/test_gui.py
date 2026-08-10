@@ -86,6 +86,17 @@ def test_build_process_command_supports_offline_local_transcription() -> None:
     assert "--resume" not in command
 
 
+def test_build_process_command_passes_selected_processing_profile() -> None:
+    command = build_process_command(
+        "video.mp4",
+        subtitle_mode="chinese",
+        translation_provider="offline",
+        processing_profile="quality",
+    )
+
+    assert command[command.index("--processing-profile") + 1] == "quality"
+
+
 def test_build_process_command_supports_local_ai_without_api_key() -> None:
     command = build_process_command(
         "https://youtu.be/abc123def45",

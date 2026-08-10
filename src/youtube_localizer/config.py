@@ -85,6 +85,7 @@ class RenderConfig(StrictModel):
     audio_bitrate: str = "192k"
     faststart: bool = True
     copy_audio_when_possible: bool = True
+    soft_subtitles: bool = True
 
 
 class PublishingConfig(StrictModel):

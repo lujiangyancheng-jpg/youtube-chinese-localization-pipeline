@@ -45,6 +45,13 @@ def test_cli_configuration_supports_download_only_mode() -> None:
     assert config.subtitle_mode == "download_only"
 
 
+def test_cli_configuration_applies_processing_profile() -> None:
+    config = _configured(None, processing_profile="fast")
+
+    assert config.transcription.model == "small"
+    assert config.render.codec == "h264_nvenc"
+
+
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:
     with pytest.raises(InputValidationError, match="transalte"):
         process_pipeline("missing.mp4", AppConfig(), force_steps={"transalte"})
