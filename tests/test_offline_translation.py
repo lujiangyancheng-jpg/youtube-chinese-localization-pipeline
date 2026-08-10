@@ -19,6 +19,25 @@ from youtube_localizer.translation.offline import (
 )
 
 
+def test_local_ai_grouping_uses_larger_complete_paragraphs_to_reduce_model_requests() -> None:
+    from youtube_localizer.pipeline import _group_local_ai_paragraphs
+
+    cues = [
+        SubtitleCue(
+            id=index,
+            start_ms=(index - 1) * 800,
+            end_ms=index * 800,
+            text=f"fragment {index}",
+        )
+        for index in range(1, 37)
+    ]
+
+    groups = _group_local_ai_paragraphs(cues, source_code="en")
+
+    assert len(groups) == 1
+    assert len(groups[0]) == 36
+
+
 def _write_fake_model_archive(path, *, source_code="en", target_code="zh") -> None:
     root = f"translate-{source_code}_{target_code}-test"
     with zipfile.ZipFile(path, "w") as archive:

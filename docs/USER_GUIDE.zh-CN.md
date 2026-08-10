@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.5.2-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.5.3-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -491,6 +491,7 @@ download:
   # 最高源画质：依次优先分辨率、帧率、码率和文件大小。
   format: bestvideo+bestaudio/best
   format_sort: [res, fps, br, size]
+  concurrent_fragment_downloads: 4  # 高画质 DASH/HLS 视频最多并发下载 4 个分片
 
 subtitles:
   font: Noto Sans CJK SC
@@ -530,7 +531,7 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.2 会在
+Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.3 会在
 启动 Whisper 前自动注册这套运行库并进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
 运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底默认只使用
 6 个线程，保留桌面响应。离线字幕翻译的 `offline_device: auto` 则始终稳定使用 CPU `int8`。
@@ -725,9 +726,9 @@ python -m pip install -e ".[transcription]"
 
 ### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
 
-v0.5.2 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+v0.5.3 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
 “GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
-GPU 任务。请安装 v0.5.2；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+GPU 任务。请安装 v0.5.3；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
 `YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
 `transcription.device: cpu`。
 
@@ -875,6 +876,14 @@ PROJECT_PATH\logs\pipeline.log
 桌面界面不再要求选择“性能预设”。默认方案始终是 **最高质量输出 + 自动硬件加速**：程序会先检测
 NVIDIA CUDA/NVENC；可用时使用显卡进行语音识别和视频编码，不可用或运行失败时自动回退至 CPU 与
 libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 和最高质量成片参数。
+
+桌面界面不会再弹出或依赖可关闭的系统命令窗口。进度条会显示真实的下载百分比、本地 AI 段落进度和
+字幕压制百分比；高画质 DASH/HLS 下载最多同时下载 4 个分片。本地 AI 会在不超出模型安全上下文的
+前提下合并更完整的段落，减少模型请求次数并保持上下文质量。
+
+如果运行日志提示 `NVENC API version` 或“显卡驱动版本过低”，说明当前 FFmpeg 需要更新的 NVIDIA
+驱动才能启用 5070 的硬件编码。软件会自动使用更快的 CPU 兜底编码并保持同一画质设置；更新驱动后会
+自动恢复 NVENC 的高速编码，无需更改软件设置。
 
 YouTube 原视频始终按 **分辨率、帧率、码率、文件大小** 的顺序选择最佳可用流。处理设置中只保留三项
 明确的成片选择：

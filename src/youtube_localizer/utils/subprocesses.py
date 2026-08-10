@@ -14,6 +14,13 @@ LOGGER = logging.getLogger(__name__)
 WINDOWS_CONTROL_C_EXIT = 0xC000013A
 
 
+def hidden_console_kwargs() -> dict[str, int]:
+    """Prevent console windows from appearing for helper tools started by the desktop app."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
 def resolve_executable(name: str) -> str | None:
     candidate = Path(name)
     if candidate.parent != Path(".") and candidate.is_file():
@@ -72,6 +79,7 @@ def run_command(
             errors="replace",
             capture_output=capture_output,
             timeout=timeout,
+            **hidden_console_kwargs(),
         )
     except FileNotFoundError as exc:
         raise ExternalToolError(
@@ -127,6 +135,7 @@ def run_streaming_command(
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             bufsize=1,
+            **hidden_console_kwargs(),
         )
     except FileNotFoundError as exc:
         raise ExternalToolError(

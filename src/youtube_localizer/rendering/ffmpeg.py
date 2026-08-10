@@ -123,8 +123,18 @@ def render_hardsub(
         run_streaming_command(command, line_callback=progress.consume)
     except ExternalToolError as exc:
         if config.codec in {"h264_nvenc", "hevc_nvenc"}:
-            LOGGER.warning("Hardware encoding failed; retrying with libx264.")
-            fallback = config.model_copy(update={"codec": "libx264", "preset": "medium"})
+            detail = str(exc).lower()
+            if "nvenc api version" in detail or "minimum required nvidia driver" in detail:
+                LOGGER.warning(
+                    "NVIDIA encoding needs a newer graphics driver for this FFmpeg build; "
+                    "retrying with fast CPU encoding. Update the NVIDIA driver to restore "
+                    "the much faster NVENC path."
+                )
+            else:
+                LOGGER.warning("Hardware encoding failed; retrying with fast CPU encoding.")
+            # CRF stays unchanged, so visual quality is preserved. The faster preset trades a
+            # somewhat larger output file for a considerably shorter CPU fallback render.
+            fallback = config.model_copy(update={"codec": "libx264", "preset": "fast"})
             run_streaming_command(
                 build_hardsub_command(
                     source_video,

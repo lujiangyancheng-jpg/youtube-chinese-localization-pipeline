@@ -124,6 +124,13 @@ Whisper transcription and final encoding; each stage automatically falls back to
 hardware acceleration is unavailable or fails. The default is Medium Whisper plus the highest
 final encode quality.
 
+The desktop app keeps its helper command windows hidden and turns real pipeline messages into
+progress: download percentage, local-AI paragraph count, and FFmpeg rendering percentage. It also
+downloads up to four DASH/HLS fragments concurrently and groups more complete spoken paragraphs
+for local AI, reducing model-request overhead without sacrificing context. If FFmpeg reports that
+the NVIDIA driver does not support its required NVENC API, update the NVIDIA driver; until then,
+the app uses a faster CPU fallback at the same visual-quality setting.
+
 Source downloads remain ranked by resolution, then frame rate, bitrate, and file size. For the
 hard-subtitled MP4, the settings panel offers only three clear output choices:
 
@@ -329,6 +336,7 @@ translation:
 download:
   format: bestvideo+bestaudio/best
   format_sort: [res, fps, br, size]
+  concurrent_fragment_downloads: 4
 
 subtitles:
   font: Noto Sans CJK SC
@@ -447,7 +455,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.2 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.3 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 

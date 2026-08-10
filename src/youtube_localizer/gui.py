@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
+import time
 import tkinter as tk
 from collections.abc import Mapping
 from pathlib import Path
@@ -71,6 +73,44 @@ OUTPUT_HEIGHTS = {
     "1080p": 1080,
     "720p": 720,
 }
+
+_DOWNLOAD_PROGRESS_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
+_LOCAL_AI_PROGRESS_RE = re.compile(r"Local AI translating paragraph\s+(\d+)/(\d+)")
+_OFFLINE_PROGRESS_RE = re.compile(r"Offline translating contextual subtitle batch\s+(\d+)/(\d+)")
+_RENDER_PROGRESS_RE = re.compile(r"Rendering subtitles:\s+(\d+(?:\.\d+)?)%")
+
+
+def progress_update_from_output(line: str, *, provider: str) -> tuple[float, str] | None:
+    """Map the pipeline's real progress messages to a single GUI progress percentage."""
+    if download := _DOWNLOAD_PROGRESS_RE.search(line):
+        percent = min(100.0, float(download.group(1)))
+        if provider == "download_only":
+            return percent, f"正在下载原视频：{percent:.1f}%"
+        return percent * 0.22, f"正在下载原视频：{percent:.1f}%"
+
+    if "Processing audio with duration" in line:
+        return 24.0, "正在识别原语言语音…"
+    if "Local AI paragraph translation ready" in line:
+        return 47.0, "正在准备本地 AI 段落翻译…"
+    if local_ai := _LOCAL_AI_PROGRESS_RE.search(line):
+        current, total = (int(value) for value in local_ai.groups())
+        if total:
+            return 47.0 + 28.0 * (current - 1) / total, f"本地 AI 翻译：{current}/{total} 段"
+    if offline := _OFFLINE_PROGRESS_RE.search(line):
+        current, total = (int(value) for value in offline.groups())
+        if total:
+            return 47.0 + 28.0 * (current - 1) / total, f"本地快速翻译：{current}/{total} 批"
+    if render := _RENDER_PROGRESS_RE.search(line):
+        percent = min(100.0, float(render.group(1)))
+        return 77.0 + 22.0 * percent / 100, f"正在压制字幕：{percent:.1f}%"
+    return None
+
+
+def gui_process_creationflags() -> int:
+    """Hide the CLI helper console while retaining a stoppable process group on Windows."""
+    if os.name == "nt":
+        return subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+    return 0
 
 
 def local_ai_available() -> bool:
@@ -190,6 +230,8 @@ class LocalizerWindow:
         self.worker: threading.Thread | None = None
         self.stop_requested = False
         self.active_direction = "en-to-zh"
+        self.active_provider = ""
+        self._progress_value = 0.0
 
         endpoint, model, api_key = api_configuration(os.environ)
         default_translation = (
@@ -899,6 +941,8 @@ class LocalizerWindow:
         self.progress.configure(mode="indeterminate", value=0)
         self.progress.start(10)
         self.stop_requested = False
+        self.active_provider = provider
+        self._progress_value = 0.0
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.worker = threading.Thread(
@@ -914,7 +958,7 @@ class LocalizerWindow:
         environment: dict[str, str],
         provider: str,
     ) -> None:
-        creationflags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
+        creationflags = gui_process_creationflags()
         try:
             self.process = subprocess.Popen(
                 command,
@@ -930,8 +974,21 @@ class LocalizerWindow:
             )
             if self.stop_requested:
                 terminate_process_tree(self.process)
+            last_download_percent: float | None = None
+            last_download_update = 0.0
             assert self.process.stdout is not None
             for line in self.process.stdout:
+                if download := _DOWNLOAD_PROGRESS_RE.search(line):
+                    percent = float(download.group(1))
+                    now = time.monotonic()
+                    if (
+                        last_download_percent is not None
+                        and percent - last_download_percent < 1.0
+                        and now - last_download_update < 0.4
+                    ):
+                        continue
+                    last_download_percent = percent
+                    last_download_update = now
                 self.events.put(("line", line))
             return_code = self.process.wait()
             self.events.put(("done", (return_code, provider)))
@@ -957,7 +1014,9 @@ class LocalizerWindow:
             while True:
                 event, payload = self.events.get_nowait()
                 if event == "line":
-                    self._append_log(str(payload))
+                    line = str(payload)
+                    self._append_log(line)
+                    self._update_progress_from_output(line)
                 elif event == "done":
                     return_code, provider = payload  # type: ignore[misc]
                     self._finish(int(return_code), str(provider))
@@ -967,6 +1026,17 @@ class LocalizerWindow:
         except queue.Empty:
             pass
         self.root.after(100, self._poll_events)
+
+    def _update_progress_from_output(self, line: str) -> None:
+        update = progress_update_from_output(line, provider=self.active_provider)
+        if update is None:
+            return
+        value, message = update
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self._progress_value = max(self._progress_value, min(99.0, value))
+        self.progress.configure(value=self._progress_value)
+        self._set_status(message, "active")
 
     def _finish(self, return_code: int, provider: str) -> None:
         self.progress.stop()

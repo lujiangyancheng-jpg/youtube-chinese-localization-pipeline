@@ -23,6 +23,7 @@ class DownloadConfig(StrictModel):
     prefer_mp4: bool = True
     download_thumbnail: bool = True
     download_metadata: bool = True
+    concurrent_fragment_downloads: int = Field(default=4, ge=1, le=8)
 
 
 class TranscriptionConfig(StrictModel):

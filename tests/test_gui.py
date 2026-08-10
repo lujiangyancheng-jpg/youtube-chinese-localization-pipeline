@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -8,8 +9,10 @@ from youtube_localizer.gui import (
     SUBTITLE_FONTS,
     api_configuration,
     build_process_command,
+    gui_process_creationflags,
     local_ai_available,
     mode_description,
+    progress_update_from_output,
 )
 
 
@@ -155,3 +158,34 @@ def test_mode_description_explains_download_only_and_local_ai() -> None:
     assert "不生成字幕" in mode_description("download_only", "ollama")
     assert "完整段落" in mode_description("chinese", "ollama")
     assert "API Key" in mode_description("chinese", "openai-compatible")
+
+
+def test_progress_updates_show_real_download_translation_and_rendering_progress() -> None:
+    value, message = progress_update_from_output(
+        "[download] 50.0% of 20MiB", provider="ollama"
+    ) or (None, "")
+    assert value == 11.0
+    assert message == "正在下载原视频：50.0%"
+
+    value, message = progress_update_from_output(
+        "INFO Local AI translating paragraph 12/24…", provider="ollama"
+    ) or (None, "")
+    assert value == 47.0 + 28.0 * 11 / 24
+    assert message == "本地 AI 翻译：12/24 段"
+
+    value, message = progress_update_from_output(
+        "INFO Rendering subtitles: 75.0%", provider="ollama"
+    ) or (None, "")
+    assert value == 93.5
+    assert message == "正在压制字幕：75.0%"
+
+
+def test_windows_gui_process_hides_its_console() -> None:
+    if os.name == "nt":
+        import subprocess
+
+        flags = gui_process_creationflags()
+        assert flags & subprocess.CREATE_NEW_PROCESS_GROUP
+        assert flags & subprocess.CREATE_NO_WINDOW
+    else:
+        assert gui_process_creationflags() == 0

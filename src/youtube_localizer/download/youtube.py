@@ -194,6 +194,9 @@ def download_youtube(
         "overwrites": False,
         "format": config.format,
         "format_sort": list(config.format_sort),
+        # DASH/HLS streams are the usual high-resolution YouTube formats. Fetching a bounded
+        # number of fragments concurrently improves throughput without overwhelming the source.
+        "concurrent_fragment_downloads": config.concurrent_fragment_downloads,
         "outtmpl": str(destination_dir / "download.%(ext)s"),
         # Source captions are deliberately disabled. The pipeline always uses its bundled
         # Whisper model so timing and recognition behavior are consistent and offline-capable.

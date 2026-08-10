@@ -130,6 +130,7 @@ def test_download_never_requests_youtube_subtitles(tmp_path) -> None:
     assert result.video.name == "source_video.mp4"
     assert FakeDownloadYDL.last_options["format"] == "bestvideo+bestaudio/best"
     assert FakeDownloadYDL.last_options["format_sort"] == ["res", "fps", "br", "size"]
+    assert FakeDownloadYDL.last_options["concurrent_fragment_downloads"] == 4
     assert FakeDownloadYDL.last_options["merge_output_format"] == "mp4"
     assert FakeDownloadYDL.last_options["js_runtimes"] == {
         "deno": {"path": r"C:\tools\deno.exe"}

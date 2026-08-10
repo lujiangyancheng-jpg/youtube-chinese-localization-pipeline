@@ -53,6 +53,20 @@ from .utils.files import (
 from .utils.hashing import hash_file, hash_text, stable_hash
 
 LOGGER = logging.getLogger(__name__)
+LOCAL_AI_GROUPING = {
+    "max_cues": 36,
+    "max_characters": 1_600,
+    "max_gap_ms": 1_800,
+    "max_duration_ms": 75_000,
+    "target_sentences": 8,
+    "minimum_duration_ms": 30_000,
+}
+
+
+def _group_local_ai_paragraphs(
+    cues: list[SubtitleCue], *, source_code: str
+) -> list[list[SubtitleCue]]:
+    return group_paragraph_cues(cues, source_code=source_code, **LOCAL_AI_GROUPING)
 VIDEO_SUFFIXES = {".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi"}
 FORCE_STEPS = {
     "acquire",
@@ -442,7 +456,9 @@ def translate_with_local_ai(
         target_code=target_code,
         timeout=config.translation.ollama_timeout_seconds,
     )
-    paragraphs = group_paragraph_cues(source_cues, source_code=source_code)
+    # Fewer, complete spoken paragraphs reduce local-model request overhead substantially.
+    # The limits remain comfortably below Qwen3:4b's context and output budget.
+    paragraphs = _group_local_ai_paragraphs(source_cues, source_code=source_code)
     translated: list[SubtitleCue] = []
     next_id = 1
     max_characters = (
