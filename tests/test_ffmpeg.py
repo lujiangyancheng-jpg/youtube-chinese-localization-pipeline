@@ -9,6 +9,7 @@ import pytest
 
 from youtube_localizer.config import RenderConfig
 from youtube_localizer.errors import ExternalToolError
+from youtube_localizer.hardware import NvencEncoder
 from youtube_localizer.rendering.ffmpeg import (
     build_hardsub_command,
     build_softsub_command,
@@ -109,7 +110,10 @@ def test_hardsub_skips_known_broken_nvenc_before_the_full_render(tmp_path) -> No
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
     with (
-        patch("youtube_localizer.rendering.ffmpeg.probe_h264_nvenc", return_value=(False, "driver")),
+        patch(
+            "youtube_localizer.rendering.ffmpeg.select_h264_nvenc_encoder",
+            return_value=NvencEncoder(None, "driver"),
+        ),
         patch("youtube_localizer.rendering.ffmpeg.run_streaming_command", side_effect=fake_stream),
     ):
         render_hardsub(source, subtitle, output, RenderConfig())

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .config import is_onedrive_directory, output_directory_advice
 from .download.youtube import discover_javascript_runtimes
-from .hardware import format_nvidia_gpus, probe_h264_nvenc, query_nvidia_gpus
+from .hardware import format_nvidia_gpus, query_nvidia_gpus, select_h264_nvenc_encoder
 from .resources import (
     bundled_fonts_directory,
     find_bundled_model,
@@ -212,12 +212,12 @@ def run_doctor(
             False,
         )
     )
-    nvenc_ready, nvenc_detail = probe_h264_nvenc()
+    nvenc_encoder = select_h264_nvenc_encoder()
     checks.append(
         DoctorCheck(
             "NVENC hard-subtitle encoding",
-            "ok" if nvenc_ready else ("warning" if nvidia_gpus else "optional"),
-            nvenc_detail,
+            "ok" if nvenc_encoder.ffmpeg else ("warning" if nvidia_gpus else "optional"),
+            nvenc_encoder.detail,
             False,
         )
     )

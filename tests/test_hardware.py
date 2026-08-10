@@ -4,7 +4,12 @@ import subprocess
 from unittest.mock import patch
 
 from youtube_localizer.errors import ExternalToolError
-from youtube_localizer.hardware import format_nvidia_gpus, probe_h264_nvenc, query_nvidia_gpus
+from youtube_localizer.hardware import (
+    format_nvidia_gpus,
+    probe_h264_nvenc,
+    query_nvidia_gpus,
+    select_h264_nvenc_encoder,
+)
 
 
 def test_query_nvidia_gpus_parses_driver_and_memory() -> None:
@@ -40,6 +45,7 @@ def test_nvenc_probe_reports_a_driver_version_problem_before_rendering() -> None
     assert not ready
     assert "更新驱动" in detail
     assert command.call_args.args[0][command.call_args.args[0].index("-c:v") + 1] == "h264_nvenc"
+    assert "color=c=black:s=320x240:r=1" in command.call_args.args[0]
 
 
 def test_nvenc_probe_confirms_a_working_encoder() -> None:
@@ -52,3 +58,20 @@ def test_nvenc_probe_confirms_a_working_encoder() -> None:
 
     assert ready
     assert "可用" in detail
+
+
+def test_nvenc_encoder_selects_the_bundled_compatibility_build_when_needed(tmp_path) -> None:
+    compatibility = tmp_path / "ffmpeg-compat.exe"
+    compatibility.write_bytes(b"")
+    with (
+        patch(
+            "youtube_localizer.hardware.probe_h264_nvenc",
+            side_effect=[(False, "默认驱动 API 不够新"), (True, "NVENC 硬件编码可用。")],
+        ),
+        patch("youtube_localizer.hardware.nvenc_compatibility_ffmpeg", return_value=compatibility),
+    ):
+        encoder = select_h264_nvenc_encoder("ffmpeg.exe")
+
+    assert encoder.ffmpeg == str(compatibility)
+    assert encoder.uses_compatibility_build
+    assert "兼容编码器" in encoder.detail

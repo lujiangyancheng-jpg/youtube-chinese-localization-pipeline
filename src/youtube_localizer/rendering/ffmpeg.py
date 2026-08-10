@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..config import RenderConfig
 from ..errors import ExternalToolError, LocalizerError
-from ..hardware import probe_h264_nvenc
+from ..hardware import select_h264_nvenc_encoder
 from ..resource_gate import heavy_workload_slot
 from ..resources import bundled_fonts_directory
 from ..utils.subprocesses import run_command, run_streaming_command
@@ -137,22 +137,27 @@ def _render_hardsub(
     if fonts_directory is not None:
         LOGGER.info("Using bundled subtitle fonts from %s.", fonts_directory)
     active_config = config
+    active_ffmpeg = ffmpeg
     if config.codec in {"h264_nvenc", "hevc_nvenc"}:
-        nvenc_ready, nvenc_detail = probe_h264_nvenc(ffmpeg)
-        if not nvenc_ready:
+        nvenc_encoder = select_h264_nvenc_encoder(ffmpeg)
+        if nvenc_encoder.ffmpeg is None:
             LOGGER.warning(
                 "Skipping unavailable NVIDIA encoding before the full render: %s "
                 "Using fast CPU encoding at the same visual-quality setting.",
-                nvenc_detail,
+                nvenc_encoder.detail,
             )
             active_config = config.model_copy(update={"codec": "libx264", "preset": "fast"})
+        else:
+            active_ffmpeg = nvenc_encoder.ffmpeg
+            if nvenc_encoder.uses_compatibility_build:
+                LOGGER.info("Using the bundled NVENC compatibility encoder for this driver.")
     command = build_hardsub_command(
         source_video,
         subtitle_file,
         temp,
         active_config,
         source_audio_codec=source_audio_codec,
-        ffmpeg=ffmpeg,
+        ffmpeg=active_ffmpeg,
         start=start,
         duration=duration,
         fonts_directory=fonts_directory,
@@ -182,7 +187,7 @@ def _render_hardsub(
                     temp,
                     fallback,
                     source_audio_codec=source_audio_codec,
-                    ffmpeg=ffmpeg,
+                    ffmpeg=active_ffmpeg,
                     start=start,
                     duration=duration,
                     fonts_directory=fonts_directory,

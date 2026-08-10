@@ -106,6 +106,31 @@ def ollama_executable() -> Path | None:
     return None
 
 
+def nvenc_compatibility_ffmpeg() -> Path | None:
+    """Return the bundled FFmpeg build that supports older NVIDIA NVENC APIs.
+
+    The normal FFmpeg build remains the default.  This optional build is only
+    selected after a short encoder probe proves that the installed graphics
+    driver cannot initialize the normal build but can initialize this one.
+    """
+    candidates: list[Path] = []
+    if configured := os.getenv("YOUTUBE_LOCALIZER_NVENC_COMPAT_FFMPEG"):
+        candidates.append(Path(configured).expanduser())
+    if home := os.getenv("YOUTUBE_LOCALIZER_HOME"):
+        candidates.append(Path(home) / "runtime" / "ffmpeg-nvenc-compat" / "bin" / "ffmpeg.exe")
+
+    source_root = Path(__file__).resolve().parents[2]
+    candidates.append(source_root / "tools" / "ffmpeg-nvenc-compat" / "bin" / "ffmpeg.exe")
+    candidates.extend(
+        parent / "runtime" / "ffmpeg-nvenc-compat" / "bin" / "ffmpeg.exe"
+        for parent in Path(sys.executable).resolve().parents[:4]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
 def cuda_runtime_directories() -> list[Path]:
     """Find CUDA 12 DLL folders shipped with a local Ollama installation.
 

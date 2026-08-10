@@ -42,7 +42,7 @@ attribution requirements, and publishing-platform rules.
 - OpenAI-compatible subtitle translation with retries and deterministic response caching
 - English or Simplified Chinese target SRT and styled ASS output
 - Target-only, English-above-Chinese, and Chinese-above-English subtitle modes
-- H.264/AAC hard-subtitled MP4 rendering with NVENC-to-libx264 fallback
+- H.264/AAC hard-subtitled MP4 rendering with automatic NVENC API compatibility and libx264 fallback
 - Selectable soft-subtitle MP4 output without recompressing the source video or audio
 - Preview rendering and output stream/duration/decode validation
 - Final-target subtitle quality report for fast-reading, duplicate, flash, and line-length cues
@@ -120,16 +120,17 @@ offline` for a no-API end-to-end run. The desktop interface defaults to offline 
 
 The desktop interface now uses one automatic high-quality path instead of asking users to choose
 technical performance presets. It detects a usable NVIDIA CUDA/NVENC setup and uses it for
-Whisper transcription and final encoding; each stage automatically falls back to CPU/libx264 if
-hardware acceleration is unavailable or fails. The default is Medium Whisper plus the highest
-final encode quality.
+Whisper transcription and final encoding. When the newest FFmpeg requires a newer NVENC API than
+the installed stable driver provides, the offline package automatically probes its bundled
+compatibility encoder before falling back to CPU/libx264. The default is Medium Whisper plus the
+highest final encode quality.
 
 The desktop app keeps its helper command windows hidden and turns real pipeline messages into
 progress: download percentage, local-AI paragraph count, and FFmpeg rendering percentage. It also
 downloads up to four DASH/HLS fragments concurrently and groups more complete spoken paragraphs
-for local AI, reducing model-request overhead without sacrificing context. If FFmpeg reports that
-the NVIDIA driver does not support its required NVENC API, update the NVIDIA driver; until then,
-the app uses a faster CPU fallback at the same visual-quality setting.
+for local AI, reducing model-request overhead without sacrificing context. The compatibility
+encoder is selected only after a real probe succeeds, so supported older drivers retain GPU
+rendering without changing driver versions; CPU encoding remains the safe fallback.
 
 Completed projects also include `logs/subtitle_quality.json`. When only a few cues need attention,
 `subtitles/review_required.srt` contains exactly the flagged timestamps for focused proofreading.
@@ -471,7 +472,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.4 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.5 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 
@@ -492,8 +493,9 @@ Offline subtitle translation prioritizes reliability: `translation.offline_devic
 CPU `int8`. Set it to `cuda` only when the CTranslate2 CUDA and cuDNN runtime is fully installed;
 Whisper and video rendering keep their independent device settings.
 
-For rendering, set `render.codec: h264_nvenc` or `hevc_nvenc`. If the selected NVENC encoder
-fails, the application retries with `libx264`.
+For rendering, set `render.codec: h264_nvenc` or `hevc_nvenc`. The installer first probes its
+normal FFmpeg and then its bundled NVENC compatibility encoder. If neither works, the application
+retries with `libx264`.
 
 ## Running tests
 

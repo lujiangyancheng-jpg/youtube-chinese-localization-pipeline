@@ -81,6 +81,14 @@ _OFFLINE_PROGRESS_RE = re.compile(r"Offline translating contextual subtitle batc
 _RENDER_PROGRESS_RE = re.compile(r"Rendering subtitles:\s+(\d+(?:\.\d+)?)%")
 
 
+def queue_input_values(value: str) -> list[str]:
+    """Return one input per non-empty line while retaining local paths with spaces."""
+    values = [line.strip() for line in value.splitlines() if line.strip()]
+    if not values and value.strip():
+        values = [value.strip()]
+    return list(dict.fromkeys(values))
+
+
 def progress_update_from_output(line: str, *, provider: str) -> tuple[float, str] | None:
     """Map the pipeline's real progress messages to a single GUI progress percentage."""
     if download := _DOWNLOAD_PROGRESS_RE.search(line):
@@ -242,6 +250,8 @@ class LocalizerWindow:
         self.active_direction = "en-to-zh"
         self.active_provider = ""
         self._progress_value = 0.0
+        self.active_queue_index = 1
+        self.active_queue_total = 1
 
         endpoint, model, api_key = api_configuration(os.environ)
         default_translation = (
@@ -450,14 +460,14 @@ class LocalizerWindow:
         ).pack(pady=(0, 16))
         tk.Label(
             empty_content,
-            text="添加一个视频链接",
+            text="添加一个或多个视频链接",
             background=APP_BACKGROUND,
             foreground=TEXT,
             font=(UI_FONT, 16, "bold"),
         ).pack()
         ttk.Label(
             empty_content,
-            text="复制 YouTube 链接，然后点击上方“粘贴链接”",
+            text="复制一个链接，或复制多行链接后点击上方“粘贴链接”",
             style="AppMuted.TLabel",
         ).pack(pady=(7, 3))
         ttk.Label(
@@ -790,6 +800,8 @@ class LocalizerWindow:
             self.api_frame.grid()
         else:
             self.api_frame.grid_remove()
+        if has_input:
+            self._update_translation_fields()
 
     def _toggle_settings(self) -> None:
         self.settings_visible = not self.settings_visible
@@ -820,7 +832,9 @@ class LocalizerWindow:
         self._update_input_state()
 
     def _clear_input(self) -> None:
-        if self.process and self.process.poll() is None:
+        if (self.process and self.process.poll() is None) or (
+            self.worker and self.worker.is_alive()
+        ):
             messagebox.showinfo("任务进行中", "请先停止当前任务，再移除视频。", parent=self.root)
             return
         self.input_value.set("")
@@ -879,9 +893,7 @@ class LocalizerWindow:
         self.start_button.configure(text="开始下载" if download_only else "开始本地化")
         self.mode_hint.set(mode_description(subtitle_mode, provider))
         if download_only:
-            self.workflow_summary.set(
-                "当前方案：最高源画质 · 最高源帧率 · 最佳音频 · 不生成字幕"
-            )
+            summary = "当前方案：最高源画质 · 最高源帧率 · 最佳音频 · 不生成字幕"
         else:
             provider_names = {
                 "manual": "人工翻译",
@@ -889,10 +901,14 @@ class LocalizerWindow:
                 "ollama": "本地 AI 段落翻译",
                 "openai-compatible": "API 自动翻译",
             }
-            self.workflow_summary.set(
+            summary = (
                 f"当前方案：{self.direction_label.get()} · {self.subtitle_label.get()} · "
                 f"{provider_names[provider]} · 自动硬件加速 · {self.output_quality_label.get()}"
             )
+        queue_count = len(queue_input_values(self.input_value.get()))
+        if queue_count > 1:
+            summary += f" · 已排队 {queue_count} 个视频（顺序处理，安全不抢资源）"
+        self.workflow_summary.set(summary)
         automatic = not download_only and provider == "openai-compatible"
         if automatic and self.settings_visible:
             self.api_frame.grid()
@@ -916,24 +932,30 @@ class LocalizerWindow:
             return
         self.output_directory_hint.set(output_directory_advice(Path(raw_directory)))
 
-    def _validate(self) -> tuple[list[str], dict[str, str], str]:
+    def _validate(self) -> tuple[list[list[str]], dict[str, str], str]:
         if not self.authorized.get():
             raise ValueError("开始前请确认你拥有视频或已取得所需授权。")
         subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
         provider = TRANSLATION_MODES[self.translation_label.get()]
-        command = build_process_command(
-            self.input_value.get(),
-            subtitle_mode=subtitle_mode,
-            translation_provider=provider,
-            translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
-            subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
-            processing_profile="auto",
-            output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
-            output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],
-            output_height=OUTPUT_HEIGHTS[self.output_height_label.get()],
-            output_directory=self.output_directory.get(),
-            resume=self.resume.get(),
-        )
+        values = queue_input_values(self.input_value.get())
+        if not values:
+            raise ValueError("请粘贴 YouTube 链接或选择本地视频文件。")
+        commands = [
+            build_process_command(
+                value,
+                subtitle_mode=subtitle_mode,
+                translation_provider=provider,
+                translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
+                subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
+                processing_profile="auto",
+                output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
+                output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],
+                output_height=OUTPUT_HEIGHTS[self.output_height_label.get()],
+                output_directory=self.output_directory.get(),
+                resume=self.resume.get(),
+            )
+            for value in values
+        ]
         environment = os.environ.copy()
         if provider == "openai-compatible" and subtitle_mode != "download_only":
             endpoint = self.endpoint.get().strip()
@@ -945,13 +967,15 @@ class LocalizerWindow:
             environment["OPENAI_COMPATIBLE_MODEL"] = model
             environment["OPENAI_COMPATIBLE_API_KEY"] = api_key
         workflow = "download_only" if subtitle_mode == "download_only" else provider
-        return command, environment, workflow
+        return commands, environment, workflow
 
     def _start(self) -> None:
-        if self.process and self.process.poll() is None:
+        if (self.process and self.process.poll() is None) or (
+            self.worker and self.worker.is_alive()
+        ):
             return
         try:
-            command, environment, provider = self._validate()
+            commands, environment, provider = self._validate()
         except (KeyError, ValueError) as exc:
             messagebox.showwarning("还不能开始", str(exc), parent=self.root)
             return
@@ -959,9 +983,15 @@ class LocalizerWindow:
         self._clear_log()
         self._show_log()
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
+        self.active_queue_index = 1
+        self.active_queue_total = len(commands)
         self._append_log(
             "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"
         )
+        if self.active_queue_total > 1:
+            self._append_log(
+                f"已加入 {self.active_queue_total} 个视频，将顺序处理以保护显存、CPU 和磁盘。\n\n"
+            )
         self._append_log(f"项目输出位置：{self.output_directory.get().strip()}\n")
         if provider == "download_only":
             self._append_log(
@@ -1000,18 +1030,38 @@ class LocalizerWindow:
         self.start_button.configure(state="disabled")
         self.stop_button.configure(state="normal")
         self.worker = threading.Thread(
-            target=self._run_process,
-            args=(command, environment, provider),
+            target=self._run_queue,
+            args=(commands, environment, provider),
             daemon=True,
         )
         self.worker.start()
+
+    def _run_queue(
+        self,
+        commands: list[list[str]],
+        environment: dict[str, str],
+        provider: str,
+    ) -> None:
+        failures = 0
+        completed = 0
+        total = len(commands)
+        for index, command in enumerate(commands, start=1):
+            if self.stop_requested:
+                break
+            self.events.put(("queue_item", (index, total, command[3])))
+            return_code = self._run_process(command, environment)
+            completed = index
+            if return_code != 0:
+                failures += 1
+            if self.stop_requested:
+                break
+        self.events.put(("done", (1 if failures else 0, provider, completed, total, failures)))
 
     def _run_process(
         self,
         command: list[str],
         environment: dict[str, str],
-        provider: str,
-    ) -> None:
+    ) -> int:
         creationflags = gui_process_creationflags()
         try:
             self.process = subprocess.Popen(
@@ -1044,10 +1094,10 @@ class LocalizerWindow:
                     last_download_percent = percent
                     last_download_update = now
                 self.events.put(("line", line))
-            return_code = self.process.wait()
-            self.events.put(("done", (return_code, provider)))
+            return self.process.wait()
         except OSError as exc:
-            self.events.put(("error", str(exc)))
+            self.events.put(("line", f"\n无法启动：{exc}\n"))
+            return 1
 
     def _stop(self) -> None:
         process = self.process
@@ -1072,11 +1122,27 @@ class LocalizerWindow:
                     self._append_log(line)
                     self._update_progress_from_output(line)
                 elif event == "done":
-                    return_code, provider = payload  # type: ignore[misc]
-                    self._finish(int(return_code), str(provider))
-                elif event == "error":
-                    self._append_log(f"\n无法启动：{payload}\n")
-                    self._finish(1, "")
+                    return_code, provider, completed, total, failures = payload  # type: ignore[misc]
+                    self._finish(
+                        int(return_code),
+                        str(provider),
+                        completed=int(completed),
+                        total=int(total),
+                        failures=int(failures),
+                    )
+                elif event == "queue_item":
+                    index, total, source = payload  # type: ignore[misc]
+                    self.active_queue_index = int(index)
+                    self.active_queue_total = int(total)
+                    self._progress_value = 99.0 * (self.active_queue_index - 1) / self.active_queue_total
+                    self.progress.stop()
+                    self.progress.configure(mode="determinate", value=self._progress_value)
+                    self._set_status(
+                        f"任务 {self.active_queue_index}/{self.active_queue_total}：正在启动", "active"
+                    )
+                    self._append_log(
+                        f"\n{'=' * 10} 任务 {self.active_queue_index}/{self.active_queue_total}：{source} {'=' * 10}\n"
+                    )
         except queue.Empty:
             pass
         self.root.after(100, self._poll_events)
@@ -1088,11 +1154,28 @@ class LocalizerWindow:
         value, message = update
         self.progress.stop()
         self.progress.configure(mode="determinate")
-        self._progress_value = max(self._progress_value, min(99.0, value))
+        task_progress = min(99.0, value)
+        aggregate = 99.0 * (
+            (self.active_queue_index - 1) + task_progress / 100
+        ) / self.active_queue_total
+        self._progress_value = max(self._progress_value, min(99.0, aggregate))
         self.progress.configure(value=self._progress_value)
-        self._set_status(message, "active")
+        prefix = (
+            f"任务 {self.active_queue_index}/{self.active_queue_total} · "
+            if self.active_queue_total > 1
+            else ""
+        )
+        self._set_status(prefix + message, "active")
 
-    def _finish(self, return_code: int, provider: str) -> None:
+    def _finish(
+        self,
+        return_code: int,
+        provider: str,
+        *,
+        completed: int = 1,
+        total: int = 1,
+        failures: int = 0,
+    ) -> None:
         self.progress.stop()
         self.progress.configure(mode="determinate")
         self.start_button.configure(state="normal")
@@ -1106,28 +1189,32 @@ class LocalizerWindow:
             return
         if return_code != 0:
             self.progress.configure(value=0)
-            self._set_status("处理失败，请查看上方日志", "error")
+            self._set_status(
+                f"队列完成：{completed - failures}/{total} 个任务成功，请查看上方日志",
+                "error",
+            )
             messagebox.showerror(
-                "处理未完成",
-                "任务没有完成。窗口日志和所选输出文件夹内项目的 logs 文件夹包含详细原因。",
+                "部分任务未完成",
+                f"已完成 {completed - failures}/{total} 个任务。窗口日志和所选输出文件夹内项目的 logs "
+                "文件夹包含详细原因；下次启动时勾选继续处理即可续跑未完成的阶段。",
                 parent=self.root,
             )
             return
         self.progress.configure(value=100)
         if provider == "download_only":
-            self._set_status("原视频下载完成，没有生成字幕", "success")
+            self._set_status(f"{total} 个原视频下载完成，没有生成字幕", "success")
             messagebox.showinfo(
                 "下载完成",
-                "最高画质原视频已经保存到所选输出文件夹内项目的 source 文件夹。",
+                f"{total} 个最高画质原视频已经保存到所选输出文件夹内项目的 source 文件夹。",
                 parent=self.root,
             )
         elif provider == "manual":
             source_name = "中文" if self.active_direction == "zh-to-en" else "英文"
             target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
-            self._set_status(f"下载和{source_name}字幕已完成，等待人工翻译", "success")
+            self._set_status(f"{total} 个任务的下载和{source_name}字幕已完成，等待人工翻译", "success")
             messagebox.showinfo(
                 "第一阶段完成",
-                f"视频和{source_name}字幕已经准备好。请在所选输出文件夹内项目的 "
+                f"{total} 个视频和{source_name}字幕已经准备好。请在所选输出文件夹内项目的 "
                 "subtitles\\translation_chunks 中处理翻译文件；"
                 f"导入翻译后即可压制{target_name}字幕。",
                 parent=self.root,
@@ -1139,10 +1226,10 @@ class LocalizerWindow:
                 if self.active_direction == "zh-to-en"
                 else "chinese_hardsub.mp4"
             )
-            self._set_status(f"本地化完成，{target_name}字幕视频已生成", "success")
+            self._set_status(f"本地化完成，已生成 {total} 个{target_name}字幕视频", "success")
             messagebox.showinfo(
                 "本地化完成",
-                f"最终视频位于所选输出文件夹内项目的 rendered\\{output_name}。",
+                f"最终视频位于所选输出文件夹内项目的 rendered\\{output_name}。已完成 {total} 个任务。",
                 parent=self.root,
             )
 

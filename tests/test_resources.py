@@ -7,6 +7,7 @@ from youtube_localizer.resources import (
     bundled_fonts_directory,
     cuda_runtime_directories,
     find_bundled_model,
+    nvenc_compatibility_ffmpeg,
     resolve_whisper_model,
 )
 
@@ -58,3 +59,12 @@ def test_cuda_runtime_directories_finds_ollama_cuda_12_runtime(tmp_path, monkeyp
     monkeypatch.setenv("OLLAMA_PATH", str(ollama))
 
     assert cuda_runtime_directories() == [cuda.resolve()]
+
+
+def test_nvenc_compatibility_ffmpeg_uses_the_installed_bundle(tmp_path, monkeypatch) -> None:
+    executable = tmp_path / "runtime" / "ffmpeg-nvenc-compat" / "bin" / "ffmpeg.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"")
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_HOME", str(tmp_path))
+
+    assert nvenc_compatibility_ffmpeg() == executable.resolve()

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from pathlib import Path
 
 from .errors import ExternalToolError
+from .resources import nvenc_compatibility_ffmpeg
 from .utils.subprocesses import resolve_executable, run_command
 
 
@@ -13,6 +15,15 @@ class NvidiaGPU:
     driver_version: str
     total_memory_mib: int | None
     used_memory_mib: int | None
+
+
+@dataclass(frozen=True)
+class NvencEncoder:
+    """A verified hardware encoder executable selected for this computer."""
+
+    ffmpeg: str | None
+    detail: str
+    uses_compatibility_build: bool = False
 
 
 def query_nvidia_gpus() -> list[NvidiaGPU]:
@@ -65,9 +76,11 @@ def probe_h264_nvenc(ffmpeg: str | None = None) -> tuple[bool, str]:
                 "-f",
                 "lavfi",
                 "-i",
-                "color=c=black:s=16x16:r=1",
+                # Some otherwise valid NVIDIA encoders reject tiny test frames.
+                # This is still negligible work while matching real video dimensions.
+                "color=c=black:s=320x240:r=1",
                 "-frames:v",
-                "1",
+                "2",
                 "-an",
                 "-c:v",
                 "h264_nvenc",
@@ -89,6 +102,37 @@ def probe_h264_nvenc(ffmpeg: str | None = None) -> tuple[bool, str]:
             return False, "FFmpeg 没有发现可用的 NVIDIA NVENC 编码器。"
         return False, f"NVENC 测试失败：{_last_detail_line(detail)}"
     return True, "NVENC 硬件编码可用。"
+
+
+def select_h264_nvenc_encoder(ffmpeg: str | None = None) -> NvencEncoder:
+    """Select a working NVENC build without assuming a particular driver version.
+
+    The bundled compatibility build carries an earlier NVENC API.  It lets a
+    stable driver continue using GPU encoding when the newest FFmpeg build was
+    compiled against an API that the driver does not yet expose.
+    """
+    primary = ffmpeg or resolve_executable("ffmpeg")
+    failure_details: list[str] = []
+    if primary:
+        ready, detail = probe_h264_nvenc(primary)
+        if ready:
+            return NvencEncoder(primary, detail)
+        failure_details.append(f"默认 FFmpeg：{detail}")
+
+    compatibility = nvenc_compatibility_ffmpeg()
+    if compatibility and (not primary or Path(primary).resolve() != compatibility):
+        ready, detail = probe_h264_nvenc(str(compatibility))
+        if ready:
+            return NvencEncoder(
+                str(compatibility),
+                "已使用随安装包提供的 NVENC 兼容编码器。",
+                uses_compatibility_build=True,
+            )
+        failure_details.append(f"兼容编码器：{detail}")
+
+    if failure_details:
+        return NvencEncoder(None, "；".join(failure_details))
+    return NvencEncoder(None, "未找到可用的 FFmpeg。")
 
 
 def format_nvidia_gpus(gpus: list[NvidiaGPU]) -> str:

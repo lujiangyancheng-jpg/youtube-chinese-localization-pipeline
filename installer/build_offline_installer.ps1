@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.5.4",
+    [string]$Version = "0.5.5",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
     [string]$PythonInstallerSha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB",
@@ -8,6 +8,8 @@ param(
     [string]$WhisperModel = "medium",
     [string]$WhisperRevision = "08e178d48790749d25932bbc082711ddcfdfbc4f",
     [string]$OllamaVersion = "v0.32.5",
+    [string]$FfmpegCompatibilityVersion = "8.0",
+    [string]$FfmpegCompatibilityArchiveSha256 = "48CA5E824D2660A94F89FD55287B7C35129B55BBE680C4330EFEED5269C4820F",
     [string]$NotoCjkRevision = "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
     [string]$LxgwWenKaiRevision = "ed634e2291ff8adcffbab553d6c26cc95a0e4a0c",
     [string]$ArgosModelRoot = "$env:USERPROFILE\.youtube-chinese-localizer\models",
@@ -245,7 +247,7 @@ New-Item -ItemType Directory -Path $OllamaRoot -Force | Out-Null
 Expand-Archive -LiteralPath $OllamaArchive -DestinationPath $OllamaRoot -Force
 Download-File "https://raw.githubusercontent.com/ollama/ollama/main/LICENSE" (Join-Path $LicenseRoot "Ollama-MIT.txt")
 
-Write-Host "[7/9] Copying FFmpeg and its redistribution notices..."
+Write-Host "[7/9] Copying FFmpeg and its NVENC compatibility build..."
 $FfmpegExe = (Get-Command ffmpeg -ErrorAction Stop).Source
 $FfprobeExe = (Get-Command ffprobe -ErrorAction Stop).Source
 $FfmpegBin = Join-Path $RuntimeRoot "ffmpeg\bin"
@@ -257,6 +259,27 @@ Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "README.txt") -Destina
 if (Test-Path -LiteralPath (Join-Path $FfmpegDistributionRoot "doc")) {
     Copy-RequiredDirectory (Join-Path $FfmpegDistributionRoot "doc") (Join-Path $LicenseRoot "FFmpeg-doc")
 }
+$FfmpegCompatibilityArchive = Join-Path $CacheRoot "ffmpeg-$FfmpegCompatibilityVersion-full_build.zip"
+Download-VerifiedFile `
+    "https://github.com/GyanD/codexffmpeg/releases/download/$FfmpegCompatibilityVersion/ffmpeg-$FfmpegCompatibilityVersion-full_build.zip" `
+    $FfmpegCompatibilityArchive `
+    $FfmpegCompatibilityArchiveSha256
+$FfmpegCompatibilityExtract = Join-Path $BuildRoot "ffmpeg-nvenc-compat-extract"
+Reset-GeneratedDirectory $FfmpegCompatibilityExtract
+Expand-Archive -LiteralPath $FfmpegCompatibilityArchive -DestinationPath $FfmpegCompatibilityExtract -Force
+$FfmpegCompatibilityExe = Get-ChildItem -LiteralPath $FfmpegCompatibilityExtract -Recurse -Filter "ffmpeg.exe" |
+    Select-Object -First 1
+$FfprobeCompatibilityExe = Get-ChildItem -LiteralPath $FfmpegCompatibilityExtract -Recurse -Filter "ffprobe.exe" |
+    Select-Object -First 1
+if (-not $FfmpegCompatibilityExe -or -not $FfprobeCompatibilityExe) {
+    throw "The NVENC compatibility FFmpeg archive is missing ffmpeg.exe or ffprobe.exe."
+}
+$FfmpegCompatibilityBin = Join-Path $RuntimeRoot "ffmpeg-nvenc-compat\bin"
+New-Item -ItemType Directory -Path $FfmpegCompatibilityBin -Force | Out-Null
+Copy-Item -LiteralPath $FfmpegCompatibilityExe.FullName, $FfprobeCompatibilityExe.FullName -Destination $FfmpegCompatibilityBin -Force
+$FfmpegCompatibilityRoot = Split-Path (Split-Path $FfmpegCompatibilityExe.FullName)
+Copy-Item -LiteralPath (Join-Path $FfmpegCompatibilityRoot "README.txt") `
+    -Destination (Join-Path $LicenseRoot "FFmpeg-NVENC-Compatibility-README.txt") -Force
 
 Write-Host "[8/9] Writing a checksummed offline asset manifest..."
 $ManifestAssets = @(
@@ -300,7 +323,7 @@ if (-not $SkipSmokeTest) {
         $env:YOUTUBE_LOCALIZER_FONTS = $FontsRoot
         $env:FFMPEG_PATH = Join-Path $FfmpegBin "ffmpeg.exe"
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
-        & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable; p,local=resolve_whisper_model('$WhisperModel'); assert local; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('offline runtime smoke test: ok')"
+        & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; p,local=resolve_whisper_model('$WhisperModel'); assert local; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('offline runtime smoke test: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
         & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }

@@ -13,6 +13,7 @@ from youtube_localizer.gui import (
     local_ai_available,
     mode_description,
     progress_update_from_output,
+    queue_input_values,
 )
 
 
@@ -55,6 +56,13 @@ def test_build_process_command_rejects_invalid_values() -> None:
             subtitle_mode="unknown",
             translation_provider="manual",
         )
+
+
+def test_queue_input_values_keeps_local_paths_and_deduplicates_lines() -> None:
+    assert queue_input_values("  https://youtu.be/one  \nC:/Videos/My clip.mp4\nhttps://youtu.be/one\n") == [
+        "https://youtu.be/one",
+        "C:/Videos/My clip.mp4",
+    ]
 
 
 def test_api_configuration_does_not_require_or_mutate_environment() -> None:

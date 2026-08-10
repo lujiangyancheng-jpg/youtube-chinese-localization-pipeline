@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.5.4-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.5.5-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -144,7 +144,8 @@ python main.py doctor
 ### 3.7 双击打开“粘贴链接”界面
 
 新版桌面界面采用简洁的下载器式布局：“粘贴链接”是顶部最醒目的主操作，
-尚未添加视频时只显示两步提示；粘贴后才出现当前任务、授权确认和开始按钮。
+尚未添加视频时只显示两步提示；粘贴后才出现当前任务、授权确认和开始按钮。一次复制多行
+链接也可以：每行一个链接，程序会把它们加入安全队列，按顺序处理，并在每一项之间保留断点续跑。
 处理设置、API 参数与运行记录均按需展开，避免第一次使用时被大量选项干扰。
 
 安装和环境检查完成后，在项目目录中双击：
@@ -504,7 +505,7 @@ subtitles:
   max_chinese_chars_per_line: 20
 
 render:
-  # 自动优先使用 NVIDIA NVENC；不可用时会自动改用 libx264。
+  # 自动优先使用 NVIDIA NVENC；新旧 API 都会实测，不可用时才改用 libx264。
   codec: h264_nvenc
   crf: 17
   preset: medium
@@ -537,7 +538,7 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.4 会在
+Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.5 会在
 启动 Whisper 前自动注册这套运行库并进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
 运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底默认只使用
 6 个线程，保留桌面响应。离线字幕翻译的 `offline_device: auto` 则始终稳定使用 CPU `int8`。
@@ -732,9 +733,9 @@ python -m pip install -e ".[transcription]"
 
 ### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
 
-v0.5.4 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+v0.5.5 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
 “GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
-GPU 任务。请安装 v0.5.4；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+GPU 任务。请安装 v0.5.5；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
 `YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
 `transcription.device: cpu`。
 
@@ -885,11 +886,12 @@ libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 
 
 桌面界面不会再弹出或依赖可关闭的系统命令窗口。进度条会显示真实的下载百分比、本地 AI 段落进度和
 字幕压制百分比；高画质 DASH/HLS 下载最多同时下载 4 个分片。本地 AI 会在不超出模型安全上下文的
-前提下合并更完整的段落，减少模型请求次数并保持上下文质量。
+前提下合并更完整的段落，减少模型请求次数并保持上下文质量。一次粘贴多行链接时，桌面端会逐项处理，
+并把总体进度和当前任务编号显示在同一根进度条上；失败任务会记录原因且不会阻止后续任务。
 
-如果运行日志提示 `NVENC API version` 或“显卡驱动版本过低”，说明当前 FFmpeg 需要更新的 NVIDIA
-驱动才能启用 5070 的硬件编码。软件会自动使用更快的 CPU 兜底编码并保持同一画质设置；更新驱动后会
-自动恢复 NVENC 的高速编码，无需更改软件设置。
+如果运行日志提示 `NVENC API version` 或“显卡驱动版本过低”，软件会先实测安装包内置的 NVENC
+兼容编码器。它适合保留稳定驱动的用户：兼容编码器成功时继续使用显卡压制；只有两套编码器都不可用时，
+才会自动使用 CPU `libx264` 兜底，并保持同一画质设置。不需要为此修改软件设置或更新驱动。
 
 处理完成后会生成 `logs/subtitle_quality.json`。若只有少数片段需要人工检查，
 `subtitles/review_required.srt` 会只保留阅读过快、闪烁、重复或超长的对应时间段，便于定向校对。
