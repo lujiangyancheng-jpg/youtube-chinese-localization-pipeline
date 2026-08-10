@@ -9,7 +9,7 @@ import pytest
 
 from youtube_localizer.config import RenderConfig
 from youtube_localizer.errors import ExternalToolError
-from youtube_localizer.hardware import NvencEncoder
+from youtube_localizer.hardware import H264Encoder, NvencEncoder
 from youtube_localizer.rendering.ffmpeg import (
     build_hardsub_command,
     build_softsub_command,
@@ -82,6 +82,25 @@ def test_ffmpeg_command_caps_resolution_and_fps_without_upscaling_or_frame_dupli
     assert "fps=60" not in lower_rate_command[lower_rate_command.index("-vf") + 1]
 
 
+def test_ffmpeg_command_uses_vendor_appropriate_quality_controls(tmp_path) -> None:
+    qsv = build_hardsub_command(
+        tmp_path / "source.mp4",
+        tmp_path / "subtitle.ass",
+        tmp_path / "output.mp4",
+        RenderConfig(codec="h264_qsv", crf=19),
+    )
+    assert qsv[qsv.index("-global_quality") + 1] == "19"
+
+    amf = build_hardsub_command(
+        tmp_path / "source.mp4",
+        tmp_path / "subtitle.ass",
+        tmp_path / "output.mp4",
+        RenderConfig(codec="h264_amf", crf=19),
+    )
+    assert amf[amf.index("-qp_i") + 1] == "19"
+    assert amf[amf.index("-qp_p") + 1] == "21"
+
+
 def test_softsub_command_stream_copies_media_and_sets_language(tmp_path) -> None:
     command = build_softsub_command(
         tmp_path / "source.mp4",
@@ -111,7 +130,7 @@ def test_hardsub_skips_known_broken_nvenc_before_the_full_render(tmp_path) -> No
 
     with (
         patch(
-            "youtube_localizer.rendering.ffmpeg.select_h264_nvenc_encoder",
+            "youtube_localizer.rendering.ffmpeg.select_h264_encoder",
             return_value=NvencEncoder(None, "driver"),
         ),
         patch("youtube_localizer.rendering.ffmpeg.run_streaming_command", side_effect=fake_stream),
@@ -122,6 +141,32 @@ def test_hardsub_skips_known_broken_nvenc_before_the_full_render(tmp_path) -> No
     assert len(commands) == 1
     assert commands[0][commands[0].index("-c:v") + 1] == "libx264"
     assert commands[0][commands[0].index("-preset") + 1] == "fast"
+
+
+def test_hardsub_auto_uses_verified_amd_encoder(tmp_path) -> None:
+    source = tmp_path / "source.mp4"
+    subtitle = tmp_path / "subtitle.ass"
+    output = tmp_path / "output.mp4"
+    source.write_bytes(b"source")
+    subtitle.write_text("[Script Info]\n", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_stream(command, *, line_callback=None):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"rendered")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    with (
+        patch(
+            "youtube_localizer.rendering.ffmpeg.select_h264_encoder",
+            return_value=H264Encoder("ffmpeg", "ready", codec="h264_amf"),
+        ),
+        patch("youtube_localizer.rendering.ffmpeg.run_streaming_command", side_effect=fake_stream),
+    ):
+        render_hardsub(source, subtitle, output, RenderConfig())
+
+    assert commands[0][commands[0].index("-c:v") + 1] == "h264_amf"
+    assert commands[0][commands[0].index("-qp_i") + 1] == "17"
 
 
 def test_subprocess_wrapper_never_uses_shell() -> None:

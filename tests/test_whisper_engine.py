@@ -24,7 +24,7 @@ def test_cuda_runtime_errors_include_missing_cublas() -> None:
 
 
 def test_auto_device_starts_on_cpu_when_cuda_runtime_preflight_fails() -> None:
-    config = TranscriptionConfig(device="auto", compute_type="auto")
+    config = TranscriptionConfig(device="auto", compute_type="auto", cpu_threads=6)
 
     with patch(
         "youtube_localizer.transcription.whisper_engine.cuda_runtime_status",
@@ -91,7 +91,7 @@ def test_transcription_retries_on_cpu_after_lazy_cuda_failure(tmp_path, caplog) 
 
     output_json = tmp_path / "transcription.json"
     output_srt = tmp_path / "transcription.srt"
-    config = TranscriptionConfig(device="auto", compute_type="auto")
+    config = TranscriptionConfig(device="auto", compute_type="auto", cpu_threads=6)
     with (
         patch("faster_whisper.WhisperModel", FakeWhisperModel),
         patch(

@@ -9,7 +9,13 @@ from pathlib import Path
 
 from .config import is_onedrive_directory, output_directory_advice
 from .download.youtube import discover_javascript_runtimes
-from .hardware import format_nvidia_gpus, query_nvidia_gpus, select_h264_nvenc_encoder
+from .hardware import (
+    detect_system_resources,
+    format_nvidia_gpus,
+    query_nvidia_gpus,
+    recommended_cpu_threads,
+    select_h264_encoder,
+)
 from .resources import (
     bundled_fonts_directory,
     find_bundled_model,
@@ -65,6 +71,34 @@ def _font_check() -> DoctorCheck:
     )
 
 
+def _system_capacity_check() -> DoctorCheck:
+    resources = detect_system_resources()
+    memory = (
+        f"{resources.memory_mib / 1024:.1f} GiB RAM"
+        if resources.memory_mib is not None
+        else "RAM unavailable"
+    )
+    detail = (
+        f"{resources.logical_cpu_count} logical CPU threads, {memory}; "
+        f"automatic CPU transcription uses {recommended_cpu_threads(resources)} thread(s)."
+    )
+    if resources.memory_mib is not None and resources.memory_mib < 8 * 1024:
+        return DoctorCheck(
+            "System capacity",
+            "warning",
+            detail + " Medium Whisper may be slow; select Safe CPU for long videos.",
+            False,
+        )
+    if resources.logical_cpu_count <= 2:
+        return DoctorCheck(
+            "System capacity",
+            "warning",
+            detail + " Long CPU-only jobs should use Safe CPU.",
+            False,
+        )
+    return DoctorCheck("System capacity", "ok", detail, False)
+
+
 def run_doctor(
     output_directory: Path,
     *,
@@ -79,6 +113,7 @@ def run_doctor(
             sys.version.split()[0] + (" (3.11+)" if version_ok else "; Python 3.11+ required"),
         ),
     ]
+    checks.append(_system_capacity_check())
     for executable in ("ffmpeg", "ffprobe"):
         path = resolve_executable(executable)
         checks.append(
@@ -212,12 +247,12 @@ def run_doctor(
             False,
         )
     )
-    nvenc_encoder = select_h264_nvenc_encoder()
+    hardware_encoder = select_h264_encoder()
     checks.append(
         DoctorCheck(
-            "NVENC hard-subtitle encoding",
-            "ok" if nvenc_encoder.ffmpeg else ("warning" if nvidia_gpus else "optional"),
-            nvenc_encoder.detail,
+            "Hardware hard-subtitle encoding",
+            "ok" if hardware_encoder.ffmpeg else ("warning" if nvidia_gpus else "optional"),
+            hardware_encoder.detail,
             False,
         )
     )

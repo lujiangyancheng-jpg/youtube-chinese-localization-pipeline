@@ -9,6 +9,7 @@ from typing import Any
 
 from ..config import TranscriptionConfig
 from ..errors import LocalizerError
+from ..hardware import resolve_cpu_threads
 from ..models import SubtitleCue
 from ..resource_gate import heavy_workload_slot
 from ..resources import cuda_runtime_directories, resolve_whisper_model
@@ -127,11 +128,14 @@ def _run_whisper_attempt(
     compute_type: str,
     local_only: bool,
 ) -> tuple[list[dict[str, Any]], list[SubtitleCue], Any]:
+    cpu_threads = resolve_cpu_threads(config.cpu_threads) if device == "cpu" else 0
+    if device == "cpu":
+        LOGGER.info("Whisper CPU fallback will use %s worker thread(s).", cpu_threads)
     model = model_class(
         model_reference,
         device=device,
         compute_type=compute_type,
-        cpu_threads=config.cpu_threads if device == "cpu" else 0,
+        cpu_threads=cpu_threads,
         local_files_only=local_only,
     )
     segments_iterator, info = model.transcribe(

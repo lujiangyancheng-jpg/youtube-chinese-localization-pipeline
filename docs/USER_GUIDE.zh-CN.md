@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.5.5-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.5.6-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -479,6 +479,7 @@ transcription:
   model: medium
   device: auto
   compute_type: auto
+  cpu_threads: 0  # 0 会根据 CPU 核心数与内存自动选择安全线程数
 
 translation:
   direction: en-to-zh  # en-to-zh 或 zh-to-en
@@ -505,8 +506,8 @@ subtitles:
   max_chinese_chars_per_line: 20
 
 render:
-  # 自动优先使用 NVIDIA NVENC；新旧 API 都会实测，不可用时才改用 libx264。
-  codec: h264_nvenc
+  # 自动实测 NVIDIA NVENC、Intel Quick Sync、AMD AMF；均不可用时才改用 libx264。
+  codec: auto
   crf: 17
   preset: medium
   output_height: null  # 保持原分辨率；可填 2160、1440、1080 或 720 作为上限
@@ -538,10 +539,11 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.5 会在
+Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.6 会在
 启动 Whisper 前自动注册这套运行库并进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
-运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底默认只使用
-6 个线程，保留桌面响应。离线字幕翻译的 `offline_device: auto` 则始终稳定使用 CPU `int8`。
+运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底会根据核心数与
+内存自动保留桌面响应；需要固定行为时可把 `cpu_threads` 设为 1 到 32。离线字幕翻译的
+`offline_device: auto` 则始终稳定使用 CPU `int8`。
 
 离线安装包已包含 Whisper Medium，首次识别不需要联网。从源码手动安装并改用
 其他 Whisper 尺寸时，才需要下载相应模型。
@@ -733,9 +735,9 @@ python -m pip install -e ".[transcription]"
 
 ### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
 
-v0.5.5 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+v0.5.6 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
 “GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
-GPU 任务。请安装 v0.5.5；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+GPU 任务。请安装 v0.5.6；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
 `YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
 `transcription.device: cpu`。
 
@@ -889,9 +891,9 @@ libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 
 前提下合并更完整的段落，减少模型请求次数并保持上下文质量。一次粘贴多行链接时，桌面端会逐项处理，
 并把总体进度和当前任务编号显示在同一根进度条上；失败任务会记录原因且不会阻止后续任务。
 
-如果运行日志提示 `NVENC API version` 或“显卡驱动版本过低”，软件会先实测安装包内置的 NVENC
-兼容编码器。它适合保留稳定驱动的用户：兼容编码器成功时继续使用显卡压制；只有两套编码器都不可用时，
-才会自动使用 CPU `libx264` 兜底，并保持同一画质设置。不需要为此修改软件设置或更新驱动。
+软件会先实测 NVIDIA NVENC（包括安装包内置的兼容编码器）、Intel Quick Sync 和 AMD AMF。它适合
+保留稳定驱动或使用非 NVIDIA 显卡的用户：任一编码器成功就继续使用硬件压制；只有全部不可用时才自动
+使用 CPU `libx264` 兜底，并保持同一画质设置。不需要为此修改软件设置或更新驱动。
 
 处理完成后会生成 `logs/subtitle_quality.json`。若只有少数片段需要人工检查，
 `subtitles/review_required.srt` 会只保留阅读过快、闪烁、重复或超长的对应时间段，便于定向校对。

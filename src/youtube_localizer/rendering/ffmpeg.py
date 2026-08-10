@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..config import RenderConfig
 from ..errors import ExternalToolError, LocalizerError
-from ..hardware import select_h264_nvenc_encoder
+from ..hardware import HARDWARE_H264_CODECS, select_h264_encoder
 from ..resource_gate import heavy_workload_slot
 from ..resources import bundled_fonts_directory
 from ..utils.subprocesses import run_command, run_streaming_command
@@ -80,6 +80,38 @@ def build_hardsub_command(
         command += ["-crf", str(config.crf), "-preset", config.preset]
     elif config.codec in {"h264_nvenc", "hevc_nvenc"}:
         command += ["-cq", str(config.crf), "-preset", config.preset]
+    elif config.codec == "h264_qsv":
+        # QSV's global quality scale is 1 (best) to 51 (lowest), closely matching the CRF
+        # values exposed by the rest of the application.
+        command += ["-global_quality", str(config.crf), "-preset", config.preset]
+    elif config.codec == "h264_amf":
+        # AMF uses explicit quantizers rather than CRF. Keeping the I-frame value equal to the
+        # requested CRF gives users the same quality slider across GPU vendors.
+        amf_quality = {
+            "ultrafast": "speed",
+            "superfast": "speed",
+            "veryfast": "speed",
+            "faster": "balanced",
+            "fast": "balanced",
+            "medium": "balanced",
+            "slow": "quality",
+            "slower": "quality",
+            "veryslow": "quality",
+        }.get(config.preset, "balanced")
+        command += [
+            "-rc",
+            "cqp",
+            "-qp_i",
+            str(config.crf),
+            "-qp_p",
+            str(min(51, config.crf + 2)),
+            "-qp_b",
+            str(min(51, config.crf + 3)),
+            "-quality",
+            amf_quality,
+        ]
+    elif config.codec == "h264_videotoolbox":
+        command += ["-q:v", str(config.crf)]
     if config.copy_audio_when_possible and source_audio_codec.lower() == "aac":
         command += ["-c:a", "copy"]
     else:
@@ -138,18 +170,23 @@ def _render_hardsub(
         LOGGER.info("Using bundled subtitle fonts from %s.", fonts_directory)
     active_config = config
     active_ffmpeg = ffmpeg
-    if config.codec in {"h264_nvenc", "hevc_nvenc"}:
-        nvenc_encoder = select_h264_nvenc_encoder(ffmpeg)
-        if nvenc_encoder.ffmpeg is None:
+    if config.codec == "auto" or config.codec in HARDWARE_H264_CODECS:
+        hardware_encoder = select_h264_encoder(
+            ffmpeg,
+            preferred=config.codec if config.codec != "auto" else "auto",
+        )
+        if hardware_encoder.ffmpeg is None:
             LOGGER.warning(
-                "Skipping unavailable NVIDIA encoding before the full render: %s "
+                "Skipping unavailable hardware encoding before the full render: %s "
                 "Using fast CPU encoding at the same visual-quality setting.",
-                nvenc_encoder.detail,
+                hardware_encoder.detail,
             )
             active_config = config.model_copy(update={"codec": "libx264", "preset": "fast"})
         else:
-            active_ffmpeg = nvenc_encoder.ffmpeg
-            if nvenc_encoder.uses_compatibility_build:
+            active_ffmpeg = hardware_encoder.ffmpeg
+            active_config = config.model_copy(update={"codec": hardware_encoder.codec})
+            LOGGER.info("Using verified hardware H.264 encoder: %s.", hardware_encoder.codec)
+            if hardware_encoder.uses_compatibility_build:
                 LOGGER.info("Using the bundled NVENC compatibility encoder for this driver.")
     command = build_hardsub_command(
         source_video,
@@ -167,9 +204,11 @@ def _render_hardsub(
     try:
         run_streaming_command(command, line_callback=progress.consume)
     except ExternalToolError as exc:
-        if active_config.codec in {"h264_nvenc", "hevc_nvenc"}:
+        if active_config.codec in HARDWARE_H264_CODECS:
             detail = str(exc).lower()
-            if "nvenc api version" in detail or "minimum required nvidia driver" in detail:
+            if active_config.codec == "h264_nvenc" and (
+                "nvenc api version" in detail or "minimum required nvidia driver" in detail
+            ):
                 LOGGER.warning(
                     "NVIDIA encoding needs a newer graphics driver for this FFmpeg build; "
                     "retrying with fast CPU encoding. Update the NVIDIA driver to restore "

@@ -7,13 +7,13 @@ from youtube_localizer.errors import ConfigurationError
 from youtube_localizer.profiles import apply_output_quality, apply_processing_profile
 
 
-def test_auto_profile_keeps_device_detection_and_prefers_hardware_encoding() -> None:
+def test_auto_profile_keeps_device_detection_and_auto_selects_hardware_encoding() -> None:
     profiled = apply_processing_profile(AppConfig(), "auto")
 
     assert profiled.transcription.model == "medium"
     assert profiled.transcription.device == "auto"
     assert profiled.transcription.compute_type == "auto"
-    assert profiled.render.codec == "h264_nvenc"
+    assert profiled.render.codec == "auto"
     assert profiled.render.crf == 17
 
 
@@ -40,7 +40,7 @@ def test_balanced_profile_uses_hardware_encoding_without_changing_workflow() -> 
 
     assert profiled.transcription.model == "medium"
     assert profiled.transcription.beam_size == 5
-    assert profiled.render.codec == "h264_nvenc"
+    assert profiled.render.codec == "auto"
     assert profiled.translation.provider == "offline"
     assert profiled.subtitle_mode == "bilingual_en_zh"
     assert profiled.subtitles.font == "LXGW WenKai"

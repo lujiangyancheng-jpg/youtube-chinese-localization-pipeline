@@ -75,7 +75,9 @@ class TranscriptionConfig(StrictModel):
     model: str = "medium"
     device: Literal["auto", "cpu", "cuda"] = "auto"
     compute_type: str = "auto"
-    cpu_threads: int = Field(default=6, ge=1, le=32)
+    # 0 chooses a conservative value from the actual CPU and RAM. This leaves capacity for
+    # Windows and prevents the CPU-only fallback from making modest computers unresponsive.
+    cpu_threads: int = Field(default=0, ge=0, le=32)
     beam_size: int = Field(default=5, ge=1, le=20)
     vad_filter: bool = True
     word_timestamps: bool = True
@@ -125,9 +127,9 @@ class SubtitleConfig(StrictModel):
 
 
 class RenderConfig(StrictModel):
-    # NVENC is attempted first and transparently falls back to libx264 when the computer does
-    # not offer a usable NVIDIA encoder.
-    codec: str = "h264_nvenc"
+    # Auto verifies NVIDIA, Intel Quick Sync, AMD AMF, and (on macOS) VideoToolbox in that order,
+    # then falls back to libx264. Explicit codecs remain available for reproducible workflows.
+    codec: str = "auto"
     crf: int = Field(default=17, ge=0, le=51)
     preset: str = "medium"
     audio_codec: str = "aac"

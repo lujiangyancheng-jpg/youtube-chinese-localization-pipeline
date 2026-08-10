@@ -42,7 +42,7 @@ attribution requirements, and publishing-platform rules.
 - OpenAI-compatible subtitle translation with retries and deterministic response caching
 - English or Simplified Chinese target SRT and styled ASS output
 - Target-only, English-above-Chinese, and Chinese-above-English subtitle modes
-- H.264/AAC hard-subtitled MP4 rendering with automatic NVENC API compatibility and libx264 fallback
+- H.264/AAC hard-subtitled MP4 rendering with verified NVIDIA, Intel Quick Sync, AMD AMF, or CPU fallback
 - Selectable soft-subtitle MP4 output without recompressing the source video or audio
 - Preview rendering and output stream/duration/decode validation
 - Final-target subtitle quality report for fast-reading, duplicate, flash, and line-length cues
@@ -119,10 +119,10 @@ offline` for a no-API end-to-end run. The desktop interface defaults to offline 
 ## Smart acceleration and output controls
 
 The desktop interface now uses one automatic high-quality path instead of asking users to choose
-technical performance presets. It detects a usable NVIDIA CUDA/NVENC setup and uses it for
-Whisper transcription and final encoding. When the newest FFmpeg requires a newer NVENC API than
-the installed stable driver provides, the offline package automatically probes its bundled
-compatibility encoder before falling back to CPU/libx264. The default is Medium Whisper plus the
+technical performance presets. Whisper uses NVIDIA CUDA only after a runtime check, then safely
+uses CPU `int8` when CUDA is unavailable. Final rendering verifies NVIDIA NVENC (including the
+bundled older-driver compatibility encoder), Intel Quick Sync, and AMD AMF before using one; it
+uses CPU/libx264 only when none pass the real probe. The default is Medium Whisper plus the
 highest final encode quality.
 
 The desktop app keeps its helper command windows hidden and turns real pipeline messages into
@@ -332,6 +332,7 @@ transcription:
   model: medium
   device: auto          # auto, cpu, cuda
   compute_type: auto
+  cpu_threads: 0        # 0 adapts to CPU cores and RAM; set 1-32 to override
   beam_size: 5
   vad_filter: true
   word_timestamps: true
@@ -356,7 +357,7 @@ subtitles:
   max_chinese_chars_per_line: 20
 
 render:
-  codec: h264_nvenc     # falls back to libx264 automatically if NVENC is unavailable
+  codec: auto           # verifies NVIDIA, Intel, AMD, then falls back to libx264
   crf: 17
   preset: medium
   soft_subtitles: true  # also create a selectable-subtitle MP4 without re-encoding media
@@ -472,7 +473,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.5 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.6 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 
@@ -493,9 +494,10 @@ Offline subtitle translation prioritizes reliability: `translation.offline_devic
 CPU `int8`. Set it to `cuda` only when the CTranslate2 CUDA and cuDNN runtime is fully installed;
 Whisper and video rendering keep their independent device settings.
 
-For rendering, set `render.codec: h264_nvenc` or `hevc_nvenc`. The installer first probes its
-normal FFmpeg and then its bundled NVENC compatibility encoder. If neither works, the application
-retries with `libx264`.
+For rendering, leave `render.codec: auto` to test NVIDIA NVENC, Intel Quick Sync, and AMD AMF on
+the current computer. NVENC is checked in the normal FFmpeg and then the bundled compatibility
+encoder. If no hardware path works, the application retries with `libx264`. You may still set an
+explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a reproducible setup.
 
 ## Running tests
 

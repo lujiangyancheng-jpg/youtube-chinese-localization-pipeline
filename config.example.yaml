@@ -18,7 +18,7 @@ transcription:
   model: medium
   device: auto  # uses CUDA only after its runtime preflight succeeds; otherwise starts safely on CPU
   compute_type: auto
-  cpu_threads: 6  # keeps two CPU threads free on common 8-core desktop CPUs
+  cpu_threads: 0  # adapts to CPU cores and RAM; use 1-32 to override it
   beam_size: 5
   vad_filter: true
   word_timestamps: true
@@ -60,8 +60,8 @@ subtitles:
   preserve_sound_descriptions: true
 
 render:
-  # Prefer the NVIDIA encoder when available; the program retries with libx264 automatically.
-  codec: h264_nvenc
+  # Verify NVIDIA NVENC, Intel Quick Sync, and AMD AMF; use libx264 only if none work.
+  codec: auto
   crf: 17  # highest-quality desktop default; 19/23 make smaller files
   preset: medium
   audio_codec: aac

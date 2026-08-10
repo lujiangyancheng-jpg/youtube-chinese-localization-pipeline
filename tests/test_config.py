@@ -21,7 +21,7 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     config = load_config(path)
     assert str(config.output_directory) == "localized"
     assert config.transcription.model == "small"
-    assert config.render.codec == "h264_nvenc"
+    assert config.render.codec == "auto"
     assert config.download.format == "bestvideo+bestaudio/best"
     assert config.download.format_sort == ["res", "fps", "br", "size"]
     assert config.download.concurrent_fragment_downloads == 4

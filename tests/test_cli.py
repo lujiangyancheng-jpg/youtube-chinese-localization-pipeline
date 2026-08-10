@@ -54,7 +54,7 @@ def test_cli_configuration_applies_processing_profile() -> None:
     config = _configured(None, processing_profile="fast")
 
     assert config.transcription.model == "small"
-    assert config.render.codec == "h264_nvenc"
+    assert config.render.codec == "auto"
 
 
 def test_cli_configuration_supports_smart_high_quality_output_controls() -> None:
@@ -67,7 +67,7 @@ def test_cli_configuration_supports_smart_high_quality_output_controls() -> None
     )
 
     assert config.transcription.device == "auto"
-    assert config.render.codec == "h264_nvenc"
+    assert config.render.codec == "auto"
     assert config.render.crf == 17
     assert config.render.output_fps == 60
     assert config.render.output_height == 2160

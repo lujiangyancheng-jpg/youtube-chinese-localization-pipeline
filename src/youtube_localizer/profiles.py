@@ -22,8 +22,8 @@ def apply_processing_profile(config: AppConfig, profile: ProcessingProfile) -> A
     """Apply a bounded performance/quality preset without touching user workflow choices.
 
     Translation provider, language direction, subtitle design, output location, and API settings
-    always remain untouched. NVENC is deliberately allowed to fall back to libx264 when the
-    installed FFmpeg or GPU cannot use it.
+    always remain untouched. Hardware encoding is verified on the actual computer and falls back
+    to libx264 when no supported GPU encoder is usable.
     """
     if profile not in PROCESSING_PROFILES:
         raise ConfigurationError(
@@ -33,14 +33,15 @@ def apply_processing_profile(config: AppConfig, profile: ProcessingProfile) -> A
 
     if profile == "auto":
         # Keep device selection automatic: faster-whisper selects CUDA when the bundled runtime
-        # is ready and retries on CPU when it is not. NVENC similarly falls back to libx264.
+        # is ready and retries on CPU when it is not. Video encoding probes NVIDIA, Intel, AMD,
+        # and macOS hardware rather than assuming one GPU brand.
         # This is the only profile used by the desktop UI, so users do not have to understand
         # encoder/recognition trade-offs before getting a high-quality result.
         transcription = config.transcription.model_copy(
             update={"model": "medium", "device": "auto", "compute_type": "auto", "beam_size": 5}
         )
         render = config.render.model_copy(
-            update={"codec": "h264_nvenc", "crf": 17, "preset": "medium"}
+            update={"codec": "auto", "crf": 17, "preset": "medium"}
         )
     elif profile == "safe_cpu":
         transcription = config.transcription.model_copy(
@@ -54,21 +55,21 @@ def apply_processing_profile(config: AppConfig, profile: ProcessingProfile) -> A
             update={"model": "small", "beam_size": 1}
         )
         render = config.render.model_copy(
-            update={"codec": "h264_nvenc", "crf": 23, "preset": "medium"}
+            update={"codec": "auto", "crf": 23, "preset": "medium"}
         )
     elif profile == "quality":
         transcription = config.transcription.model_copy(
             update={"model": "medium", "beam_size": 8, "vad_filter": True, "word_timestamps": True}
         )
         render = config.render.model_copy(
-            update={"codec": "h264_nvenc", "crf": 17, "preset": "medium"}
+            update={"codec": "auto", "crf": 17, "preset": "medium"}
         )
     else:  # balanced
         transcription = config.transcription.model_copy(
             update={"model": "medium", "beam_size": 5}
         )
         render = config.render.model_copy(
-            update={"codec": "h264_nvenc", "crf": 19, "preset": "medium"}
+            update={"codec": "auto", "crf": 19, "preset": "medium"}
         )
 
     return config.model_copy(update={"transcription": transcription, "render": render})
