@@ -4,8 +4,13 @@ import pytest
 
 from youtube_localizer.cli import _configured, normalize_argv
 from youtube_localizer.config import AppConfig
-from youtube_localizer.errors import InputValidationError
-from youtube_localizer.pipeline import process_pipeline
+from youtube_localizer.errors import InputValidationError, LocalizerError
+from youtube_localizer.models import ProjectPaths, SourceMetadata, SubtitleCue
+from youtube_localizer.pipeline import process_pipeline, save_project_config
+from youtube_localizer.reporting import build_report, write_report
+from youtube_localizer.state import PipelineState
+from youtube_localizer.subtitles.parser import write_srt
+from youtube_localizer.utils.files import atomic_write_json, load_json
 
 
 def test_implicit_process_command() -> None:
@@ -55,3 +60,53 @@ def test_cli_configuration_applies_processing_profile() -> None:
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:
     with pytest.raises(InputValidationError, match="transalte"):
         process_pipeline("missing.mp4", AppConfig(), force_steps={"transalte"})
+
+
+def test_render_command_keeps_earlier_warnings_and_softsub_failure(tmp_path, monkeypatch) -> None:
+    from youtube_localizer import cli
+
+    project = ProjectPaths(tmp_path / "project")
+    project.create()
+    source = project.source / "source_video.mp4"
+    source.write_bytes(b"source")
+    metadata = SourceMetadata(
+        source_type="local",
+        source_input=str(source),
+        video_id="render-context",
+        title="Render context",
+        duration=1.0,
+        subtitle_kind="faster-whisper (local English transcription)",
+    )
+    atomic_write_json(project.metadata, metadata.model_dump(mode="json"))
+    config = AppConfig.model_validate({"publishing": {"generate_metadata": False}})
+    save_project_config(project, config)
+    write_srt(project.chinese_srt, [SubtitleCue(id=1, start_ms=0, end_ms=1000, text="测试")])
+    old_output = project.source / "metadata.raw.json"
+    old_output.write_text("{}", encoding="utf-8")
+    state = PipelineState(project.state_file)
+    previous = build_report(
+        metadata,
+        state.data,
+        warnings=["Earlier transcription warning."],
+        output_paths=[old_output],
+    )
+    write_report(project.logs, previous)
+
+    def fake_hardsub(active_project, _config):
+        active_project.chinese_hardsub.write_bytes(b"hard subtitles")
+        return active_project.chinese_hardsub
+
+    monkeypatch.setattr(cli, "render_project", fake_hardsub)
+    monkeypatch.setattr(
+        cli,
+        "render_softsub_project",
+        lambda *_args: (_ for _ in ()).throw(LocalizerError("container is incompatible")),
+    )
+
+    cli.render_command(project.root)
+
+    report = load_json(project.logs / "report.json")
+    assert "Earlier transcription warning." in report["warnings"]
+    assert any("Selectable subtitle MP4 was not created" in item for item in report["warnings"])
+    assert str(old_output.resolve()) in report["output_paths"]
+    assert str(project.chinese_hardsub.resolve()) in report["output_paths"]

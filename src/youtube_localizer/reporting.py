@@ -5,7 +5,36 @@ from pathlib import Path
 from typing import Any
 
 from .models import PipelineStateData, SourceMetadata
-from .utils.files import atomic_write_json, atomic_write_text
+from .utils.files import atomic_write_json, atomic_write_text, load_json
+
+
+def load_report_context(logs_dir: Path) -> tuple[list[str], list[Path]]:
+    """Load warnings and still-existing outputs from the most recent project report.
+
+    Standalone commands such as ``render`` replace the report after completing a later stage.
+    Keeping this context prevents earlier acquisition/transcription warnings from disappearing.
+    """
+    path = logs_dir / "report.json"
+    if not path.is_file():
+        return [], []
+    try:
+        report = load_json(path)
+    except (OSError, TypeError, ValueError):
+        return [], []
+    if not isinstance(report, dict):
+        return [], []
+    raw_warnings = report.get("warnings", [])
+    warnings = [str(item) for item in raw_warnings] if isinstance(raw_warnings, list) else []
+    raw_outputs = report.get("output_paths", [])
+    outputs: list[Path] = []
+    if isinstance(raw_outputs, list):
+        for item in raw_outputs:
+            if not isinstance(item, str):
+                continue
+            candidate = Path(item)
+            if candidate.exists() and candidate not in outputs:
+                outputs.append(candidate)
+    return list(dict.fromkeys(warnings)), outputs
 
 
 def build_report(

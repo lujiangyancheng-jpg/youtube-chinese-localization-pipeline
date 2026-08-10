@@ -441,7 +441,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.0 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.1 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 

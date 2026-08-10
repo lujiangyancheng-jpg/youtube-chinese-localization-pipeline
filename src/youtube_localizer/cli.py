@@ -39,7 +39,7 @@ from .profiles import ProcessingProfile, apply_processing_profile
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.preview import render_preview
 from .rendering.validation import validate_rendered_video
-from .reporting import build_report, write_report
+from .reporting import build_report, load_report_context, write_report
 from .state import PipelineState
 from .subtitles.normalize import validate_cues
 from .subtitles.parser import parse_subtitle
@@ -479,6 +479,9 @@ def render_command(
     config = load_config(config_path) if config_path else load_project_config(project)
     metadata = load_project_metadata(project)
     state = PipelineState(project.state_file)
+    previous_warnings, previous_outputs = load_report_context(project.logs)
+    report_warnings = list(dict.fromkeys([*previous_warnings, *state.data.warnings]))
+    softsub_warning = ""
     source = find_source_video(project)
     subtitle = (
         _target_ass(project, config)
@@ -501,6 +504,10 @@ def render_command(
             try:
                 outputs.append(render_softsub_project(project, config))
             except LocalizerError as exc:
+                softsub_warning = (
+                    "Selectable subtitle MP4 was not created; the hard-subtitle video is still "
+                    f"ready. Details: {exc}"
+                )
                 console.print(
                     "[yellow]Selectable subtitle version was not created; the hard-subtitle "
                     f"video is still ready. Details: {exc}[/]"
@@ -514,6 +521,12 @@ def render_command(
         preferred_line_length=config.subtitles.max_chinese_chars_per_line,
     )
     atomic_write_json(project.logs / "subtitle_quality.json", quality)
+    if softsub_warning:
+        report_warnings.append(softsub_warning)
+    report_warnings = list(dict.fromkeys(report_warnings))
+    if state.data.warnings != report_warnings:
+        state.data.warnings = report_warnings
+        state.save()
     state.mark_status("completed")
     report = build_report(
         metadata,
@@ -529,7 +542,8 @@ def render_command(
         flagged_cues=quality["flagged_cue_ids"],
         render_parameters=config.render.model_dump(mode="json"),
         subtitle_quality=quality,
-        output_paths=outputs,
+        output_paths=[*previous_outputs, *outputs],
+        warnings=report_warnings,
     )
     write_report(project.logs, report)
     console.print(f"[bold green]Rendered and validated:[/] {output}")
