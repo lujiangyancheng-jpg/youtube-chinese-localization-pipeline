@@ -56,6 +56,7 @@ class LocalOllamaProvider(TranslationProvider):
         cache: TranslationCache,
         source_code: str,
         target_code: str,
+        context_tokens: int = 4096,
         timeout: float = 600,
     ) -> None:
         self.endpoint = validate_local_ollama_endpoint(endpoint)
@@ -73,6 +74,7 @@ class LocalOllamaProvider(TranslationProvider):
         self.cache = cache
         self.source_code = source_code
         self.target_code = target_code
+        self.context_tokens = context_tokens
         self.timeout = timeout
         self._ensure_server()
         self._ensure_model()
@@ -185,7 +187,8 @@ class LocalOllamaProvider(TranslationProvider):
             f"You are a professional audiovisual translator from {source_name} to "
             f"{target_name}. Read every cue as one continuous spoken paragraph before "
             "translating. Produce one complete, fluent paragraph. Translate meaning and tone "
-            "naturally instead of word by word. "
+            "naturally instead of word by word. Prefer concise subtitle phrasing that stays "
+            "comfortable to read on screen while preserving every fact. "
             "Preserve every fact, name, number, and relationship; do not summarize, omit, "
             "explain ambiguities, add translator notes, or add information. Correct obvious "
             "speech-recognition phrasing only when the surrounding context makes it clear. "
@@ -225,7 +228,7 @@ class LocalOllamaProvider(TranslationProvider):
                         "format": _translation_schema(),
                         "options": {
                             "temperature": 0.1,
-                            "num_ctx": 8192,
+                            "num_ctx": self.context_tokens,
                             "num_predict": 1024,
                             "repeat_penalty": 1.1,
                         },
@@ -234,10 +237,12 @@ class LocalOllamaProvider(TranslationProvider):
                     timeout=self.timeout,
                 )
                 response.raise_for_status()
-                content = response.json()["message"]["content"]
+                response_payload = response.json()
+                content = response_payload["message"]["content"]
                 parsed = json.loads(content)
                 translation = str(parsed["translation"]).strip()
                 self._validate_translation(translation, cues)
+                self._log_performance(response_payload)
                 return translation
             except (httpx.HTTPError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 correction = str(exc)
@@ -259,6 +264,28 @@ class LocalOllamaProvider(TranslationProvider):
             )
         if len(re.findall(r"(?:^|\s)\d+[.)]", translation)) > 12:
             raise ValueError("paragraph translation contains a runaway numbered sequence")
+
+    def _log_performance(self, payload: dict[str, Any]) -> None:
+        """Log Ollama's own token metrics when the local runtime provides them."""
+        try:
+            evaluated_tokens = int(payload.get("eval_count") or 0)
+            evaluated_duration_ns = int(payload.get("eval_duration") or 0)
+            prompt_tokens = int(payload.get("prompt_eval_count") or 0)
+            total_duration_ns = int(payload.get("total_duration") or 0)
+        except (TypeError, ValueError):
+            return
+        if evaluated_tokens <= 0 or evaluated_duration_ns <= 0:
+            return
+        tokens_per_second = evaluated_tokens / (evaluated_duration_ns / 1_000_000_000)
+        total_seconds = total_duration_ns / 1_000_000_000
+        LOGGER.info(
+            "Local AI paragraph performance: %s output tokens at %.1f tok/s "
+            "(%s prompt tokens, %.2f s total).",
+            evaluated_tokens,
+            tokens_per_second,
+            prompt_tokens,
+            total_seconds,
+        )
 
     def translate_paragraph(
         self,

@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.5.3-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.5.4-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -470,7 +470,8 @@ python main.py process "D:\Videos\owned-demo.mp4" --config config.local.yaml
 常用设置：
 
 ```yaml
-output_directory: output
+# 尽量放在本地硬盘，而不是 OneDrive 或项目目录。
+output_directory: ~/Videos/YouTube Chinese Localizer
 subtitle_mode: chinese  # download_only 表示仅下载原视频，不生成字幕
 
 transcription:
@@ -485,6 +486,7 @@ translation:
   offline_device: auto  # 自动模式稳定使用 CPU；CUDA 需明确选择
   ollama_endpoint: http://localhost:11434
   ollama_model: qwen3:4b
+  ollama_context_tokens: 4096  # 适合 12 GB 显存的完整段落上下文
   ollama_auto_pull: true
 
 download:
@@ -510,6 +512,10 @@ render:
   output_fps: null  # 保持原帧率；可填 60 或 30，只降低更高帧率
 ```
 
+桌面界面默认把项目、缓存和成片放入用户“视频”目录，也可以为每个任务点击“调整处理设置”后选择其他
+位置。若选择 OneDrive 路径或可用空间低于 20 GiB，开始前会明确提示；同步大码率源视频和成片会显著
+拖慢下载与字幕压制。
+
 `max_chinese_chars_per_line` 是横屏上限。竖屏、方形视频以及带 90° 旋转信息的手机视频会根据实际显示比例自动缩短每行字数，并生成匹配比例的 ASS 画布。
 
 ### 字幕字体
@@ -531,7 +537,7 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.3 会在
+Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.4 会在
 启动 Whisper 前自动注册这套运行库并进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
 运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底默认只使用
 6 个线程，保留桌面响应。离线字幕翻译的 `offline_device: auto` 则始终稳定使用 CPU `int8`。
@@ -726,9 +732,9 @@ python -m pip install -e ".[transcription]"
 
 ### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
 
-v0.5.3 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+v0.5.4 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
 “GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
-GPU 任务。请安装 v0.5.3；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+GPU 任务。请安装 v0.5.4；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
 `YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
 `transcription.device: cpu`。
 
@@ -885,6 +891,9 @@ libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 
 驱动才能启用 5070 的硬件编码。软件会自动使用更快的 CPU 兜底编码并保持同一画质设置；更新驱动后会
 自动恢复 NVENC 的高速编码，无需更改软件设置。
 
+处理完成后会生成 `logs/subtitle_quality.json`。若只有少数片段需要人工检查，
+`subtitles/review_required.srt` 会只保留阅读过快、闪烁、重复或超长的对应时间段，便于定向校对。
+
 YouTube 原视频始终按 **分辨率、帧率、码率、文件大小** 的顺序选择最佳可用流。处理设置中只保留三项
 明确的成片选择：
 
@@ -898,6 +907,15 @@ YouTube 原视频始终按 **分辨率、帧率、码率、文件大小** 的顺
 ```powershell
 python main.py process "D:\Videos\owned-demo.mp4" --translation-provider offline --processing-profile auto --output-quality best --output-fps 60 --output-height 2160
 ```
+
+多个视频可写入 UTF-8 文本文件（一行一个链接或本地路径）后执行：
+
+```powershell
+python main.py batch inputs.txt --parallel-jobs 2
+```
+
+该模式最多同时处理两个项目的下载；Whisper、本地 AI 翻译和硬字幕压制会自动排队，共用一个性能槽位，
+不会同时争抢显存或 CPU 编码资源。需要完全串行时使用 `--parallel-jobs 1`。
 
 完成本地化后，`rendered` 文件夹除了硬字幕视频外，还会生成：
 

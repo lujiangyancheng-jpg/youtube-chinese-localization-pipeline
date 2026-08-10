@@ -67,6 +67,7 @@ def test_local_ai_translates_a_complete_paragraph_and_caches_it(tmp_path) -> Non
     assert post.call_count == 1
     request_payload = post.call_args.kwargs["json"]
     assert request_payload["think"] is False
+    assert request_payload["options"]["num_ctx"] == 4096
     assert "continuous spoken paragraph" in request_payload["messages"][0]["content"]
     assert request_payload["format"]["required"] == ["translation"]
 

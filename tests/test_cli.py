@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from youtube_localizer.cli import _configured, normalize_argv
+from youtube_localizer.cli import _configured, _run_batch_item, normalize_argv
 from youtube_localizer.config import AppConfig
 from youtube_localizer.errors import InputValidationError, LocalizerError
 from youtube_localizer.models import ProjectPaths, SourceMetadata, SubtitleCue
@@ -71,6 +71,18 @@ def test_cli_configuration_supports_smart_high_quality_output_controls() -> None
     assert config.render.crf == 17
     assert config.render.output_fps == 60
     assert config.render.output_height == 2160
+
+
+def test_batch_worker_returns_a_failure_without_stopping_other_queued_projects(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "youtube_localizer.cli.process_pipeline",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(LocalizerError("expected failure")),
+    )
+
+    outcome = _run_batch_item("https://youtu.be/batch-test", AppConfig(), resume=True)
+
+    assert outcome.status == "failed"
+    assert outcome.error == "expected failure"
 
 
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:

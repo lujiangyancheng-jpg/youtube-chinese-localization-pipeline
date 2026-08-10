@@ -117,6 +117,17 @@ def test_build_process_command_passes_smart_output_controls() -> None:
     assert command[command.index("--output-height") + 1] == "2160"
 
 
+def test_build_process_command_passes_the_selected_output_directory() -> None:
+    command = build_process_command(
+        "video.mp4",
+        subtitle_mode="chinese",
+        translation_provider="offline",
+        output_directory=Path("D:/Localized videos"),
+    )
+
+    assert command[command.index("--output-dir") + 1] == str(Path("D:/Localized videos"))
+
+
 def test_build_process_command_supports_local_ai_without_api_key() -> None:
     command = build_process_command(
         "https://youtu.be/abc123def45",

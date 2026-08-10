@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import shutil
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Literal
 
@@ -9,6 +11,49 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from .errors import ConfigurationError
+
+MINIMUM_OUTPUT_FREE_BYTES = 20 * 1024**3
+
+
+def default_output_directory() -> Path:
+    """Choose a user-owned local media folder instead of the application checkout."""
+    home = Path(os.environ.get("USERPROFILE", "~")).expanduser() if os.name == "nt" else Path.home()
+    return home / "Videos" / "YouTube Chinese Localizer"
+
+
+def is_onedrive_directory(
+    directory: Path, *, environment: Mapping[str, str] | None = None
+) -> bool:
+    """Return whether *directory* is located below a configured OneDrive root."""
+    environment = os.environ if environment is None else environment
+    candidate = directory.expanduser().resolve()
+    for variable in ("OneDrive", "OneDriveConsumer", "OneDriveCommercial"):
+        raw_root = environment.get(variable)
+        if not raw_root:
+            continue
+        root = Path(raw_root).expanduser().resolve()
+        if candidate == root or root in candidate.parents:
+            return True
+    return any(part.casefold() == "onedrive" for part in candidate.parts)
+
+
+def output_directory_advice(directory: Path) -> str:
+    """Describe storage risks before a large video job starts without creating files."""
+    candidate = directory.expanduser().resolve()
+    if is_onedrive_directory(candidate):
+        return "此位置位于 OneDrive，同步大视频可能拖慢下载和压制；建议使用本地磁盘。"
+
+    probe = candidate
+    while not probe.exists() and probe.parent != probe:
+        probe = probe.parent
+    try:
+        free = shutil.disk_usage(probe).free
+    except OSError:
+        return "开始时会检查该输出位置是否可写。"
+    free_gib = free / 1024**3
+    if free < MINIMUM_OUTPUT_FREE_BYTES:
+        return f"可用空间仅 {free_gib:.1f} GiB；高画质视频建议至少保留 20 GiB。"
+    return f"本地磁盘可用空间 {free_gib:.1f} GiB。"
 
 
 class StrictModel(BaseModel):
@@ -61,6 +106,7 @@ class TranslationConfig(StrictModel):
     offline_auto_download: bool = True
     ollama_endpoint: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    ollama_context_tokens: int = Field(default=4096, ge=2048, le=8192)
     ollama_auto_pull: bool = True
     ollama_timeout_seconds: int = Field(default=600, ge=30, le=3600)
 
@@ -106,7 +152,7 @@ class PublishingConfig(StrictModel):
 
 
 class AppConfig(StrictModel):
-    output_directory: Path = Path("output")
+    output_directory: Path = Field(default_factory=default_output_directory)
     subtitle_language: str = "zh-CN"
     subtitle_mode: Literal[
         "download_only", "chinese", "bilingual_en_zh", "bilingual_zh_en"

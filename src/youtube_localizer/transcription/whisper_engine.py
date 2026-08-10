@@ -10,6 +10,7 @@ from typing import Any
 from ..config import TranscriptionConfig
 from ..errors import LocalizerError
 from ..models import SubtitleCue
+from ..resource_gate import heavy_workload_slot
 from ..resources import cuda_runtime_directories, resolve_whisper_model
 from ..subtitles.cleanup import CleanupResult, cleanup_english
 from ..subtitles.parser import write_srt
@@ -188,6 +189,18 @@ def _run_whisper_attempt(
 
 
 def transcribe_audio(
+    audio_path: Path,
+    output_json: Path,
+    output_srt: Path,
+    config: TranscriptionConfig,
+    *,
+    language: str = "en",
+) -> CleanupResult:
+    with heavy_workload_slot("Whisper transcription"):
+        return _transcribe_audio(audio_path, output_json, output_srt, config, language=language)
+
+
+def _transcribe_audio(
     audio_path: Path,
     output_json: Path,
     output_srt: Path,

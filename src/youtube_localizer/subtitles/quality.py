@@ -109,3 +109,10 @@ def audit_subtitles(
         "findings_by_category": dict(sorted(category_counts.items())),
         "findings": [asdict(finding) for finding in findings],
     }
+
+
+def select_review_cues(cues: list[SubtitleCue], report: dict[str, object]) -> list[SubtitleCue]:
+    """Keep only timed cues flagged by the deterministic final-subtitle audit."""
+    raw_ids = report.get("flagged_cue_ids", [])
+    flagged_ids = {value for value in raw_ids if isinstance(value, int)} if isinstance(raw_ids, list) else set()
+    return [cue for cue in cues if cue.id in flagged_ids]

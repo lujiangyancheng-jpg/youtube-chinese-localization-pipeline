@@ -5,6 +5,8 @@ from pathlib import Path
 
 from ..config import RenderConfig
 from ..errors import ExternalToolError, LocalizerError
+from ..hardware import probe_h264_nvenc
+from ..resource_gate import heavy_workload_slot
 from ..resources import bundled_fonts_directory
 from ..utils.subprocesses import run_command, run_streaming_command
 
@@ -101,16 +103,54 @@ def render_hardsub(
     expected_duration: float | None = None,
     source_frame_rate: float | None = None,
 ) -> Path:
+    with heavy_workload_slot("hard-subtitle rendering"):
+        return _render_hardsub(
+            source_video,
+            subtitle_file,
+            output_file,
+            config,
+            source_audio_codec=source_audio_codec,
+            ffmpeg=ffmpeg,
+            start=start,
+            duration=duration,
+            expected_duration=expected_duration,
+            source_frame_rate=source_frame_rate,
+        )
+
+
+def _render_hardsub(
+    source_video: Path,
+    subtitle_file: Path,
+    output_file: Path,
+    config: RenderConfig,
+    *,
+    source_audio_codec: str = "",
+    ffmpeg: str = "ffmpeg",
+    start: float | None = None,
+    duration: float | None = None,
+    expected_duration: float | None = None,
+    source_frame_rate: float | None = None,
+) -> Path:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     temp = output_file.with_name(f"{output_file.stem}.partial{output_file.suffix}")
     fonts_directory = bundled_fonts_directory()
     if fonts_directory is not None:
         LOGGER.info("Using bundled subtitle fonts from %s.", fonts_directory)
+    active_config = config
+    if config.codec in {"h264_nvenc", "hevc_nvenc"}:
+        nvenc_ready, nvenc_detail = probe_h264_nvenc(ffmpeg)
+        if not nvenc_ready:
+            LOGGER.warning(
+                "Skipping unavailable NVIDIA encoding before the full render: %s "
+                "Using fast CPU encoding at the same visual-quality setting.",
+                nvenc_detail,
+            )
+            active_config = config.model_copy(update={"codec": "libx264", "preset": "fast"})
     command = build_hardsub_command(
         source_video,
         subtitle_file,
         temp,
-        config,
+        active_config,
         source_audio_codec=source_audio_codec,
         ffmpeg=ffmpeg,
         start=start,
@@ -122,7 +162,7 @@ def render_hardsub(
     try:
         run_streaming_command(command, line_callback=progress.consume)
     except ExternalToolError as exc:
-        if config.codec in {"h264_nvenc", "hevc_nvenc"}:
+        if active_config.codec in {"h264_nvenc", "hevc_nvenc"}:
             detail = str(exc).lower()
             if "nvenc api version" in detail or "minimum required nvidia driver" in detail:
                 LOGGER.warning(
@@ -134,7 +174,7 @@ def render_hardsub(
                 LOGGER.warning("Hardware encoding failed; retrying with fast CPU encoding.")
             # CRF stays unchanged, so visual quality is preserved. The faster preset trades a
             # somewhat larger output file for a considerably shorter CPU fallback render.
-            fallback = config.model_copy(update={"codec": "libx264", "preset": "fast"})
+            fallback = active_config.model_copy(update={"codec": "libx264", "preset": "fast"})
             run_streaming_command(
                 build_hardsub_command(
                     source_video,

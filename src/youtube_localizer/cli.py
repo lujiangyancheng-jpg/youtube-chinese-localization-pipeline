@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import shutil
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated
 
@@ -66,6 +68,27 @@ app = typer.Typer(
 )
 console = Console()
 error_console = Console(stderr=True)
+
+
+@dataclass(frozen=True)
+class BatchOutcome:
+    input_value: str
+    status: str
+    project_path: str = ""
+    error: str = ""
+
+
+def _run_batch_item(input_value: str, config: AppConfig, resume: bool) -> BatchOutcome:
+    """Run one batch project in a separate process so downloads can overlap safely."""
+    try:
+        result = process_pipeline(input_value, config, resume=resume)
+    except LocalizerError as exc:
+        return BatchOutcome(input_value=input_value, status="failed", error=str(exc))
+    return BatchOutcome(
+        input_value=input_value,
+        status=result.status,
+        project_path=str(result.project.root),
+    )
 
 ConfigOption = Annotated[
     Path | None,
@@ -283,8 +306,17 @@ def batch_command(
         typer.Option("--processing-profile", help="auto, fast, balanced, quality, or safe_cpu."),
     ] = None,
     resume: Annotated[bool, typer.Option("--resume")] = False,
+    parallel_jobs: Annotated[
+        int,
+        typer.Option(
+            "--parallel-jobs",
+            min=1,
+            max=2,
+            help="Run up to two projects concurrently; GPU/AI/render stages are automatically queued.",
+        ),
+    ] = 2,
 ) -> None:
-    """Process multiple URLs/local paths sequentially."""
+    """Process multiple URLs/local paths with safe shared-resource scheduling."""
     config = load_config(config_path)
     if processing_profile:
         config = apply_processing_profile(config, processing_profile)
@@ -295,15 +327,33 @@ def batch_command(
     ]
     if not lines:
         raise LocalizerError("The batch input file contains no usable inputs.")
+    if parallel_jobs == 1:
+        outcomes = [_run_batch_item(value, config, resume) for value in lines]
+    else:
+        outcomes_by_index: dict[int, BatchOutcome] = {}
+        with ProcessPoolExecutor(max_workers=parallel_jobs) as executor:
+            futures = {
+                executor.submit(_run_batch_item, value, config, resume): index
+                for index, value in enumerate(lines, start=1)
+            }
+            for future in as_completed(futures):
+                index = futures[future]
+                try:
+                    outcomes_by_index[index] = future.result()
+                except Exception as exc:  # pragma: no cover - worker crashes are platform-specific
+                    outcomes_by_index[index] = BatchOutcome(
+                        input_value=lines[index - 1], status="failed", error=str(exc)
+                    )
+        outcomes = [outcomes_by_index[index] for index in range(1, len(lines) + 1)]
+
     failures = 0
-    for index, value in enumerate(lines, start=1):
+    for index, outcome in enumerate(outcomes, start=1):
         console.rule(f"[bold]Input {index}/{len(lines)}")
-        try:
-            result = process_pipeline(value, config, resume=resume)
-            console.print(f"{result.status}: {result.project.root}")
-        except LocalizerError as exc:
+        if outcome.error:
             failures += 1
-            error_console.print(f"[red]Failed:[/] {value}\n{exc}")
+            error_console.print(f"[red]Failed:[/] {outcome.input_value}\n{outcome.error}")
+        else:
+            console.print(f"{outcome.status}: {outcome.project_path}")
     if failures:
         raise LocalizerError(f"{failures} of {len(lines)} batch inputs failed.")
 

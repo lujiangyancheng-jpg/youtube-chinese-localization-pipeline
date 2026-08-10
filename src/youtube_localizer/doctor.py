@@ -7,7 +7,9 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import is_onedrive_directory, output_directory_advice
 from .download.youtube import discover_javascript_runtimes
+from .hardware import format_nvidia_gpus, probe_h264_nvenc, query_nvidia_gpus
 from .resources import (
     bundled_fonts_directory,
     find_bundled_model,
@@ -201,6 +203,24 @@ def run_doctor(
             False,
         )
     )
+    nvidia_gpus = query_nvidia_gpus()
+    checks.append(
+        DoctorCheck(
+            "NVIDIA GPU",
+            "ok" if nvidia_gpus else "optional",
+            format_nvidia_gpus(nvidia_gpus),
+            False,
+        )
+    )
+    nvenc_ready, nvenc_detail = probe_h264_nvenc()
+    checks.append(
+        DoctorCheck(
+            "NVENC hard-subtitle encoding",
+            "ok" if nvenc_ready else ("warning" if nvidia_gpus else "optional"),
+            nvenc_detail,
+            False,
+        )
+    )
     api_key = bool(os.getenv("OPENAI_COMPATIBLE_API_KEY"))
     checks.append(
         DoctorCheck(
@@ -234,5 +254,13 @@ def run_doctor(
             detail,
         )
     )
+    storage_advice = output_directory_advice(output_directory)
+    storage_status = (
+        "warning"
+        if is_onedrive_directory(output_directory)
+        or storage_advice.startswith("可用空间仅")
+        else "ok"
+    )
+    checks.append(DoctorCheck("Output performance", storage_status, storage_advice, False))
     checks.append(_font_check())
     return checks

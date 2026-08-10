@@ -131,6 +131,9 @@ for local AI, reducing model-request overhead without sacrificing context. If FF
 the NVIDIA driver does not support its required NVENC API, update the NVIDIA driver; until then,
 the app uses a faster CPU fallback at the same visual-quality setting.
 
+Completed projects also include `logs/subtitle_quality.json`. When only a few cues need attention,
+`subtitles/review_required.srt` contains exactly the flagged timestamps for focused proofreading.
+
 Source downloads remain ranked by resolution, then frame rate, bitrate, and file size. For the
 hard-subtitled MP4, the settings panel offers only three clear output choices:
 
@@ -286,6 +289,7 @@ python main.py process INPUT --translation-provider offline --prefer-youtube-chi
 python main.py process INPUT --resume
 python main.py process INPUT --force-step transcribe
 python main.py --batch inputs.txt
+python main.py batch inputs.txt --parallel-jobs 2
 python main.py inspect PROJECT_PATH
 python main.py transcribe PROJECT_PATH
 python main.py translate PROJECT_PATH
@@ -302,6 +306,11 @@ python main.py doctor
 `clean` removes only temporary/cache/partial files and preserves source and final assets.
 It asks for confirmation unless `--yes` is provided.
 
+`batch --parallel-jobs 2` overlaps downloads for up to two videos. Whisper transcription, local
+translation, and hard-subtitle rendering automatically wait for one shared performance slot, so
+they do not compete for GPU VRAM or the CPU encoder. Use `--parallel-jobs 1` for fully sequential
+processing.
+
 ## Configuration
 
 Copy `config.example.yaml` to a new filename and edit it; the example is never overwritten:
@@ -314,7 +323,8 @@ python main.py process "D:\Videos\owned-video.mp4" --config config.local.yaml
 Important settings:
 
 ```yaml
-output_directory: output
+# Keep source, cache, and rendered video files outside OneDrive whenever possible.
+output_directory: ~/Videos/YouTube Chinese Localizer
 subtitle_mode: chinese  # download_only, chinese, bilingual_en_zh, bilingual_zh_en
 
 transcription:
@@ -332,6 +342,7 @@ translation:
   offline_device: auto  # auto uses reliable CPU; cuda must be selected explicitly
   ollama_endpoint: http://localhost:11434
   ollama_model: qwen3:4b
+  ollama_context_tokens: 4096  # avoids an unnecessarily large VRAM reservation on 12 GB GPUs
 
 download:
   format: bestvideo+bestaudio/best
@@ -360,6 +371,11 @@ rendering:
 ```powershell
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" --subtitle-mode download_only
 ```
+
+The desktop interface uses this same local Videos-folder default and lets you choose another
+location per task. It warns before starting when the selected folder is in OneDrive or has less
+than 20 GiB free, because syncing high-bitrate source and rendered files can noticeably slow the
+pipeline.
 
 The merged original is saved in the project's `source` directory.
 
@@ -455,7 +471,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.3 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.4 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 

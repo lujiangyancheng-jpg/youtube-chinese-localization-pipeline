@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
+from .config import default_output_directory, output_directory_advice
 from .resources import ollama_executable
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -141,6 +142,7 @@ def build_process_command(
     output_quality: str | None = None,
     output_fps: int | None = None,
     output_height: int | None = None,
+    output_directory: str | Path | None = None,
     resume: bool = True,
     python_executable: str | None = None,
     main_script: Path | None = None,
@@ -165,6 +167,12 @@ def build_process_command(
         raise ValueError("Output FPS must be between 1 and 240.")
     if output_height is not None and not 144 <= output_height <= 4320:
         raise ValueError("Output height must be between 144 and 4320 pixels.")
+    output_path: Path | None = None
+    if output_directory is not None:
+        raw_output_directory = str(output_directory).strip()
+        if not raw_output_directory:
+            raise ValueError("请选择项目输出文件夹。")
+        output_path = Path(raw_output_directory).expanduser()
     command = [
         python_executable or sys.executable,
         str(main_script or PROJECT_ROOT / "main.py"),
@@ -179,6 +187,8 @@ def build_process_command(
         "--subtitle-font",
         subtitle_font,
     ]
+    if output_path is not None:
+        command.extend(["--output-dir", str(output_path)])
     if processing_profile:
         command.extend(["--processing-profile", processing_profile])
     if output_quality:
@@ -248,6 +258,7 @@ class LocalizerWindow:
         self.output_quality_label = tk.StringVar(value="最高质量（推荐）")
         self.output_fps_label = tk.StringVar(value="保持原视频帧率（推荐）")
         self.output_height_label = tk.StringVar(value="保持原视频分辨率（推荐）")
+        self.output_directory = tk.StringVar(value=str(default_output_directory()))
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
@@ -256,6 +267,7 @@ class LocalizerWindow:
         self.status = tk.StringVar(value="等待粘贴链接")
         self.mode_hint = tk.StringVar()
         self.output_hint = tk.StringVar()
+        self.output_directory_hint = tk.StringVar()
         self.workflow_summary = tk.StringVar()
         self.settings_visible = False
         self.log_visible = False
@@ -265,6 +277,7 @@ class LocalizerWindow:
         self._update_translation_fields()
         self._update_output_settings()
         self.input_value.trace_add("write", self._update_input_state)
+        self.output_directory.trace_add("write", self._update_output_directory_hint)
         self._update_input_state()
         self.root.after(100, self._poll_events)
 
@@ -592,6 +605,24 @@ class LocalizerWindow:
         ttk.Label(options, textvariable=self.output_hint, style="Muted.TLabel").grid(
             row=5, column=0, columnspan=4, sticky="w", pady=(7, 0)
         )
+        ttk.Label(options, text="项目输出文件夹", style="Field.TLabel").grid(
+            row=6, column=0, sticky="w", pady=(14, 5), padx=(0, 6)
+        )
+        self.output_directory_entry = ttk.Entry(
+            options,
+            textvariable=self.output_directory,
+            style="Modern.TEntry",
+        )
+        self.output_directory_entry.grid(row=7, column=0, columnspan=3, sticky="ew", padx=(0, 6))
+        ttk.Button(
+            options,
+            text="选择位置",
+            style="Secondary.TButton",
+            command=self._choose_output_directory,
+        ).grid(row=7, column=3, sticky="ew", padx=(6, 0))
+        ttk.Label(options, textvariable=self.output_directory_hint, style="Muted.TLabel").grid(
+            row=8, column=0, columnspan=4, sticky="w", pady=(7, 0)
+        )
 
         self.api_frame = ttk.Frame(
             outer,
@@ -818,6 +849,19 @@ class LocalizerWindow:
         if path:
             self.input_value.set(path)
 
+    def _choose_output_directory(self) -> None:
+        from tkinter import filedialog
+
+        initial = self.output_directory.get().strip() or str(default_output_directory())
+        path = filedialog.askdirectory(
+            parent=self.root,
+            title="选择项目输出文件夹",
+            initialdir=initial,
+            mustexist=False,
+        )
+        if path:
+            self.output_directory.set(path)
+
     def _update_translation_fields(self) -> None:
         subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
         provider = TRANSLATION_MODES[self.translation_label.get()]
@@ -862,7 +906,15 @@ class LocalizerWindow:
         self.output_hint.set(
             "保持原始表示不降分辨率或帧率；选择 60/30 FPS 只会降低更高帧率，绝不补帧。"
         )
+        self._update_output_directory_hint()
         self._update_translation_fields()
+
+    def _update_output_directory_hint(self, *_args: object) -> None:
+        raw_directory = self.output_directory.get().strip()
+        if not raw_directory:
+            self.output_directory_hint.set("请选择一个本地磁盘位置以保存项目和渲染文件。")
+            return
+        self.output_directory_hint.set(output_directory_advice(Path(raw_directory)))
 
     def _validate(self) -> tuple[list[str], dict[str, str], str]:
         if not self.authorized.get():
@@ -879,6 +931,7 @@ class LocalizerWindow:
             output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
             output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],
             output_height=OUTPUT_HEIGHTS[self.output_height_label.get()],
+            output_directory=self.output_directory.get(),
             resume=self.resume.get(),
         )
         environment = os.environ.copy()
@@ -909,6 +962,7 @@ class LocalizerWindow:
         self._append_log(
             "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"
         )
+        self._append_log(f"项目输出位置：{self.output_directory.get().strip()}\n")
         if provider == "download_only":
             self._append_log(
                 "当前为无字幕直接下载：只下载并合并最高画质视频和最高质量音频，"
@@ -1055,7 +1109,7 @@ class LocalizerWindow:
             self._set_status("处理失败，请查看上方日志", "error")
             messagebox.showerror(
                 "处理未完成",
-                "任务没有完成。窗口日志和 output 项目内的 logs 文件夹包含详细原因。",
+                "任务没有完成。窗口日志和所选输出文件夹内项目的 logs 文件夹包含详细原因。",
                 parent=self.root,
             )
             return
@@ -1064,7 +1118,7 @@ class LocalizerWindow:
             self._set_status("原视频下载完成，没有生成字幕", "success")
             messagebox.showinfo(
                 "下载完成",
-                "最高画质原视频已经保存到 output 项目的 source 文件夹。",
+                "最高画质原视频已经保存到所选输出文件夹内项目的 source 文件夹。",
                 parent=self.root,
             )
         elif provider == "manual":
@@ -1073,7 +1127,7 @@ class LocalizerWindow:
             self._set_status(f"下载和{source_name}字幕已完成，等待人工翻译", "success")
             messagebox.showinfo(
                 "第一阶段完成",
-                f"视频和{source_name}字幕已经准备好。请在 output 项目的 "
+                f"视频和{source_name}字幕已经准备好。请在所选输出文件夹内项目的 "
                 "subtitles\\translation_chunks 中处理翻译文件；"
                 f"导入翻译后即可压制{target_name}字幕。",
                 parent=self.root,
@@ -1088,7 +1142,7 @@ class LocalizerWindow:
             self._set_status(f"本地化完成，{target_name}字幕视频已生成", "success")
             messagebox.showinfo(
                 "本地化完成",
-                f"最终视频位于 output 项目的 rendered\\{output_name}。",
+                f"最终视频位于所选输出文件夹内项目的 rendered\\{output_name}。",
                 parent=self.root,
             )
 
@@ -1114,7 +1168,7 @@ class LocalizerWindow:
         self.log.configure(state="disabled")
 
     def _open_output(self) -> None:
-        output = PROJECT_ROOT / "output"
+        output = Path(self.output_directory.get().strip() or default_output_directory()).expanduser()
         output.mkdir(parents=True, exist_ok=True)
         if os.name == "nt":
             os.startfile(output)  # type: ignore[attr-defined]

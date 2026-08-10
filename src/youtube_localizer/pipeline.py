@@ -23,10 +23,11 @@ from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.ffmpeg import render_hardsub, render_softsub
 from .rendering.validation import validate_rendered_video
 from .reporting import build_report, write_report
+from .resource_gate import heavy_workload_slot
 from .state import PipelineState
 from .subtitles.bilingual import align_bilingual_tracks, combine_bilingual
 from .subtitles.parser import parse_subtitle, write_srt
-from .subtitles.quality import audit_subtitles
+from .subtitles.quality import audit_subtitles, select_review_cues
 from .subtitles.readability import readability_pass
 from .subtitles.styling import chinese_line_width, write_ass, write_bilingual_ass
 from .transcription.audio import extract_transcription_audio
@@ -392,6 +393,15 @@ def translate_with_offline(
     config: AppConfig,
     metadata: SourceMetadata | None = None,
 ) -> tuple[list[Path], list[str]]:
+    with heavy_workload_slot("offline translation"):
+        return _translate_with_offline(project, config, metadata)
+
+
+def _translate_with_offline(
+    project: ProjectPaths,
+    config: AppConfig,
+    metadata: SourceMetadata | None = None,
+) -> tuple[list[Path], list[str]]:
     metadata = metadata or load_project_metadata(project)
     source_code, target_code = _language_pair(config)
     source_cues = parse_subtitle(_source_subtitle(project, config))
@@ -439,6 +449,15 @@ def translate_with_local_ai(
     config: AppConfig,
     metadata: SourceMetadata | None = None,
 ) -> tuple[list[Path], list[str]]:
+    with heavy_workload_slot("local AI paragraph translation"):
+        return _translate_with_local_ai(project, config, metadata)
+
+
+def _translate_with_local_ai(
+    project: ProjectPaths,
+    config: AppConfig,
+    metadata: SourceMetadata | None = None,
+) -> tuple[list[Path], list[str]]:
     metadata = metadata or load_project_metadata(project)
     source_code, target_code = _language_pair(config)
     source_cues = parse_subtitle(_source_subtitle(project, config))
@@ -454,6 +473,7 @@ def translate_with_local_ai(
         cache=TranslationCache(project.temp / "translation_cache"),
         source_code=source_code,
         target_code=target_code,
+        context_tokens=config.translation.ollama_context_tokens,
         timeout=config.translation.ollama_timeout_seconds,
     )
     # Fewer, complete spoken paragraphs reduce local-model request overhead substantially.
@@ -921,10 +941,14 @@ def process_pipeline(
         atomic_write_json(quality_path, quality)
         outputs.append(quality_path)
         if quality["flagged_cue_count"]:
+            review_path = project.subtitles / "review_required.srt"
+            write_srt(review_path, select_review_cues(target_cues, quality))
+            outputs.append(review_path)
             remember_warnings(
                 [
                     "Subtitle quality check flagged "
-                    f"{quality['flagged_cue_count']} cue(s); review logs/subtitle_quality.json."
+                    f"{quality['flagged_cue_count']} cue(s); review subtitles/review_required.srt "
+                    "and logs/subtitle_quality.json."
                 ]
             )
 

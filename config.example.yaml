@@ -1,4 +1,5 @@
-output_directory: output
+# Put large source, cache, and rendered files outside OneDrive/project folders when possible.
+output_directory: ~/Videos/YouTube Chinese Localizer
 subtitle_language: zh-CN
 subtitle_mode: chinese  # download_only skips transcription, translation, and rendering
 
@@ -12,7 +13,6 @@ download:
   prefer_mp4: true
   download_thumbnail: true
   download_metadata: true
-  concurrent_fragment_downloads: 4  # speeds up DASH/HLS high-resolution YouTube downloads
 
 transcription:
   model: medium
@@ -41,6 +41,8 @@ translation:
   # Higher-quality paragraph translation through a model running only on this computer.
   ollama_endpoint: http://localhost:11434
   ollama_model: qwen3:4b
+  # 4K context fits 12 GB GPUs well for the app's bounded subtitle paragraphs.
+  ollama_context_tokens: 4096
   ollama_auto_pull: true
   ollama_timeout_seconds: 600
 

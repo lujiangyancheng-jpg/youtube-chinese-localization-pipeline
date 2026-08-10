@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import os
 import subprocess
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from youtube_localizer.config import RenderConfig
 from youtube_localizer.errors import ExternalToolError
-from youtube_localizer.rendering.ffmpeg import build_hardsub_command, build_softsub_command
+from youtube_localizer.rendering.ffmpeg import (
+    build_hardsub_command,
+    build_softsub_command,
+    render_hardsub,
+)
 from youtube_localizer.utils.subprocesses import resolve_executable, run_command
 
 
@@ -88,6 +93,31 @@ def test_softsub_command_stream_copies_media_and_sets_language(tmp_path) -> None
     assert command[command.index("-c:a") + 1] == "copy"
     assert command[command.index("-c:s") + 1] == "mov_text"
     assert command[command.index("-metadata:s:s:0") + 1] == "language=eng"
+
+
+def test_hardsub_skips_known_broken_nvenc_before_the_full_render(tmp_path) -> None:
+    source = tmp_path / "source.mp4"
+    subtitle = tmp_path / "subtitle.ass"
+    output = tmp_path / "output.mp4"
+    source.write_bytes(b"source")
+    subtitle.write_text("[Script Info]\n", encoding="utf-8")
+    commands: list[list[str]] = []
+
+    def fake_stream(command, *, line_callback=None):
+        commands.append(command)
+        Path(command[-1]).write_bytes(b"rendered")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    with (
+        patch("youtube_localizer.rendering.ffmpeg.probe_h264_nvenc", return_value=(False, "driver")),
+        patch("youtube_localizer.rendering.ffmpeg.run_streaming_command", side_effect=fake_stream),
+    ):
+        render_hardsub(source, subtitle, output, RenderConfig())
+
+    assert output.read_bytes() == b"rendered"
+    assert len(commands) == 1
+    assert commands[0][commands[0].index("-c:v") + 1] == "libx264"
+    assert commands[0][commands[0].index("-preset") + 1] == "fast"
 
 
 def test_subprocess_wrapper_never_uses_shell() -> None:
