@@ -35,7 +35,12 @@ from .pipeline import (
     translate_with_local_ai,
     translate_with_offline,
 )
-from .profiles import ProcessingProfile, apply_processing_profile
+from .profiles import (
+    OutputQuality,
+    ProcessingProfile,
+    apply_output_quality,
+    apply_processing_profile,
+)
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.preview import render_preview
 from .rendering.validation import validate_rendered_video
@@ -84,6 +89,9 @@ def _configured(
     translation_direction: str | None = None,
     subtitle_font: str | None = None,
     processing_profile: ProcessingProfile | None = None,
+    output_quality: OutputQuality | None = None,
+    output_height: int | None = None,
+    output_fps: int | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
@@ -106,6 +114,17 @@ def _configured(
         if not normalized_font or "\n" in normalized_font or "\r" in normalized_font:
             raise LocalizerError("--subtitle-font must be a non-empty font family name.")
         changes["subtitles"] = config.subtitles.model_copy(update={"font": normalized_font})
+    render_changes: dict[str, int] = {}
+    if output_height is not None:
+        if not 144 <= output_height <= 4320:
+            raise LocalizerError("--output-height must be between 144 and 4320 pixels.")
+        render_changes["output_height"] = output_height
+    if output_fps is not None:
+        if not 1 <= output_fps <= 240:
+            raise LocalizerError("--output-fps must be between 1 and 240.")
+        render_changes["output_fps"] = output_fps
+    if render_changes:
+        changes["render"] = config.render.model_copy(update=render_changes)
     translation_changes: dict[str, str] = {}
     if translation_provider:
         if translation_provider not in {"manual", "offline", "ollama", "openai-compatible"}:
@@ -120,7 +139,9 @@ def _configured(
     if translation_changes:
         changes["translation"] = config.translation.model_copy(update=translation_changes)
     resolved = config.model_copy(update=changes)
-    return apply_processing_profile(resolved, processing_profile) if processing_profile else resolved
+    if processing_profile:
+        resolved = apply_processing_profile(resolved, processing_profile)
+    return apply_output_quality(resolved, output_quality) if output_quality else resolved
 
 
 @app.command("process")
@@ -165,8 +186,20 @@ def process_command(
         ProcessingProfile | None,
         typer.Option(
             "--processing-profile",
-            help="fast, balanced, quality, or safe_cpu. Preserves translation and subtitle choices.",
+            help="auto, fast, balanced, quality, or safe_cpu. Preserves translation and subtitle choices.",
         ),
+    ] = None,
+    output_quality: Annotated[
+        OutputQuality | None,
+        typer.Option("--output-quality", help="best, high, or standard final video quality."),
+    ] = None,
+    output_height: Annotated[
+        int | None,
+        typer.Option("--output-height", help="Cap rendered-video height without upscaling."),
+    ] = None,
+    output_fps: Annotated[
+        int | None,
+        typer.Option("--output-fps", help="Cap rendered-video FPS without adding frames."),
     ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
     overwrite: Annotated[
@@ -193,6 +226,9 @@ def process_command(
         translation_direction=translation_direction,
         subtitle_font=subtitle_font,
         processing_profile=processing_profile,
+        output_quality=output_quality,
+        output_height=output_height,
+        output_fps=output_fps,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "
@@ -244,7 +280,7 @@ def batch_command(
     config_path: ConfigOption = None,
     processing_profile: Annotated[
         ProcessingProfile | None,
-        typer.Option("--processing-profile", help="fast, balanced, quality, or safe_cpu."),
+        typer.Option("--processing-profile", help="auto, fast, balanced, quality, or safe_cpu."),
     ] = None,
     resume: Annotated[bool, typer.Option("--resume")] = False,
 ) -> None:

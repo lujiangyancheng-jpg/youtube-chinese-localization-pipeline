@@ -52,11 +52,24 @@ SUBTITLE_FONTS = {
 }
 
 
-PROCESSING_PROFILES = {
-    "快速（更少等待，适合预览）": "fast",
-    "均衡（推荐，GPU 编码优先）": "balanced",
-    "精品（更细致的识别与成片）": "quality",
-    "CPU 安全（低压力，避免占满电脑）": "safe_cpu",
+PROCESSING_PROFILES = frozenset({"auto", "fast", "balanced", "quality", "safe_cpu"})
+
+OUTPUT_QUALITIES = {
+    "最高质量（推荐）": "best",
+    "高质量（文件更小）": "high",
+    "标准质量（节省空间）": "standard",
+}
+OUTPUT_FRAME_RATES = {
+    "保持原视频帧率（推荐）": None,
+    "60 FPS": 60,
+    "30 FPS": 30,
+}
+OUTPUT_HEIGHTS = {
+    "保持原视频分辨率（推荐）": None,
+    "4K / 2160p": 2160,
+    "2K / 1440p": 1440,
+    "1080p": 1080,
+    "720p": 720,
 }
 
 
@@ -77,16 +90,6 @@ def mode_description(subtitle_mode: str, translation_provider: str) -> str:
     return descriptions.get(translation_provider, "选择处理方式后即可开始。")
 
 
-def profile_description(profile: str) -> str:
-    descriptions = {
-        "fast": "快速：Small Whisper、快速识别、优先使用显卡编码；适合先出结果。",
-        "balanced": "均衡：Medium Whisper、稳定断句、优先使用显卡编码；适合大多数视频。",
-        "quality": "精品：Medium Whisper 加强搜索与更高码率成片；更慢，但更适合正式发布。",
-        "safe_cpu": "CPU 安全：限制为低压力 CPU 处理，不会与其他显卡任务争抢资源。",
-    }
-    return descriptions.get(profile, "选择性能预设后即可开始。")
-
-
 def build_process_command(
     input_value: str,
     *,
@@ -95,6 +98,9 @@ def build_process_command(
     translation_direction: str = "en-to-zh",
     subtitle_font: str = "Noto Sans CJK SC",
     processing_profile: str | None = None,
+    output_quality: str | None = None,
+    output_fps: int | None = None,
+    output_height: int | None = None,
     resume: bool = True,
     python_executable: str | None = None,
     main_script: Path | None = None,
@@ -111,8 +117,14 @@ def build_process_command(
         raise ValueError("未知的翻译方向。")
     if subtitle_font not in SUBTITLE_FONTS.values():
         raise ValueError("未知的字幕字体。")
-    if processing_profile is not None and processing_profile not in PROCESSING_PROFILES.values():
+    if processing_profile is not None and processing_profile not in PROCESSING_PROFILES:
         raise ValueError("Unknown processing profile.")
+    if output_quality is not None and output_quality not in OUTPUT_QUALITIES.values():
+        raise ValueError("Unknown output quality.")
+    if output_fps is not None and not 1 <= output_fps <= 240:
+        raise ValueError("Output FPS must be between 1 and 240.")
+    if output_height is not None and not 144 <= output_height <= 4320:
+        raise ValueError("Output height must be between 144 and 4320 pixels.")
     command = [
         python_executable or sys.executable,
         str(main_script or PROJECT_ROOT / "main.py"),
@@ -129,6 +141,12 @@ def build_process_command(
     ]
     if processing_profile:
         command.extend(["--processing-profile", processing_profile])
+    if output_quality:
+        command.extend(["--output-quality", output_quality])
+    if output_fps:
+        command.extend(["--output-fps", str(output_fps)])
+    if output_height:
+        command.extend(["--output-height", str(output_height)])
     if resume:
         command.append("--resume")
     return command
@@ -185,7 +203,9 @@ class LocalizerWindow:
         self.subtitle_label = tk.StringVar(value="仅目标语言字幕")
         self.translation_label = tk.StringVar(value=default_translation)
         self.font_label = tk.StringVar(value="Noto Sans CJK SC（现代无衬线，推荐）")
-        self.profile_label = tk.StringVar(value="均衡（推荐，GPU 编码优先）")
+        self.output_quality_label = tk.StringVar(value="最高质量（推荐）")
+        self.output_fps_label = tk.StringVar(value="保持原视频帧率（推荐）")
+        self.output_height_label = tk.StringVar(value="保持原视频分辨率（推荐）")
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
@@ -193,7 +213,7 @@ class LocalizerWindow:
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
         self.mode_hint = tk.StringVar()
-        self.profile_hint = tk.StringVar()
+        self.output_hint = tk.StringVar()
         self.workflow_summary = tk.StringVar()
         self.settings_visible = False
         self.log_visible = False
@@ -201,7 +221,7 @@ class LocalizerWindow:
         self._configure_style()
         self._build_layout()
         self._update_translation_fields()
-        self._update_processing_profile()
+        self._update_output_settings()
         self.input_value.trace_add("write", self._update_input_state)
         self._update_input_state()
         self.root.after(100, self._poll_events)
@@ -477,22 +497,58 @@ class LocalizerWindow:
             row=2, column=0, columnspan=4, sticky="w", pady=(9, 0)
         )
 
-        ttk.Label(options, text="性能与画质", style="Field.TLabel").grid(
+        ttk.Label(options, text="智能加速", style="Field.TLabel").grid(
             row=3, column=0, sticky="w", pady=(12, 5), padx=(0, 6)
         )
-        self.profile_combo = ttk.Combobox(
+        ttk.Label(options, text="输出画质", style="Field.TLabel").grid(
+            row=3, column=1, sticky="w", pady=(12, 5), padx=6
+        )
+        ttk.Label(options, text="输出帧率", style="Field.TLabel").grid(
+            row=3, column=2, sticky="w", pady=(12, 5), padx=6
+        )
+        ttk.Label(options, text="输出分辨率", style="Field.TLabel").grid(
+            row=3, column=3, sticky="w", pady=(12, 5), padx=(6, 0)
+        )
+        ttk.Label(
             options,
-            textvariable=self.profile_label,
-            values=list(PROCESSING_PROFILES),
+            text="自动识别显卡；不可用时自动改用 CPU",
+            style="Muted.TLabel",
+        ).grid(row=4, column=0, sticky="w", padx=(0, 6))
+        self.output_quality_combo = ttk.Combobox(
+            options,
+            textvariable=self.output_quality_label,
+            values=list(OUTPUT_QUALITIES),
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.profile_combo.grid(row=3, column=1, columnspan=2, sticky="ew", padx=6)
-        self.profile_combo.bind(
-            "<<ComboboxSelected>>", lambda _event: self._update_processing_profile()
+        self.output_quality_combo.grid(row=4, column=1, sticky="ew", padx=6)
+        self.output_quality_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
         )
-        ttk.Label(options, textvariable=self.profile_hint, style="Muted.TLabel").grid(
-            row=4, column=0, columnspan=4, sticky="w", pady=(5, 0)
+        self.output_fps_combo = ttk.Combobox(
+            options,
+            textvariable=self.output_fps_label,
+            values=list(OUTPUT_FRAME_RATES),
+            state="readonly",
+            style="Modern.TCombobox",
+        )
+        self.output_fps_combo.grid(row=4, column=2, sticky="ew", padx=6)
+        self.output_fps_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
+        )
+        self.output_height_combo = ttk.Combobox(
+            options,
+            textvariable=self.output_height_label,
+            values=list(OUTPUT_HEIGHTS),
+            state="readonly",
+            style="Modern.TCombobox",
+        )
+        self.output_height_combo.grid(row=4, column=3, sticky="ew", padx=(6, 0))
+        self.output_height_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
+        )
+        ttk.Label(options, textvariable=self.output_hint, style="Muted.TLabel").grid(
+            row=5, column=0, columnspan=4, sticky="w", pady=(7, 0)
         )
 
         self.api_frame = ttk.Frame(
@@ -728,10 +784,18 @@ class LocalizerWindow:
         self.direction_combo.configure(state=selection_state)
         self.font_combo.configure(state=selection_state)
         self.translation_combo.configure(state=selection_state)
+        for combo in (
+            self.output_quality_combo,
+            self.output_fps_combo,
+            self.output_height_combo,
+        ):
+            combo.configure(state=selection_state)
         self.start_button.configure(text="开始下载" if download_only else "开始本地化")
         self.mode_hint.set(mode_description(subtitle_mode, provider))
         if download_only:
-            self.workflow_summary.set("当前方案：最高画质原视频 · 最佳音频 · 不生成字幕")
+            self.workflow_summary.set(
+                "当前方案：最高源画质 · 最高源帧率 · 最佳音频 · 不生成字幕"
+            )
         else:
             provider_names = {
                 "manual": "人工翻译",
@@ -741,7 +805,7 @@ class LocalizerWindow:
             }
             self.workflow_summary.set(
                 f"当前方案：{self.direction_label.get()} · {self.subtitle_label.get()} · "
-                f"{provider_names[provider]} · {self.profile_label.get()}"
+                f"{provider_names[provider]} · 自动硬件加速 · {self.output_quality_label.get()}"
             )
         automatic = not download_only and provider == "openai-compatible"
         if automatic and self.settings_visible:
@@ -752,9 +816,10 @@ class LocalizerWindow:
         for entry in (self.endpoint_entry, self.model_entry, self.key_entry):
             entry.configure(state=state)
 
-    def _update_processing_profile(self) -> None:
-        profile = PROCESSING_PROFILES[self.profile_label.get()]
-        self.profile_hint.set(profile_description(profile))
+    def _update_output_settings(self) -> None:
+        self.output_hint.set(
+            "保持原始表示不降分辨率或帧率；选择 60/30 FPS 只会降低更高帧率，绝不补帧。"
+        )
         self._update_translation_fields()
 
     def _validate(self) -> tuple[list[str], dict[str, str], str]:
@@ -768,7 +833,10 @@ class LocalizerWindow:
             translation_provider=provider,
             translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
             subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
-            processing_profile=PROCESSING_PROFILES[self.profile_label.get()],
+            processing_profile="auto",
+            output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
+            output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],
+            output_height=OUTPUT_HEIGHTS[self.output_height_label.get()],
             resume=self.resume.get(),
         )
         environment = os.environ.copy()

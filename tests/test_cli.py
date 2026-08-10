@@ -57,6 +57,22 @@ def test_cli_configuration_applies_processing_profile() -> None:
     assert config.render.codec == "h264_nvenc"
 
 
+def test_cli_configuration_supports_smart_high_quality_output_controls() -> None:
+    config = _configured(
+        None,
+        processing_profile="auto",
+        output_quality="best",
+        output_fps=60,
+        output_height=2160,
+    )
+
+    assert config.transcription.device == "auto"
+    assert config.render.codec == "h264_nvenc"
+    assert config.render.crf == 17
+    assert config.render.output_fps == 60
+    assert config.render.output_height == 2160
+
+
 def test_unknown_force_step_is_rejected_before_input_processing() -> None:
     with pytest.raises(InputValidationError, match="transalte"):
         process_pipeline("missing.mp4", AppConfig(), force_steps={"transalte"})

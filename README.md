@@ -116,25 +116,29 @@ application, but `faster-whisper`/CTranslate2 wheels may not yet be available fo
 The command-line default translation provider is `manual`. Add `--translation-provider
 offline` for a no-API end-to-end run. The desktop interface defaults to offline translation.
 
-## Performance and quality presets
+## Smart acceleration and output controls
 
-The desktop interface exposes four task-level presets. They preserve your translation provider,
-languages, subtitle layout, font, and API settings; only Whisper and video-rendering workload
-change.
+The desktop interface now uses one automatic high-quality path instead of asking users to choose
+technical performance presets. It detects a usable NVIDIA CUDA/NVENC setup and uses it for
+Whisper transcription and final encoding; each stage automatically falls back to CPU/libx264 if
+hardware acceleration is unavailable or fails. The default is Medium Whisper plus the highest
+final encode quality.
 
-- **Fast** uses the smaller local Whisper model and a faster encode for quick drafts.
-- **Balanced** uses the bundled Medium Whisper model and requests NVENC hardware encoding, with
-  automatic libx264 fallback if hardware encoding is unavailable. This is the desktop default.
-- **Quality** keeps Medium Whisper but uses a larger recognition search and a higher-quality
-  encode for final review.
-- **CPU safe** uses a smaller int8 CPU transcription and a veryfast CPU encode, for computers
-  that need to remain responsive or are already using the GPU.
+Source downloads remain ranked by resolution, then frame rate, bitrate, and file size. For the
+hard-subtitled MP4, the settings panel offers only three clear output choices:
 
-The equivalent CLI switch is:
+- **Output quality:** Highest (default), High/smaller file, or Standard/smaller file.
+- **Output FPS:** Keep the source rate (default), cap at 60 FPS, or cap at 30 FPS. The app never
+  creates fake frames by converting a 30 FPS source to 60 FPS.
+- **Output resolution:** Keep the source dimensions (default), or cap at 4K, 1440p, 1080p, or
+  720p. A lower-resolution source is never upscaled.
+
+The equivalent CLI command is:
 
 ```powershell
 python main.py process "D:\Videos\authorized-video.mp4" `
-  --translation-provider offline --processing-profile balanced
+  --translation-provider offline --processing-profile auto `
+  --output-quality best --output-fps 60 --output-height 2160
 ```
 
 ## Windows paste-a-link desktop interface
@@ -332,10 +336,12 @@ subtitles:
   max_chinese_chars_per_line: 20
 
 render:
-  codec: libx264        # h264_nvenc/hevc_nvenc are also accepted
-  crf: 18
+  codec: h264_nvenc     # falls back to libx264 automatically if NVENC is unavailable
+  crf: 17
   preset: medium
   soft_subtitles: true  # also create a selectable-subtitle MP4 without re-encoding media
+  output_height: null   # keep the source dimensions; 2160/1440/1080/720 cap the result
+  output_fps: null      # keep source FPS; 60/30 only cap higher frame-rate sources
 ```
 
 Each project stores `config.resolved.json` so later project commands use the same settings.
@@ -441,7 +447,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.1 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.2 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 

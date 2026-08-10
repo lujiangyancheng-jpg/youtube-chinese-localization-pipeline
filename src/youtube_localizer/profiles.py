@@ -5,14 +5,17 @@ from typing import Literal
 from .config import AppConfig
 from .errors import ConfigurationError
 
-ProcessingProfile = Literal["fast", "balanced", "quality", "safe_cpu"]
+ProcessingProfile = Literal["auto", "fast", "balanced", "quality", "safe_cpu"]
+OutputQuality = Literal["best", "high", "standard"]
 
 PROCESSING_PROFILES: tuple[ProcessingProfile, ...] = (
+    "auto",
     "fast",
     "balanced",
     "quality",
     "safe_cpu",
 )
+OUTPUT_QUALITIES: tuple[OutputQuality, ...] = ("best", "high", "standard")
 
 
 def apply_processing_profile(config: AppConfig, profile: ProcessingProfile) -> AppConfig:
@@ -28,7 +31,18 @@ def apply_processing_profile(config: AppConfig, profile: ProcessingProfile) -> A
             f"{profile}. Expected one of: {', '.join(PROCESSING_PROFILES)}."
         )
 
-    if profile == "safe_cpu":
+    if profile == "auto":
+        # Keep device selection automatic: faster-whisper selects CUDA when the bundled runtime
+        # is ready and retries on CPU when it is not. NVENC similarly falls back to libx264.
+        # This is the only profile used by the desktop UI, so users do not have to understand
+        # encoder/recognition trade-offs before getting a high-quality result.
+        transcription = config.transcription.model_copy(
+            update={"model": "medium", "device": "auto", "compute_type": "auto", "beam_size": 5}
+        )
+        render = config.render.model_copy(
+            update={"codec": "h264_nvenc", "crf": 17, "preset": "medium"}
+        )
+    elif profile == "safe_cpu":
         transcription = config.transcription.model_copy(
             update={"model": "small", "device": "cpu", "compute_type": "int8", "beam_size": 1}
         )
@@ -58,3 +72,16 @@ def apply_processing_profile(config: AppConfig, profile: ProcessingProfile) -> A
         )
 
     return config.model_copy(update={"transcription": transcription, "render": render})
+
+
+def apply_output_quality(config: AppConfig, quality: OutputQuality) -> AppConfig:
+    """Set the final encode quality without changing source download or acceleration behavior."""
+    if quality not in OUTPUT_QUALITIES:
+        raise ConfigurationError(
+            "Unknown output quality: "
+            f"{quality}. Expected one of: {', '.join(OUTPUT_QUALITIES)}."
+        )
+
+    crf_by_quality = {"best": 17, "high": 19, "standard": 23}
+    render = config.render.model_copy(update={"crf": crf_by_quality[quality]})
+    return config.model_copy(update={"render": render})

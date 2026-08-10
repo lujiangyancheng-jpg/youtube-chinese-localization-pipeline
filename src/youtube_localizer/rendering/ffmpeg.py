@@ -28,6 +28,7 @@ def build_hardsub_command(
     start: float | None = None,
     duration: float | None = None,
     fonts_directory: Path | None = None,
+    source_frame_rate: float | None = None,
 ) -> list[str]:
     command = [
         ffmpeg,
@@ -51,13 +52,25 @@ def build_hardsub_command(
     subtitle_filter = f"{filter_name}=filename='{escaped}'"
     if fonts_directory is not None:
         subtitle_filter += f":fontsdir='{escape_filter_path(fonts_directory)}'"
+    video_filters = [subtitle_filter]
+    if config.output_height is not None:
+        # Never upscale a smaller source. The escaped comma belongs to FFmpeg's expression
+        # parser, not the shell (commands are always executed as argument arrays).
+        video_filters.append(
+            f"scale=-2:min({config.output_height}\\,ih):force_original_aspect_ratio=decrease"
+        )
+    if config.output_fps is not None and (
+        source_frame_rate is None or source_frame_rate > config.output_fps + 0.5
+    ):
+        # Do not manufacture frames when a user selects 60 FPS for a 30 FPS source.
+        video_filters.append(f"fps={config.output_fps}")
     command += [
         "-map",
         "0:v:0",
         "-map",
         "0:a?",
         "-vf",
-        subtitle_filter,
+        ",".join(video_filters),
         "-c:v",
         config.codec,
     ]
@@ -86,6 +99,7 @@ def render_hardsub(
     start: float | None = None,
     duration: float | None = None,
     expected_duration: float | None = None,
+    source_frame_rate: float | None = None,
 ) -> Path:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     temp = output_file.with_name(f"{output_file.stem}.partial{output_file.suffix}")
@@ -102,6 +116,7 @@ def render_hardsub(
         start=start,
         duration=duration,
         fonts_directory=fonts_directory,
+        source_frame_rate=source_frame_rate,
     )
     progress = _FFmpegProgress(expected_duration or duration)
     try:
@@ -121,6 +136,7 @@ def render_hardsub(
                     start=start,
                     duration=duration,
                     fonts_directory=fonts_directory,
+                    source_frame_rate=source_frame_rate,
                 ),
                 line_callback=progress.consume,
             )

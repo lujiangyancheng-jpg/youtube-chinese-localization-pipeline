@@ -78,14 +78,20 @@ class SubtitleConfig(StrictModel):
 
 
 class RenderConfig(StrictModel):
-    codec: str = "libx264"
-    crf: int = Field(default=18, ge=0, le=51)
+    # NVENC is attempted first and transparently falls back to libx264 when the computer does
+    # not offer a usable NVIDIA encoder.
+    codec: str = "h264_nvenc"
+    crf: int = Field(default=17, ge=0, le=51)
     preset: str = "medium"
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
     faststart: bool = True
     copy_audio_when_possible: bool = True
     soft_subtitles: bool = True
+    # None means keep the original dimensions/frame rate. These settings only affect the
+    # hard-subtitled MP4; direct-download mode always retains the original source stream.
+    output_height: int | None = Field(default=None, ge=144, le=4320)
+    output_fps: int | None = Field(default=None, ge=1, le=240)
 
 
 class PublishingConfig(StrictModel):

@@ -55,14 +55,17 @@ subtitles:
   preserve_sound_descriptions: true
 
 render:
-  codec: libx264
-  crf: 18
+  # Prefer the NVIDIA encoder when available; the program retries with libx264 automatically.
+  codec: h264_nvenc
+  crf: 17  # highest-quality desktop default; 19/23 make smaller files
   preset: medium
   audio_codec: aac
   audio_bitrate: 192k
   faststart: true
   copy_audio_when_possible: true
   soft_subtitles: true  # also create a selectable subtitle MP4 without re-encoding video/audio
+  output_height: null  # keep original dimensions; use 2160, 1440, 1080, or 720 to cap output
+  output_fps: null  # keep original FPS; use 60 or 30 only to cap higher-frame-rate sources
 
 publishing:
   generate_metadata: true

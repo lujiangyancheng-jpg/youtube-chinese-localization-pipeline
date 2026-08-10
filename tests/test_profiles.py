@@ -4,7 +4,27 @@ import pytest
 
 from youtube_localizer.config import AppConfig
 from youtube_localizer.errors import ConfigurationError
-from youtube_localizer.profiles import apply_processing_profile
+from youtube_localizer.profiles import apply_output_quality, apply_processing_profile
+
+
+def test_auto_profile_keeps_device_detection_and_prefers_hardware_encoding() -> None:
+    profiled = apply_processing_profile(AppConfig(), "auto")
+
+    assert profiled.transcription.model == "medium"
+    assert profiled.transcription.device == "auto"
+    assert profiled.transcription.compute_type == "auto"
+    assert profiled.render.codec == "h264_nvenc"
+    assert profiled.render.crf == 17
+
+
+def test_output_quality_changes_only_final_encode_quality() -> None:
+    config = AppConfig.model_validate({"render": {"output_fps": 60, "output_height": 2160}})
+
+    profiled = apply_output_quality(config, "high")
+
+    assert profiled.render.crf == 19
+    assert profiled.render.output_fps == 60
+    assert profiled.render.output_height == 2160
 
 
 def test_balanced_profile_uses_hardware_encoding_without_changing_workflow() -> None:

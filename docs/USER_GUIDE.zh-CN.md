@@ -56,7 +56,7 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.5.1-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.5.2-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
 Ollama、Whisper Medium、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
 使用不再下载模型。安装后从桌面或开始菜单打开即可。
@@ -501,9 +501,12 @@ subtitles:
   max_chinese_chars_per_line: 20
 
 render:
-  codec: libx264
-  crf: 18
+  # 自动优先使用 NVIDIA NVENC；不可用时会自动改用 libx264。
+  codec: h264_nvenc
+  crf: 17
   preset: medium
+  output_height: null  # 保持原分辨率；可填 2160、1440、1080 或 720 作为上限
+  output_fps: null  # 保持原帧率；可填 60 或 30，只降低更高帧率
 ```
 
 `max_chinese_chars_per_line` 是横屏上限。竖屏、方形视频以及带 90° 旋转信息的手机视频会根据实际显示比例自动缩短每行字数，并生成匹配比例的 ASS 画布。
@@ -527,7 +530,7 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.1 会在
+Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.2 会在
 启动 Whisper 前自动注册这套运行库并进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
 运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底默认只使用
 6 个线程，保留桌面响应。离线字幕翻译的 `offline_device: auto` 则始终稳定使用 CPU `int8`。
@@ -722,9 +725,9 @@ python -m pip install -e ".[transcription]"
 
 ### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
 
-v0.5.1 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+v0.5.2 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
 “GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
-GPU 任务。请安装 v0.5.1；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+GPU 任务。请安装 v0.5.2；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
 `YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
 `transcription.device: cpu`。
 
@@ -867,22 +870,24 @@ PROJECT_PATH\logs\pipeline.log
 - 当前版本不自动进行高级字幕重定时
 - 离线安装包约 5–6 GB，安装和运行需要足够磁盘空间
 
-## 18.1 性能预设、字幕审校与可开关字幕
+## 18.1 智能加速、输出质量与可开关字幕
 
-桌面界面的“性能与画质”不会改变翻译方向、字幕样式、字体、术语表或 API 设置，只会调节
-Whisper 与视频压制的资源占用：
+桌面界面不再要求选择“性能预设”。默认方案始终是 **最高质量输出 + 自动硬件加速**：程序会先检测
+NVIDIA CUDA/NVENC；可用时使用显卡进行语音识别和视频编码，不可用或运行失败时自动回退至 CPU 与
+libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 和最高质量成片参数。
 
-- **快速**：使用 Small Whisper 与更快的成片参数，适合先看结果或短视频。
-- **均衡（推荐）**：使用安装包自带的 Medium Whisper，优先使用 NVIDIA NVENC 编码；显卡
-  编码不可用时会自动改用 libx264。
-- **精品**：使用 Medium Whisper 的更细致识别参数和更高质量成片，适合正式发布前审校。
-- **CPU 安全**：使用低压力的 CPU int8 识别与 CPU 编码，适合电脑同时运行游戏、剪辑或其他
-  GPU 任务时使用。
+YouTube 原视频始终按 **分辨率、帧率、码率、文件大小** 的顺序选择最佳可用流。处理设置中只保留三项
+明确的成片选择：
 
-命令行可在 `process` 或 `batch` 后加入：
+- **输出画质**：最高质量（默认）、高质量（文件更小）、标准质量（节省空间）。
+- **输出帧率**：保持原视频帧率（默认）、60 FPS、30 FPS。选择 60/30 FPS 只会降低更高的源帧率，
+  不会把 30 FPS 人为补成 60 FPS。
+- **输出分辨率**：保持原视频分辨率（默认），或限制为 4K、2K、1080p、720p；不会放大小于所选值的源视频。
+
+命令行可在 `process` 后加入：
 
 ```powershell
-python main.py process "D:\Videos\owned-demo.mp4" --translation-provider offline --processing-profile balanced
+python main.py process "D:\Videos\owned-demo.mp4" --translation-provider offline --processing-profile auto --output-quality best --output-fps 60 --output-height 2160
 ```
 
 完成本地化后，`rendered` 文件夹除了硬字幕视频外，还会生成：

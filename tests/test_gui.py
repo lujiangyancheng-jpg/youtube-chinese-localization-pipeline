@@ -97,6 +97,23 @@ def test_build_process_command_passes_selected_processing_profile() -> None:
     assert command[command.index("--processing-profile") + 1] == "quality"
 
 
+def test_build_process_command_passes_smart_output_controls() -> None:
+    command = build_process_command(
+        "video.mp4",
+        subtitle_mode="chinese",
+        translation_provider="offline",
+        processing_profile="auto",
+        output_quality="best",
+        output_fps=60,
+        output_height=2160,
+    )
+
+    assert command[command.index("--processing-profile") + 1] == "auto"
+    assert command[command.index("--output-quality") + 1] == "best"
+    assert command[command.index("--output-fps") + 1] == "60"
+    assert command[command.index("--output-height") + 1] == "2160"
+
+
 def test_build_process_command_supports_local_ai_without_api_key() -> None:
     command = build_process_command(
         "https://youtu.be/abc123def45",

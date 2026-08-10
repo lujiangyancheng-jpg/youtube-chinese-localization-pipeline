@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from youtube_localizer.config import RenderConfig, SubtitleConfig
+from youtube_localizer.download.metadata import probe_media
 from youtube_localizer.models import SubtitleCue
 from youtube_localizer.rendering.ffmpeg import render_hardsub, render_softsub
 from youtube_localizer.rendering.validation import validate_rendered_video
@@ -29,7 +30,7 @@ def test_offline_synthetic_video_can_be_hardsubbed(tmp_path) -> None:
             "-f",
             "lavfi",
             "-i",
-            "color=c=blue:s=320x180:d=2:r=24",
+            "color=c=blue:s=320x180:d=2:r=48",
             "-f",
             "lavfi",
             "-i",
@@ -56,11 +57,16 @@ def test_offline_synthetic_video_can_be_hardsubbed(tmp_path) -> None:
         source,
         subtitle,
         output,
-        RenderConfig(crf=30, preset="ultrafast"),
+        RenderConfig(crf=30, preset="ultrafast", output_height=360, output_fps=24),
         source_audio_codec="aac",
     )
     result = validate_rendered_video(output, expected_duration=2)
     assert any(stream.get("codec_type") == "video" for stream in result["streams"])
+    rendered_video = next(
+        stream for stream in probe_media(output)["streams"] if stream.get("codec_type") == "video"
+    )
+    assert rendered_video["height"] == 180  # The 180p source was not upscaled to 360p.
+    assert rendered_video["avg_frame_rate"] == "24/1"
 
     softsub_srt = tmp_path / "chinese.srt"
     write_srt(softsub_srt, [SubtitleCue(id=1, start_ms=100, end_ms=1800, text="本地离线测试")])
