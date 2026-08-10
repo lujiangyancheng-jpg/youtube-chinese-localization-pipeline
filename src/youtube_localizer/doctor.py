@@ -220,15 +220,16 @@ def run_doctor(
         )
     )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
-    whisper_model, whisper_is_local = resolve_whisper_model("medium")
-    checks.append(
-        DoctorCheck(
-            "Whisper medium model",
-            "ok" if whisper_is_local else "optional",
-            whisper_model if whisper_is_local else "downloads on first source-checkout use",
-            False,
+    for whisper_name in ("medium", "small"):
+        whisper_model, whisper_is_local = resolve_whisper_model(whisper_name)
+        checks.append(
+            DoctorCheck(
+                f"Whisper {whisper_name} model",
+                "ok" if whisper_is_local else "optional",
+                whisper_model if whisper_is_local else "downloads on first source-checkout use",
+                False,
+            )
         )
-    )
     cuda_ready, cuda_detail = cuda_runtime_status()
     checks.append(
         DoctorCheck(

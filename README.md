@@ -70,8 +70,8 @@ with material that you are not authorized to translate or publish.
 
 For a normal Windows installation, use the split offline setup set from `dist`: keep the setup
 `.exe` and all adjacent `.bin` files together, then run the `.exe`. It installs its own Python,
-FFmpeg, Ollama runtime, Whisper Medium, Qwen3:4b, and both fast translation models. No model is
-downloaded on first use. See [installer/README.md](installer/README.md) for reproducible build
+FFmpeg, Ollama runtime, Whisper Medium and Whisper Small, Qwen3:4b, and both fast translation
+models. No model is downloaded on first use. See [installer/README.md](installer/README.md) for reproducible build
 instructions.
 
 The following steps are for running directly from a source checkout:
@@ -473,7 +473,7 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 ## Optional NVIDIA/CUDA setup
 
 `faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.7 registers
+required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.8 registers
 that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 
@@ -502,14 +502,21 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.5.7 locks the Windows offline runtime dependencies and verifies its fixed model
-binaries during construction. After installation, run **Verify YouTube Localizer Installation**
+Version 0.5.8 locks the Windows offline runtime dependencies and verifies its fixed Whisper Medium
+and Whisper Small model binaries during construction. This makes the Auto, Fast, and Safe CPU
+profiles fully offline on a new machine. After installation, run **Verify YouTube Localizer Installation**
 from the Start menu to validate the packaged model/font manifest and load the desktop app without
 processing a video. The full repository verification command also starts bundled Qwen once:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\installer\test_offline_install.ps1 `
   -InstallRoot "C:\path\to\YouTube Chinese Localizer"
+```
+
+For a diagnostic ZIP that omits video and subtitle text and redacts links, paths, and credentials:
+
+```powershell
+python main.py support-bundle "C:\Users\you\Videos\YouTube Chinese Localizer\project_name"
 ```
 
 ## Running tests

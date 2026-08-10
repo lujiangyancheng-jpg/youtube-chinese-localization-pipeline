@@ -64,6 +64,8 @@ def metadata_from_probe(path: Path, data: dict[str, Any], *, video_id: str) -> S
     audios = [s for s in data["streams"] if s.get("codec_type") == "audio"]
     duration = float(data.get("format", {}).get("duration") or video.get("duration") or 0)
     display_width, display_height = _display_dimensions(video)
+    average_frame_rate = _fraction_to_float(video.get("avg_frame_rate"))
+    stream_frame_rate = _fraction_to_float(video.get("r_frame_rate"))
     return SourceMetadata(
         source_type="local",
         source_input=str(path.resolve()),
@@ -72,9 +74,18 @@ def metadata_from_probe(path: Path, data: dict[str, Any], *, video_id: str) -> S
         duration=duration,
         width=display_width,
         height=display_height,
-        frame_rate=_fraction_to_float(video.get("avg_frame_rate") or video.get("r_frame_rate")),
+        frame_rate=average_frame_rate or stream_frame_rate,
         video_codec=video.get("codec_name") or "",
         audio_codec=(audios[0].get("codec_name") if audios else "") or "",
+        pixel_format=video.get("pix_fmt") or "",
+        color_space=video.get("color_space") or "",
+        color_transfer=video.get("color_transfer") or "",
+        color_primaries=video.get("color_primaries") or "",
+        variable_frame_rate=bool(
+            average_frame_rate
+            and stream_frame_rate
+            and abs(average_frame_rate - stream_frame_rate) > 0.01
+        ),
         audio_streams=[
             {
                 "index": stream.get("index"),

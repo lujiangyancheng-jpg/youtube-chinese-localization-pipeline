@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.5.7",
+    [string]$Version = "0.5.8",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
     [string]$PythonInstallerSha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB",
@@ -9,6 +9,9 @@ param(
     [string]$WhisperModel = "medium",
     [string]$WhisperRevision = "08e178d48790749d25932bbc082711ddcfdfbc4f",
     [string]$WhisperModelSha256 = "9B45E1009DCC4AB601EFF815B61D80E60CE3FD8C74C1A14F4A282258286B51AE",
+    [string]$WhisperSmallModel = "small",
+    [string]$WhisperSmallRevision = "536b0662742c02347bc0e980a01041f333bce120",
+    [string]$WhisperSmallModelSha256 = "3E305921506D8872816023E4C273E75D2419FB89B24DA97B4FE7BCE14170D671",
     [string]$OllamaVersion = "v0.32.5",
     [string]$FfmpegCompatibilityVersion = "8.0",
     [string]$FfmpegCompatibilityArchiveSha256 = "48CA5E824D2660A94F89FD55287B7C35129B55BBE680C4330EFEED5269C4820F",
@@ -188,14 +191,20 @@ try {
     Pop-Location
 }
 
-Write-Host "[3/9] Downloading the multilingual Whisper $WhisperModel model..."
-$WhisperDestination = Join-Path $ModelsRoot "faster-whisper-$WhisperModel"
-& $EmbeddedPython -c "from faster_whisper.utils import download_model; download_model('$WhisperModel', output_dir=r'$WhisperDestination', revision='$WhisperRevision')"
-if ($LASTEXITCODE -ne 0) { throw "Could not download the faster-whisper model." }
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $WhisperDestination "model.bin")).Hash -ne $WhisperModelSha256) {
-    throw "Whisper model checksum mismatch."
+Write-Host "[3/9] Downloading the multilingual Whisper Medium and Small models..."
+$WhisperBundles = @(
+    @{ Name = $WhisperModel; Revision = $WhisperRevision; Sha256 = $WhisperModelSha256 },
+    @{ Name = $WhisperSmallModel; Revision = $WhisperSmallRevision; Sha256 = $WhisperSmallModelSha256 }
+)
+foreach ($bundle in $WhisperBundles) {
+    $WhisperDestination = Join-Path $ModelsRoot "faster-whisper-$($bundle.Name)"
+    & $EmbeddedPython -c "from faster_whisper.utils import download_model; download_model('$($bundle.Name)', output_dir=r'$WhisperDestination', revision='$($bundle.Revision)')"
+    if ($LASTEXITCODE -ne 0) { throw "Could not download the faster-whisper $($bundle.Name) model." }
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $WhisperDestination "model.bin")).Hash -ne $bundle.Sha256) {
+        throw "Whisper $($bundle.Name) model checksum mismatch."
+    }
+    Download-File "https://huggingface.co/Systran/faster-whisper-$($bundle.Name)/raw/main/README.md" (Join-Path $LicenseRoot "faster-whisper-$($bundle.Name)-README.md")
 }
-Download-File "https://huggingface.co/Systran/faster-whisper-$WhisperModel/raw/main/README.md" (Join-Path $LicenseRoot "faster-whisper-$WhisperModel-README.md")
 Download-File "https://raw.githubusercontent.com/openai/whisper/main/LICENSE" (Join-Path $LicenseRoot "Whisper-MIT.txt")
 
 Write-Host "[4/9] Copying both Argos translation models..."
@@ -307,6 +316,7 @@ Copy-Item -LiteralPath (Join-Path $FfmpegCompatibilityRoot "README.txt") `
 Write-Host "[8/9] Writing a checksummed offline asset manifest..."
 $ManifestAssets = @(
     @{ name = "faster-whisper-$WhisperModel"; path = "models/faster-whisper-$WhisperModel/model.bin"; license = "MIT" },
+    @{ name = "faster-whisper-$WhisperSmallModel"; path = "models/faster-whisper-$WhisperSmallModel/model.bin"; license = "MIT" },
     @{ name = "argos-en-zh-1.9"; path = "models/translate-en_zh-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "argos-zh-en-1.9"; path = "models/translate-zh_en-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "qwen3-4b-q4_k_m"; path = "models/ollama/blobs/sha256-3e4cb14174460404e7a233e531675303b2fbf7749c02f91864fe311ab6344e4f"; license = "Apache-2.0" }
@@ -347,7 +357,7 @@ if (-not $SkipSmokeTest) {
         $env:YOUTUBE_LOCALIZER_FONTS = $FontsRoot
         $env:FFMPEG_PATH = Join-Path $FfmpegBin "ffmpeg.exe"
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
-        & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; p,local=resolve_whisper_model('$WhisperModel'); assert local; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('offline runtime smoke test: ok')"
+        & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; from faster_whisper import WhisperModel; refs=[resolve_whisper_model(name) for name in ('$WhisperModel', '$WhisperSmallModel')]; assert all(local for _,local in refs); assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); [WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True) for reference,_ in refs]; print('offline runtime smoke test: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
         & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }

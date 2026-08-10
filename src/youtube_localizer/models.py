@@ -41,6 +41,11 @@ class SourceMetadata(BaseModel):
     frame_rate: float | None = None
     video_codec: str = ""
     audio_codec: str = ""
+    pixel_format: str = ""
+    color_space: str = ""
+    color_transfer: str = ""
+    color_primaries: str = ""
+    variable_frame_rate: bool = False
     audio_streams: list[dict[str, Any]] = Field(default_factory=list)
     subtitle_language: str = ""
     subtitle_kind: str = ""

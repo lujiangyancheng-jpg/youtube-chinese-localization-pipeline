@@ -6,7 +6,8 @@ directory.
 
 | Component | Purpose | License / attribution |
 |---|---|---|
-| `Systran/faster-whisper-medium` | Multilingual English/Chinese speech recognition | MIT; converted from OpenAI Whisper Medium |
+| `Systran/faster-whisper-medium` | Higher-quality multilingual English/Chinese speech recognition | MIT; converted from OpenAI Whisper Medium |
+| `Systran/faster-whisper-small` | Faster and lower-memory multilingual English/Chinese speech recognition | MIT; converted from OpenAI Whisper Small |
 | Argos `translate-en_zh-1_9` | Fast English-to-Chinese translation | Derived from OPUS-MT; CC BY 4.0 |
 | Argos `translate-zh_en-1_9` | Fast Chinese-to-English translation | Derived from OPUS-MT; CC BY 4.0 |
 | `qwen3:4b` Q4_K_M | Natural paragraph translation | Apache License 2.0; Copyright 2024 Alibaba Cloud |
@@ -20,6 +21,7 @@ directory.
 Model sources:
 
 - <https://huggingface.co/Systran/faster-whisper-medium>
+- <https://huggingface.co/Systran/faster-whisper-small>
 - <https://argos-net.com/>
 - <https://ollama.com/library/qwen3:4b>
 - <https://github.com/ollama/ollama>

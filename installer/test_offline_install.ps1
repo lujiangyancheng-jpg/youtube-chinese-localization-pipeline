@@ -29,6 +29,7 @@ $RequiredFiles = @(
     (Join-Path $Root "runtime\python\Lib\tkinter\__init__.py")
     (Join-Path $Root "runtime\python\tcl\tk8.6\tk.tcl")
     (Join-Path $Models "faster-whisper-medium\model.bin")
+    (Join-Path $Models "faster-whisper-small\model.bin")
     (Join-Path $Fonts "NotoSansCJKsc-Regular.otf")
     (Join-Path $Fonts "NotoSerifCJKsc-Regular.otf")
     (Join-Path $Fonts "LXGWWenKai-Regular.ttf")
@@ -49,7 +50,7 @@ function Test-OfflineAssetManifest([string]$RootPath, [string]$Path) {
         throw "Offline asset manifest has an unexpected application identity."
     }
     $assets = @($manifest.assets)
-    if ($assets.Count -lt 8) {
+    if ($assets.Count -lt 9) {
         throw "Offline asset manifest is incomplete."
     }
     $resolvedRoot = [IO.Path]::GetFullPath($RootPath).TrimEnd('\')
@@ -91,7 +92,7 @@ $env:YOUTUBE_LOCALIZER_EXPECTED_VERSION = [string]$Manifest.version
 & $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('installed desktop interface: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }
 
-& $Python -c "import os; from pathlib import Path; from youtube_localizer import __version__; from youtube_localizer.resources import bundled_fonts_directory, resolve_whisper_model; from youtube_localizer.translation.offline import validate_offline_model; models=Path(os.environ['YOUTUBE_LOCALIZER_MODELS']); fonts=Path(os.environ['YOUTUBE_LOCALIZER_FONTS']).resolve(); assert __version__ == os.environ['YOUTUBE_LOCALIZER_EXPECTED_VERSION']; p,local=resolve_whisper_model('medium'); assert local; assert bundled_fonts_directory() == fonts; assert validate_offline_model(models/'translate-en_zh-1_9'); assert validate_offline_model(models/'translate-zh_en-1_9', source_code='zh', target_code='en'); from faster_whisper import WhisperModel; WhisperModel(p, device='cpu', compute_type='int8', local_files_only=True); print('installed offline models and fonts: ok')"
+& $Python -c "import os; from pathlib import Path; from youtube_localizer import __version__; from youtube_localizer.resources import bundled_fonts_directory, resolve_whisper_model; from youtube_localizer.translation.offline import validate_offline_model; from faster_whisper import WhisperModel; models=Path(os.environ['YOUTUBE_LOCALIZER_MODELS']); fonts=Path(os.environ['YOUTUBE_LOCALIZER_FONTS']).resolve(); assert __version__ == os.environ['YOUTUBE_LOCALIZER_EXPECTED_VERSION']; refs=[resolve_whisper_model(name) for name in ('medium', 'small')]; assert all(local for _,local in refs); assert bundled_fonts_directory() == fonts; assert validate_offline_model(models/'translate-en_zh-1_9'); assert validate_offline_model(models/'translate-zh_en-1_9', source_code='zh', target_code='en'); [WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True) for reference,_ in refs]; print('installed offline models and fonts: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed model loading failed." }
 
 & $Python (Join-Path $Root "app\main.py") --help | Out-Null

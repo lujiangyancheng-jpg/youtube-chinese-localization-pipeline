@@ -13,7 +13,9 @@ from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 from .config import default_output_directory, output_directory_advice
+from .models import ProjectPaths
 from .resources import ollama_executable
+from .support import create_support_bundle
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -444,6 +446,12 @@ class LocalizerWindow:
             style="Toolbar.TButton",
             command=self._open_output,
         ).grid(row=0, column=6, padx=(4, 0))
+        ttk.Button(
+            hero,
+            text="导出诊断包",
+            style="Toolbar.TButton",
+            command=self._export_support_bundle,
+        ).grid(row=0, column=7, padx=(4, 0))
         ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
 
         self.empty_state = ttk.Frame(outer, style="App.TFrame")
@@ -1263,6 +1271,36 @@ class LocalizerWindow:
             subprocess.Popen(["open", str(output)])
         else:
             subprocess.Popen(["xdg-open", str(output)])
+
+    def _export_support_bundle(self) -> None:
+        from tkinter import filedialog
+
+        selected = filedialog.askdirectory(
+            parent=self.root,
+            title="选择需要诊断的项目文件夹",
+            initialdir=self.output_directory.get().strip() or str(default_output_directory()),
+            mustexist=True,
+        )
+        if not selected:
+            return
+        project = ProjectPaths(Path(selected).resolve())
+        if not project.state_file.is_file():
+            messagebox.showwarning(
+                "不是项目文件夹",
+                "请选择包含 pipeline_state.json 的项目文件夹。",
+                parent=self.root,
+            )
+            return
+        try:
+            bundle = create_support_bundle(project)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("无法导出诊断包", str(exc), parent=self.root)
+            return
+        messagebox.showinfo(
+            "诊断包已导出",
+            f"已创建：\n{bundle}\n\n包内不含视频和字幕文本；路径、链接和凭证会被隐藏。",
+            parent=self.root,
+        )
 
     def _on_close(self) -> None:
         process_running = self.process is not None and self.process.poll() is None

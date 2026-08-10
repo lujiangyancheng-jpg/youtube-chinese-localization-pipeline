@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import AppConfig, validate_config_data
 from .download.local import import_local, inspect_local
+from .download.metadata import metadata_from_probe, probe_media
 from .download.youtube import (
     download_youtube,
     inspect_youtube,
@@ -21,6 +22,7 @@ from .logging_config import configure_logging
 from .models import ProjectPaths, SourceMetadata, SubtitleCue
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.ffmpeg import render_hardsub, render_softsub
+from .rendering.media_warnings import rendering_media_warnings
 from .rendering.validation import validate_rendered_video
 from .reporting import build_report, write_report
 from .resource_gate import heavy_workload_slot
@@ -510,6 +512,8 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
             "change subtitle_mode before rendering."
         )
     metadata = load_project_metadata(project)
+    for warning in rendering_media_warnings(metadata):
+        LOGGER.warning("%s", warning)
     source = find_source_video(project)
     if config.subtitle_mode == "chinese":
         subtitle = _target_ass(project, config)
@@ -673,6 +677,29 @@ def process_pipeline(
                     )
                     remember_warnings(download.warnings)
                     source_video = download.video
+                    try:
+                        probed = metadata_from_probe(
+                            source_video,
+                            probe_media(source_video),
+                            video_id=metadata.video_id,
+                        )
+                        metadata = metadata.model_copy(
+                            update={
+                                "width": probed.width,
+                                "height": probed.height,
+                                "frame_rate": probed.frame_rate,
+                                "video_codec": probed.video_codec,
+                                "audio_codec": probed.audio_codec,
+                                "pixel_format": probed.pixel_format,
+                                "color_space": probed.color_space,
+                                "color_transfer": probed.color_transfer,
+                                "color_primaries": probed.color_primaries,
+                                "variable_frame_rate": probed.variable_frame_rate,
+                                "audio_streams": probed.audio_streams,
+                            }
+                        )
+                    except LocalizerError as exc:
+                        LOGGER.warning("Could not probe downloaded media characteristics: %s", exc)
                     metadata.english_subtitle_language = ""
                     metadata.english_subtitle_kind = ""
                     metadata.chinese_subtitle_language = ""
@@ -964,6 +991,7 @@ def process_pipeline(
         )
         render_config_hash = stable_hash(config.render)
         rendered = rendered_output(project, config)
+        remember_warnings(rendering_media_warnings(metadata))
         render_outputs = [rendered]
         if not state.can_skip(
             "render",

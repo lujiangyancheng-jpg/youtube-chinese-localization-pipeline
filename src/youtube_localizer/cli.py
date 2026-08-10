@@ -44,6 +44,7 @@ from .profiles import (
     apply_processing_profile,
 )
 from .publishing.metadata_generator import generate_publishing_assets
+from .rendering.media_warnings import rendering_media_warnings
 from .rendering.preview import render_preview
 from .rendering.validation import validate_rendered_video
 from .reporting import build_report, load_report_context, write_report
@@ -51,6 +52,7 @@ from .state import PipelineState
 from .subtitles.normalize import validate_cues
 from .subtitles.parser import parse_subtitle
 from .subtitles.quality import audit_subtitles
+from .support import create_support_bundle
 from .transcription.audio import extract_transcription_audio
 from .transcription.whisper_engine import transcribe_audio
 from .translation.manual import import_translation_file
@@ -567,6 +569,7 @@ def render_command(
     state = PipelineState(project.state_file)
     previous_warnings, previous_outputs = load_report_context(project.logs)
     report_warnings = list(dict.fromkeys([*previous_warnings, *state.data.warnings]))
+    report_warnings = list(dict.fromkeys([*report_warnings, *rendering_media_warnings(metadata)]))
     softsub_warning = ""
     source = find_source_video(project)
     subtitle = (
@@ -770,6 +773,19 @@ def doctor_command(
         raise typer.Exit(1)
 
 
+@app.command("support-bundle")
+def support_bundle_command(
+    project_path: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Destination ZIP file or directory."),
+    ] = None,
+) -> None:
+    """Create a redacted diagnostic ZIP without media or subtitle text."""
+    bundle = create_support_bundle(_project(project_path), output)
+    console.print(f"[green]Support bundle created:[/] {bundle}")
+
+
 @app.command("version")
 def version_command() -> None:
     """Print the application version."""
@@ -798,6 +814,7 @@ KNOWN_COMMANDS = {
     "validate",
     "clean",
     "doctor",
+    "support-bundle",
     "gui",
     "version",
 }
