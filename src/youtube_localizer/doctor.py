@@ -19,6 +19,7 @@ from .hardware import (
 from .resources import (
     bundled_fonts_directory,
     find_bundled_model,
+    installed_whisper_models,
     ollama_executable,
     package_tier,
     resolve_whisper_model,
@@ -49,12 +50,7 @@ def _module_check(module: str, label: str, *, required: bool = True) -> DoctorCh
 def _font_check() -> DoctorCheck:
     if bundled := bundled_fonts_directory():
         return DoctorCheck("Chinese subtitle font", "ok", f"bundled fonts: {bundled}", False)
-    candidates = [
-        "Noto Sans CJK SC",
-        "Noto Serif CJK SC",
-        "LXGW WenKai",
-        "Microsoft YaHei",
-    ]
+    candidates = ["Noto Sans CJK SC"]
     font_files: list[Path] = []
     if os.name == "nt":
         fonts = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"
@@ -230,9 +226,10 @@ def run_doctor(
         )
     )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
+    installed_whispers = installed_whisper_models()
     for whisper_name in ("medium", "small"):
         whisper_model, whisper_is_local = resolve_whisper_model(whisper_name)
-        standard_omission = installed_tier == "standard" and whisper_name == "medium"
+        package_model_missing = installed_tier is not None and whisper_name not in installed_whispers
         checks.append(
             DoctorCheck(
                 f"Whisper {whisper_name} model",
@@ -241,8 +238,8 @@ def run_doctor(
                     whisper_model
                     if whisper_is_local
                     else (
-                        "not included in the Standard package; Small is selected automatically"
-                        if standard_omission
+                        "install the matching Whisper model pack; Small is recommended for most computers"
+                        if package_model_missing
                         else "downloads on first source-checkout use"
                     )
                 ),

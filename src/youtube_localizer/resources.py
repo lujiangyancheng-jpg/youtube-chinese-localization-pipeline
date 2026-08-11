@@ -53,6 +53,15 @@ def find_bundled_model(name: str) -> Path | None:
     return None
 
 
+def installed_whisper_models() -> tuple[str, ...]:
+    """Return Whisper model-pack sizes available to the installed application."""
+    return tuple(
+        name
+        for name in ("small", "medium")
+        if find_bundled_model(f"faster-whisper-{name}") is not None
+    )
+
+
 def font_roots() -> list[Path]:
     """Return font roots for an installed bundle and a source checkout."""
     candidates: list[Path] = []

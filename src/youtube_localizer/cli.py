@@ -115,6 +115,7 @@ def _configured(
     translation_provider: str | None = None,
     translation_direction: str | None = None,
     subtitle_font: str | None = None,
+    subtitle_font_size: int | None = None,
     processing_profile: ProcessingProfile | None = None,
     output_quality: OutputQuality | None = None,
     output_height: int | None = None,
@@ -141,6 +142,11 @@ def _configured(
         if not normalized_font or "\n" in normalized_font or "\r" in normalized_font:
             raise LocalizerError("--subtitle-font must be a non-empty font family name.")
         changes["subtitles"] = config.subtitles.model_copy(update={"font": normalized_font})
+    if subtitle_font_size is not None:
+        if not 12 <= subtitle_font_size <= 120:
+            raise LocalizerError("--subtitle-font-size must be between 12 and 120.")
+        base_subtitles = changes.get("subtitles", config.subtitles)
+        changes["subtitles"] = base_subtitles.model_copy(update={"font_size": subtitle_font_size})
     render_changes: dict[str, int] = {}
     if output_height is not None:
         if not 144 <= output_height <= 4320:
@@ -244,10 +250,13 @@ def process_command(
         typer.Option(
             "--subtitle-font",
             help=(
-                "ASS font family, for example Noto Sans CJK SC, "
-                "Noto Serif CJK SC, or LXGW WenKai."
+                "ASS font family. The packaged application includes Noto Sans CJK SC."
             ),
         ),
+    ] = None,
+    subtitle_font_size: Annotated[
+        int | None,
+        typer.Option("--subtitle-font-size", help="Chinese subtitle font size, from 12 to 120."),
     ] = None,
     processing_profile: Annotated[
         ProcessingProfile | None,
@@ -292,6 +301,7 @@ def process_command(
         translation_provider=translation_provider,
         translation_direction=translation_direction,
         subtitle_font=subtitle_font,
+        subtitle_font_size=subtitle_font_size,
         processing_profile=processing_profile,
         output_quality=output_quality,
         output_height=output_height,

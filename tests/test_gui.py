@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 from youtube_localizer.gui import (
+    DEFAULT_SUBTITLE_FONT,
+    SUBTITLE_FONT_SIZES,
     SUBTITLE_FONTS,
     api_configuration,
     build_process_command,
@@ -14,6 +16,7 @@ from youtube_localizer.gui import (
     mode_description,
     progress_update_from_output,
     queue_input_values,
+    whisper_model_installation_message,
 )
 
 
@@ -149,18 +152,28 @@ def test_build_process_command_supports_local_ai_without_api_key() -> None:
     assert isinstance(local_ai_available(), bool)
 
 
-def test_build_process_command_passes_selected_bundled_font() -> None:
+def test_build_process_command_uses_the_single_bundled_font_and_selected_size() -> None:
     command = build_process_command(
         "video.mp4",
         subtitle_mode="chinese",
         translation_provider="offline",
-        subtitle_font="LXGW WenKai",
+        subtitle_font=DEFAULT_SUBTITLE_FONT,
+        subtitle_font_size=SUBTITLE_FONT_SIZES["大号（56）"],
     )
 
-    assert command[command.index("--subtitle-font") + 1] == "LXGW WenKai"
-    assert {"Noto Sans CJK SC", "Noto Serif CJK SC", "LXGW WenKai"}.issubset(
-        SUBTITLE_FONTS.values()
-    )
+    assert command[command.index("--subtitle-font") + 1] == DEFAULT_SUBTITLE_FONT
+    assert command[command.index("--subtitle-font-size") + 1] == "56"
+    assert tuple(SUBTITLE_FONTS.values()) == (DEFAULT_SUBTITLE_FONT,)
+
+
+def test_build_process_command_rejects_an_unsafe_subtitle_font_size() -> None:
+    with pytest.raises(ValueError, match="12"):
+        build_process_command(
+            "video.mp4",
+            subtitle_mode="chinese",
+            translation_provider="offline",
+            subtitle_font_size=121,
+        )
 
 
 def test_build_process_command_supports_direct_download_without_subtitles() -> None:
@@ -214,3 +227,13 @@ def test_windows_gui_process_hides_its_console() -> None:
         assert flags & subprocess.CREATE_NO_WINDOW
     else:
         assert gui_process_creationflags() == 0
+
+
+def test_gui_explains_when_a_packaged_install_has_no_whisper_model(monkeypatch) -> None:
+    monkeypatch.setattr("youtube_localizer.gui.package_tier", lambda: "standard")
+    monkeypatch.setattr("youtube_localizer.gui.installed_whisper_models", lambda: ())
+
+    message = whisper_model_installation_message()
+
+    assert message is not None
+    assert "Whisper Small" in message

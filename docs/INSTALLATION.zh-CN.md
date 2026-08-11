@@ -1,46 +1,57 @@
 # Windows 离线安装说明
 
-## 选择安装包
+## 选择基础安装包
 
-- **标准版（Standard）**：适合大多数电脑。内置 Whisper Small、英译中和中译英快速离线翻译模型、FFmpeg 和三款字幕字体。首次使用不下载模型。
-- **完整版（Complete）**：在标准版基础上增加 Whisper Medium、本地 Ollama 和 Qwen3:4b，可进行更自然的本地段落翻译；需要更多磁盘空间和内存。
+- **标准版（Standard）**：适合大多数电脑。内置 Python、FFmpeg、英译中/中译英快速离线翻译模型和字幕字体；体积更小。
+- **完整版（Complete）**：在标准版基础上增加本地 Ollama 与 Qwen3:4b，用于更自然的本地段落翻译；需要更多磁盘空间和内存。
 
-标准版不包含 Medium 或 Qwen 时，软件会在开始任务前自动改用已内置的 Small 和快速离线翻译，不会在后台联网下载模型。
+两个基础安装包都不再强制携带 Whisper 语音识别模型。安装基础程序后，请按电脑配置安装一个模型包：
 
-## 安装
+- **Whisper Small**：大多数电脑推荐，速度较快，对内存和显存要求较低。
+- **Whisper Medium**：识别质量更高，但需要更多内存、显存、磁盘空间与处理时间。
 
-1. 在 `dist` 中选择同一版本、同一层级的一组文件。
-2. 把 `.exe` 与其全部同名 `.bin` 分卷放在同一个文件夹，不要重命名或遗漏分卷。
-3. 双击 `.exe`，按提示安装。
-4. 从开始菜单或桌面打开 **YouTube Chinese Localizer**。
+程序在开始字幕任务前会检测模型包。没有模型时会明确提示安装 Small 或 Medium，不会在后台偷偷下载。
 
-不要把 Standard 和 Complete 的分卷混在一起。安装包未做代码签名时，Windows 可能显示来源提示；请只运行来自项目官方发布页并已核对哈希的文件。
+## 安装顺序
+
+1. 在 `dist` 中选择同一版本的 Standard 或 Complete 基础安装包。
+2. 把该 `.exe` 与其全部同名 `.bin` 分卷放在同一个文件夹，不要重命名或遗漏分卷。
+3. 双击基础安装包并完成安装。
+4. 选择一个 Whisper 模型安装包：`Whisper-Small-Model-Setup.exe` 或 `Whisper-Medium-Model-Setup.exe`。
+5. 把模型包安装到与基础程序相同的文件夹；默认位置通常正确。
+6. 从开始菜单或桌面打开 **YouTube Chinese Localizer**。
+
+Small 与 Medium 可以同时安装，软件会优先按你选择的处理方式和当前硬件使用合适的模型。只下载无字幕视频时不需要 Whisper 模型。
+
+不要把不同安装包的 `.bin` 分卷混在一起。安装包未做代码签名时，Windows 可能显示来源提示；请只运行来自项目官方发布页并已核对哈希的文件。
+
+## 本地 AI 大模型提示
+
+“本地 AI 段落翻译”除 Whisper 外还需要 Qwen3:4b 大语言模型：
+
+- 安装 **完整版**：Qwen3:4b 已内置，不需要 API Key，也不需要另行下载大语言模型。
+- 安装 **标准版**：可直接使用快速离线翻译；如需段落 AI 翻译，请改装同一版本的完整版。
 
 ## 校验完整性
 
-每个包都有专用的哈希清单：
-
-- `SHA256SUMS-<版本>-standard.txt`
-- `SHA256SUMS-<版本>-complete.txt`
-
-在 PowerShell 中进入安装包文件夹后可运行：
+每个基础包和模型包都有对应的 SHA-256 清单。在 PowerShell 中进入文件夹后可运行：
 
 ```powershell
-Get-FileHash .\YouTube-Chinese-Localizer-*-Offline-Setup* -Algorithm SHA256
+Get-FileHash .\YouTube-Chinese-Localizer-*-Setup* -Algorithm SHA256
 ```
 
-将输出与对应清单逐行比较。安装后也可从开始菜单运行 **Verify YouTube Localizer Installation**，它会校验内置资产哈希、桌面界面和离线模型加载；该快捷方式不运行较慢的 Qwen 推理。
+将输出与对应 `SHA256SUMS-<版本>-*.txt` 清单逐行比较。安装基础程序后还可从开始菜单运行 **Verify YouTube Localizer Installation**，它会校验基础资产哈希、桌面界面和离线翻译模型。
 
 ## 开始任务前的自动预检
 
 图形界面每次开始任务都会检查：
 
-- 安装包层级与本地模型是否齐全；
-- 可用磁盘空间是否够存放源视频、音频、字幕和最终高质量输出；
-- NVIDIA 显存或 CPU 内存是否适合当前模型；
-- 是否需要使用安全的 Small/CPU/快速离线翻译回退方案。
+- 是否已安装适合的 Whisper 模型；
+- 基础包层级和本地 AI 模型是否齐全；
+- 可用磁盘空间是否足够存放源视频、音频、字幕和最终高质量输出；
+- NVIDIA 显存或 CPU 内存是否适合当前模型。
 
-空间不足时任务会在下载前停止，并把详细结果写到项目目录的 `logs/preflight.json`。命令行可提前执行：
+缺少模型或空间不足时，任务会在下载前停止，并把详细结果写到项目目录的 `logs/preflight.json`。命令行可提前执行：
 
 ```powershell
 python main.py preflight "D:\Videos\已授权的视频.mp4"
@@ -48,7 +59,7 @@ python main.py preflight "D:\Videos\已授权的视频.mp4"
 
 ## 建议
 
-- 需要最快、最省空间的本地处理：选择标准版。
-- 需要无 API 的自然段落翻译，且电脑有较充足的内存、显存和磁盘空间：选择完整版。
+- 追求最小下载量：安装标准版 + Whisper Small。
+- 追求无 API 的自然段落翻译：安装完整版 + Whisper Small 或 Medium。
 - 长视频尽量输出到本机 SSD，而不是 OneDrive 同步目录或移动硬盘。
 - 仅下载无字幕最高质量视频时，选择“无字幕直接下载”；这不需要识别、翻译或重新编码。

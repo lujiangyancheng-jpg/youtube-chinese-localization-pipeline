@@ -45,6 +45,17 @@ def test_cli_configuration_overrides_subtitle_font() -> None:
     assert config.subtitles.font == "LXGW WenKai"
 
 
+def test_cli_configuration_overrides_subtitle_font_size() -> None:
+    config = _configured(None, subtitle_font_size=56)
+
+    assert config.subtitles.font_size == 56
+
+
+def test_cli_configuration_rejects_unsafe_subtitle_font_size() -> None:
+    with pytest.raises(LocalizerError, match="12"):
+        _configured(None, subtitle_font_size=121)
+
+
 def test_cli_configuration_supports_download_only_mode() -> None:
     config = _configured(None, subtitle_mode="download_only")
 

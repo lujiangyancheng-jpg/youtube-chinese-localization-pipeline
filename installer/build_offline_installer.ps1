@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.5.9",
+    [string]$Version = "0.6.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",
@@ -18,7 +18,6 @@ param(
     [string]$FfmpegCompatibilityVersion = "8.0",
     [string]$FfmpegCompatibilityArchiveSha256 = "48CA5E824D2660A94F89FD55287B7C35129B55BBE680C4330EFEED5269C4820F",
     [string]$NotoCjkRevision = "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
-    [string]$LxgwWenKaiRevision = "ed634e2291ff8adcffbab553d6c26cc95a0e4a0c",
     [string]$ArgosModelRoot = "$env:USERPROFILE\.youtube-chinese-localizer\models",
     [string]$ArgosEnZhModelSha256 = "1A039114D9456B6528FABB65B455B6F156319634A0F984B1F6018F7737D67598",
     [string]$ArgosZhEnModelSha256 = "EDD8C8A6863D36959613FF291074627A1635FAB2F51B872EF437E924D238921A",
@@ -196,28 +195,7 @@ try {
     Pop-Location
 }
 
-if ($IsCompletePackage) {
-    Write-Host "[3/9] Downloading the multilingual Whisper Medium and Small models..."
-    $WhisperBundles = @(
-        @{ Name = $WhisperModel; Revision = $WhisperRevision; Sha256 = $WhisperModelSha256 },
-        @{ Name = $WhisperSmallModel; Revision = $WhisperSmallRevision; Sha256 = $WhisperSmallModelSha256 }
-    )
-} else {
-    Write-Host "[3/9] Downloading the multilingual Whisper Small model for the Standard package..."
-    $WhisperBundles = @(
-        @{ Name = $WhisperSmallModel; Revision = $WhisperSmallRevision; Sha256 = $WhisperSmallModelSha256 }
-    )
-}
-foreach ($bundle in $WhisperBundles) {
-    $WhisperDestination = Join-Path $ModelsRoot "faster-whisper-$($bundle.Name)"
-    & $EmbeddedPython -c "from faster_whisper.utils import download_model; download_model('$($bundle.Name)', output_dir=r'$WhisperDestination', revision='$($bundle.Revision)')"
-    if ($LASTEXITCODE -ne 0) { throw "Could not download the faster-whisper $($bundle.Name) model." }
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $WhisperDestination "model.bin")).Hash -ne $bundle.Sha256) {
-        throw "Whisper $($bundle.Name) model checksum mismatch."
-    }
-    Download-File "https://huggingface.co/Systran/faster-whisper-$($bundle.Name)/raw/main/README.md" (Join-Path $LicenseRoot "faster-whisper-$($bundle.Name)-README.md")
-}
-Download-File "https://raw.githubusercontent.com/openai/whisper/main/LICENSE" (Join-Path $LicenseRoot "Whisper-MIT.txt")
+Write-Host "[3/9] Whisper recognition models are supplied as optional Small and Medium model packs..."
 
 Write-Host "[4/9] Copying both Argos translation models..."
 foreach ($name in @("translate-en_zh-1_9", "translate-zh_en-1_9")) {
@@ -233,7 +211,7 @@ if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $ModelsRoot "transla
 }
 Download-File "https://creativecommons.org/licenses/by/4.0/legalcode.txt" (Join-Path $LicenseRoot "CC-BY-4.0.txt")
 
-Write-Host "[5/9] Downloading three bundled subtitle fonts..."
+Write-Host "[5/9] Downloading the bundled subtitle font..."
 $FontCacheRoot = Join-Path $CacheRoot "fonts"
 New-Item -ItemType Directory -Path $FontCacheRoot -Force | Out-Null
 $FontAssets = @(
@@ -241,16 +219,6 @@ $FontAssets = @(
         Name = "NotoSansCJKsc-Regular.otf"
         Url = "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevision/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf"
         Sha256 = "2C76254F6FC379FDDFCE0A7E84FB5385BB135D3E399294F6EEB6680D0365B74B"
-    },
-    @{
-        Name = "NotoSerifCJKsc-Regular.otf"
-        Url = "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevision/Serif/OTF/SimplifiedChinese/NotoSerifCJKsc-Regular.otf"
-        Sha256 = "2A2EAE2628DF83556C54018C41E20FA532C1B862C5256AE8B3F23FEB918D12CA"
-    },
-    @{
-        Name = "LXGWWenKai-Regular.ttf"
-        Url = "https://raw.githubusercontent.com/lxgw/LxgwWenKai/$LxgwWenKaiRevision/fonts/TTF/LXGWWenKai-Regular.ttf"
-        Sha256 = "39AD71264B588165B469E35E6AFB162A378DACD1F95348160240BA9038AC3009"
     }
 )
 foreach ($font in $FontAssets) {
@@ -259,8 +227,6 @@ foreach ($font in $FontAssets) {
     Copy-Item -LiteralPath $cachedFont -Destination (Join-Path $FontsRoot $font.Name) -Force
 }
 Download-File "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevision/Sans/LICENSE" (Join-Path $LicenseRoot "Noto-Sans-CJK-SC-OFL-1.1.txt")
-Download-File "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevision/Serif/LICENSE" (Join-Path $LicenseRoot "Noto-Serif-CJK-SC-OFL-1.1.txt")
-Download-File "https://raw.githubusercontent.com/lxgw/LxgwWenKai/$LxgwWenKaiRevision/OFL.txt" (Join-Path $LicenseRoot "LXGW-WenKai-OFL-1.1.txt")
 
 if ($IsCompletePackage) {
     Write-Host "[6/9] Copying Qwen3:4b and downloading the standalone Ollama runtime..."
@@ -331,17 +297,13 @@ Copy-Item -LiteralPath (Join-Path $FfmpegCompatibilityRoot "README.txt") `
 
 Write-Host "[8/9] Writing a checksummed offline asset manifest..."
 $ManifestAssets = @(
-    @{ name = "faster-whisper-$WhisperSmallModel"; path = "models/faster-whisper-$WhisperSmallModel/model.bin"; license = "MIT" },
     @{ name = "argos-en-zh-1.9"; path = "models/translate-en_zh-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "argos-zh-en-1.9"; path = "models/translate-zh_en-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "runtime-dependencies-lock"; path = "runtime-dependencies.lock"; license = "N/A" }
     @{ name = "noto-sans-cjk-sc-regular"; path = "fonts/NotoSansCJKsc-Regular.otf"; license = "OFL-1.1" }
-    @{ name = "noto-serif-cjk-sc-regular"; path = "fonts/NotoSerifCJKsc-Regular.otf"; license = "OFL-1.1" }
-    @{ name = "lxgw-wenkai-regular"; path = "fonts/LXGWWenKai-Regular.ttf"; license = "OFL-1.1" }
 )
 if ($IsCompletePackage) {
     $ManifestAssets = @(
-        @{ name = "faster-whisper-$WhisperModel"; path = "models/faster-whisper-$WhisperModel/model.bin"; license = "MIT" },
         @{ name = "qwen3-4b-q4_k_m"; path = "models/ollama/blobs/sha256-3e4cb14174460404e7a233e531675303b2fbf7749c02f91864fe311ab6344e4f"; license = "Apache-2.0" }
     ) + $ManifestAssets
 }
@@ -379,9 +341,9 @@ if (-not $SkipSmokeTest) {
         $env:FFMPEG_PATH = Join-Path $FfmpegBin "ffmpeg.exe"
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
         if ($IsCompletePackage) {
-            & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; from faster_whisper import WhisperModel; refs=[resolve_whisper_model(name) for name in ('$WhisperModel', '$WhisperSmallModel')]; assert all(local for _,local in refs); assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); [WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True) for reference,_ in refs]; print('complete offline runtime smoke test: ok')"
+            & $EmbeddedPython -c "from youtube_localizer.resources import bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); print('complete offline runtime smoke test: ok')"
         } else {
-            & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, nvenc_compatibility_ffmpeg; from faster_whisper import WhisperModel; reference, local=resolve_whisper_model('$WhisperSmallModel'); assert local; assert bundled_fonts_directory(); assert nvenc_compatibility_ffmpeg(); WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True); print('standard offline runtime smoke test: ok')"
+            & $EmbeddedPython -c "from youtube_localizer.resources import bundled_fonts_directory, nvenc_compatibility_ffmpeg; assert bundled_fonts_directory(); assert nvenc_compatibility_ffmpeg(); print('standard offline runtime smoke test: ok')"
         }
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
         & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"
@@ -424,7 +386,7 @@ if (-not $SkipInstaller) {
         -LiteralPath (Join-Path $DistRoot "SHA256SUMS-$Version-$PackageTierNormalized.txt") `
         -Encoding ascii
     $ReleaseFiles = Get-ChildItem -LiteralPath $DistRoot -File |
-        Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-*-Offline-Setup*" } |
+        Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-*-Setup*" } |
         Sort-Object Name
     $ReleaseChecksums = foreach ($file in $ReleaseFiles) {
         "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant(), $file.Name

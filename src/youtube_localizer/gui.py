@@ -14,7 +14,7 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from .config import default_output_directory, output_directory_advice
 from .models import ProjectPaths
-from .resources import ollama_executable
+from .resources import installed_whisper_models, ollama_executable, package_tier
 from .support import create_support_bundle
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -49,11 +49,13 @@ TRANSLATION_MODES = {
     "本地 AI 段落翻译并压制（高质量，无 API Key）": "ollama",
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
 }
-SUBTITLE_FONTS = {
-    "Noto Sans CJK SC（现代无衬线，推荐）": "Noto Sans CJK SC",
-    "Noto Serif CJK SC（典雅宋体）": "Noto Serif CJK SC",
-    "霞鹜文楷（自然手写）": "LXGW WenKai",
-    "微软雅黑（系统字体）": "Microsoft YaHei",
+DEFAULT_SUBTITLE_FONT = "Noto Sans CJK SC"
+SUBTITLE_FONTS = {"Noto Sans CJK SC（默认）": DEFAULT_SUBTITLE_FONT}
+SUBTITLE_FONT_SIZES = {
+    "小号（40）": 40,
+    "标准（48，推荐）": 48,
+    "大号（56）": 56,
+    "超大（64）": 64,
 }
 
 
@@ -132,6 +134,16 @@ def local_ai_available() -> bool:
     return ollama_executable() is not None
 
 
+def whisper_model_installation_message() -> str | None:
+    """Explain the required model-pack action before a packaged app starts a subtitle job."""
+    if package_tier() is None or installed_whisper_models():
+        return None
+    return (
+        "尚未安装 Whisper 语音识别模型。请安装 Whisper Small（大多数电脑推荐）或 "
+        "Whisper Medium（更高质量、需要更多内存/显存）模型包后再开始字幕任务。"
+    )
+
+
 def mode_description(subtitle_mode: str, translation_provider: str) -> str:
     """Return the short explanation shown under the selected workflow."""
     if subtitle_mode == "download_only":
@@ -151,7 +163,8 @@ def build_process_command(
     subtitle_mode: str,
     translation_provider: str,
     translation_direction: str = "en-to-zh",
-    subtitle_font: str = "Noto Sans CJK SC",
+    subtitle_font: str = DEFAULT_SUBTITLE_FONT,
+    subtitle_font_size: int | None = None,
     processing_profile: str | None = None,
     output_quality: str | None = None,
     output_fps: int | None = None,
@@ -173,6 +186,8 @@ def build_process_command(
         raise ValueError("未知的翻译方向。")
     if subtitle_font not in SUBTITLE_FONTS.values():
         raise ValueError("未知的字幕字体。")
+    if subtitle_font_size is not None and not 12 <= subtitle_font_size <= 120:
+        raise ValueError("字幕字号必须在 12 到 120 之间。")
     if processing_profile is not None and processing_profile not in PROCESSING_PROFILES:
         raise ValueError("Unknown processing profile.")
     if output_quality is not None and output_quality not in OUTPUT_QUALITIES.values():
@@ -201,6 +216,8 @@ def build_process_command(
         "--subtitle-font",
         subtitle_font,
     ]
+    if subtitle_font_size is not None:
+        command.extend(["--subtitle-font-size", str(subtitle_font_size)])
     if output_path is not None:
         command.extend(["--output-dir", str(output_path)])
     if processing_profile:
@@ -270,7 +287,7 @@ class LocalizerWindow:
         self.direction_label = tk.StringVar(value="英文 → 简体中文")
         self.subtitle_label = tk.StringVar(value="仅目标语言字幕")
         self.translation_label = tk.StringVar(value=default_translation)
-        self.font_label = tk.StringVar(value="Noto Sans CJK SC（现代无衬线，推荐）")
+        self.font_size_label = tk.StringVar(value="标准（48，推荐）")
         self.output_quality_label = tk.StringVar(value="最高质量（推荐）")
         self.output_fps_label = tk.StringVar(value="保持原视频帧率（推荐）")
         self.output_height_label = tk.StringVar(value="保持原视频分辨率（推荐）")
@@ -526,7 +543,7 @@ class LocalizerWindow:
         ttk.Label(options, text="翻译方式", style="Field.TLabel").grid(
             row=0, column=2, sticky="w", pady=(0, 5), padx=6
         )
-        ttk.Label(options, text="字幕字体", style="Field.TLabel").grid(
+        ttk.Label(options, text="字幕字号", style="Field.TLabel").grid(
             row=0, column=3, sticky="w", pady=(0, 5), padx=(6, 0)
         )
         self.direction_combo = ttk.Combobox(
@@ -551,14 +568,14 @@ class LocalizerWindow:
         self.subtitle_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
-        self.font_combo = ttk.Combobox(
+        self.font_size_combo = ttk.Combobox(
             options,
-            textvariable=self.font_label,
-            values=list(SUBTITLE_FONTS),
+            textvariable=self.font_size_label,
+            values=list(SUBTITLE_FONT_SIZES),
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.font_combo.grid(row=1, column=3, sticky="ew", padx=(6, 0))
+        self.font_size_combo.grid(row=1, column=3, sticky="ew", padx=(6, 0))
         self.translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
@@ -894,7 +911,7 @@ class LocalizerWindow:
         download_only = subtitle_mode == "download_only"
         selection_state = "disabled" if download_only else "readonly"
         self.direction_combo.configure(state=selection_state)
-        self.font_combo.configure(state=selection_state)
+        self.font_size_combo.configure(state=selection_state)
         self.translation_combo.configure(state=selection_state)
         for combo in (
             self.output_quality_combo,
@@ -949,6 +966,8 @@ class LocalizerWindow:
             raise ValueError("开始前请确认你拥有视频或已取得所需授权。")
         subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
         provider = TRANSLATION_MODES[self.translation_label.get()]
+        if subtitle_mode != "download_only" and (whisper_message := whisper_model_installation_message()):
+            raise ValueError(whisper_message)
         values = queue_input_values(self.input_value.get())
         if not values:
             raise ValueError("请粘贴 YouTube 链接或选择本地视频文件。")
@@ -958,7 +977,8 @@ class LocalizerWindow:
                 subtitle_mode=subtitle_mode,
                 translation_provider=provider,
                 translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
-                subtitle_font=SUBTITLE_FONTS[self.font_label.get()],
+                subtitle_font=DEFAULT_SUBTITLE_FONT,
+                subtitle_font_size=SUBTITLE_FONT_SIZES[self.font_size_label.get()],
                 processing_profile="auto",
                 output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
                 output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],

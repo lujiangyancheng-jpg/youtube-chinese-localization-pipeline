@@ -92,22 +92,26 @@ def _with_safe_bundled_models(config: AppConfig, warnings: list[str]) -> AppConf
     if config.subtitle_mode == "download_only":
         return config
     result = config
+    is_packaged_install = package_tier() is not None
     is_standard_package = package_tier() == "standard"
     has_medium = find_bundled_model("faster-whisper-medium") is not None
     has_small = find_bundled_model("faster-whisper-small") is not None
     if (
-        is_standard_package
-        and result.transcription.model == "medium"
-        and not has_medium
-        and has_small
+        is_packaged_install
+        and not find_bundled_model(f"faster-whisper-{result.transcription.model}")
+        and (has_small or has_medium)
     ):
+        selected_model = "small" if has_small else "medium"
         transcription = result.transcription.model_copy(
-            update={"model": "small", "beam_size": min(result.transcription.beam_size, 3)}
+            update={
+                "model": selected_model,
+                "beam_size": min(result.transcription.beam_size, 3),
+            }
         )
         result = result.model_copy(update={"transcription": transcription})
         warnings.append(
-            "Whisper Medium is not included in this installation; using bundled Whisper Small "
-            "so this job stays fully offline."
+            f"Whisper {config.transcription.model.title()} is not installed; using the installed "
+            f"Whisper {selected_model.title()} model pack so this job stays fully offline."
         )
     if (
         is_standard_package
@@ -125,6 +129,21 @@ def _with_safe_bundled_models(config: AppConfig, warnings: list[str]) -> AppConf
                 "bundled fast offline translator instead."
             )
     return result
+
+
+def _missing_whisper_model_blocker(config: AppConfig) -> str | None:
+    if config.subtitle_mode == "download_only" or package_tier() is None:
+        return None
+    if (
+        find_bundled_model("faster-whisper-small") is not None
+        or find_bundled_model("faster-whisper-medium") is not None
+    ):
+        return None
+    return (
+        "No Whisper speech-recognition model is installed. Install one model pack before "
+        "creating subtitles: Whisper Small is recommended for most computers; Whisper Medium "
+        "needs more RAM/VRAM and provides higher recognition quality."
+    )
 
 
 def _with_resource_safe_fallback(
@@ -178,6 +197,8 @@ def build_job_preflight(metadata: SourceMetadata, config: AppConfig) -> JobPrefl
     estimated = estimate_working_bytes(metadata, effective_config)
     available = _output_free_bytes(effective_config.output_directory)
     blockers: list[str] = []
+    if missing_whisper_model := _missing_whisper_model_blocker(effective_config):
+        blockers.append(missing_whisper_model)
     if available is not None and available < estimated:
         blockers.append(
             "Insufficient free space for this high-quality job: "

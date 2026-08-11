@@ -106,3 +106,17 @@ def test_preflight_blocks_a_job_that_cannot_fit_on_the_output_disk(tmp_path, mon
 
     assert not plan.ready
     assert plan.blockers
+
+
+def test_packaged_base_blocks_subtitle_jobs_without_a_whisper_model(tmp_path, monkeypatch) -> None:
+    from youtube_localizer import preflight
+
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_PACKAGE_TIER", "standard")
+    monkeypatch.setattr(preflight, "find_bundled_model", lambda _name: None)
+    monkeypatch.setattr(preflight, "detect_system_resources", lambda: SystemResources(8, 16 * 1024))
+    monkeypatch.setattr(preflight, "query_nvidia_gpus", lambda: [])
+
+    plan = build_job_preflight(_metadata(tmp_path), AppConfig())
+
+    assert not plan.ready
+    assert any("No Whisper speech-recognition model" in blocker for blocker in plan.blockers)

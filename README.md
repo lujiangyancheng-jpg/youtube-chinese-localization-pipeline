@@ -72,15 +72,19 @@ For a normal Windows installation, use the split offline setup set from `dist`: 
 `.exe` and all adjacent `.bin` files together, then run the `.exe`. Choose the package that fits
 the computer and workflow:
 
-- **Standard** includes its own Python, FFmpeg, Whisper Small, both fast offline translation
-  models, and subtitle fonts. It is the smaller choice for everyday work and automatically uses
-  the bundled models without downloading anything.
-- **Complete** additionally includes Whisper Medium, the Ollama runtime, and Qwen3:4b for local
-  paragraph-aware translation. It is the recommended no-API quality package for computers with
-  sufficient disk space and memory.
+- **Standard** includes its own Python, FFmpeg, both fast offline translation models, and
+  subtitle fonts. It is the smaller choice for everyday work.
+- **Complete** additionally includes the Ollama runtime and Qwen3:4b for local paragraph-aware
+  translation. It is the recommended no-API quality package for computers with sufficient disk
+  space and memory.
+
+Install one external Whisper model pack after installing either base package: **Small** is the
+recommended balanced choice for most computers; **Medium** needs more RAM/VRAM but improves
+recognition quality. The app detects installed model packs before a subtitle job and never
+silently downloads a model.
 
 Both packages stay offline on first use. Before every job, the app checks available storage,
-installed package tier, GPU memory, and model availability, then selects a safe bundled fallback
+installed package tier, GPU memory, and model availability, then selects a safe installed fallback
 when necessary. See [installer/README.md](installer/README.md) for reproducible build
 instructions. Chinese installation notes: [docs/INSTALLATION.zh-CN.md](docs/INSTALLATION.zh-CN.md).
 
@@ -185,7 +189,7 @@ is added. Processing settings, API fields, and the run log stay collapsed until 
 The window streams progress from the existing resumable pipeline and provides a button for
 opening the `output` folder. Closing or stopping a run keeps completed stages so the same
 input can be resumed later. There is no YouTube-caption option: both directions always transcribe
-the source audio with the local bundled Whisper model.
+the source audio with a locally installed Whisper model pack.
 
 YouTube downloads default to the highest-resolution video stream and the best available audio
 stream without restricting the source codec to MP4/M4A. Formats are ranked by resolution,
@@ -462,11 +466,11 @@ retry count. Failed runs are explicitly marked `failed`; manual runs are marked
 ## Subtitle styling
 
 Hard subtitles use ASS styling with a dark outline and bottom alignment. The offline installer
-bundles `Noto Sans CJK SC` (the default), `Noto Serif CJK SC`, and `LXGW WenKai` under the SIL Open
-Font License. The desktop app exposes all three plus the Windows `Microsoft YaHei` system font
-in its subtitle-font selector. FFmpeg loads bundled fonts directly from the application, so they
-do not need to be installed system-wide. Source-checkout users can set `subtitles.font` to any
-installed family. Render a short preview before the full video:
+bundles one carefully selected font, `Noto Sans CJK SC`, under the SIL Open Font License. The
+desktop app keeps that consistent typeface and lets users select a small, standard (48), large,
+or extra-large subtitle size. FFmpeg loads the bundled font directly from the application, so it
+does not need to be installed system-wide. Source-checkout users can still set `subtitles.font`
+to any installed family. Render a short preview before the full video:
 
 ```powershell
 python main.py preview "output\PROJECT_NAME" --start 60 --duration 15
@@ -489,9 +493,10 @@ overlong lines, and adjacent duplicate text. These findings do not alter the sub
 
 ## Optional NVIDIA/CUDA setup
 
-`faster-whisper` uses CTranslate2. The offline installer already includes the CUDA 12 runtime
-required by its bundled Whisper stack, via its bundled Ollama runtime. Version 0.5.8 registers
-that runtime before starting Whisper, so an NVIDIA GPU is used only after a real DLL preflight.
+`faster-whisper` uses CTranslate2. The Complete package includes the CUDA 12 runtime via its
+bundled Ollama runtime; the Standard package uses CPU safely unless compatible CUDA libraries are
+available on the computer. The app registers a compatible runtime before starting Whisper, so an
+NVIDIA GPU is used only after a real DLL preflight.
 Check the chosen device with:
 
 ```powershell
@@ -519,11 +524,11 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.5.8 locks the Windows offline runtime dependencies and verifies its fixed Whisper Medium
-and Whisper Small model binaries during construction. This makes the Auto, Fast, and Safe CPU
-profiles fully offline on a new machine. After installation, run **Verify YouTube Localizer Installation**
-from the Start menu to validate the packaged model/font manifest and load the desktop app without
-processing a video. The full repository verification command also starts bundled Qwen once:
+Version 0.6.0 separates Whisper Small and Medium into independently checksummed model packs.
+Install one pack after the base application; a packaged app blocks subtitle processing with a clear
+instruction when no model pack is present. After installation, run **Verify YouTube Localizer
+Installation** from the Start menu to validate the packaged base manifest and load the desktop app
+without processing a video. The full repository verification command also starts bundled Qwen once:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\installer\test_offline_install.ps1 `

@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.5.9"
+  #define AppVersion "0.6.0"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
@@ -34,6 +34,12 @@ UninstallDisplayIcon={app}\runtime\python\pythonw.exe
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName=YouTube Chinese Localizer Offline
 VersionInfoDescription=Offline English-Chinese video localization application
+
+#if PackageTier == "Standard"
+InfoBeforeFile={#SourcePath}\standard-package-notice.txt
+#else
+InfoBeforeFile={#SourcePath}\complete-package-notice.txt
+#endif
 
 [Dirs]
 Name: "{userappdata}\YouTube Chinese Localizer"

@@ -7,6 +7,7 @@ from youtube_localizer.resources import (
     bundled_fonts_directory,
     cuda_runtime_directories,
     find_bundled_model,
+    installed_whisper_models,
     nvenc_compatibility_ffmpeg,
     package_tier,
     resolve_whisper_model,
@@ -22,6 +23,14 @@ def test_bundled_model_resolution_uses_configured_model_root(tmp_path, monkeypat
     reference, local_only = resolve_whisper_model("medium")
     assert reference == str(model.resolve())
     assert local_only is True
+
+
+def test_installed_whisper_models_lists_available_model_packs(tmp_path, monkeypatch) -> None:
+    (tmp_path / "faster-whisper-small").mkdir()
+    (tmp_path / "faster-whisper-medium").mkdir()
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_MODELS", str(tmp_path))
+
+    assert installed_whisper_models() == ("small", "medium")
 
 
 def test_package_tier_uses_the_installer_marker(tmp_path, monkeypatch) -> None:
