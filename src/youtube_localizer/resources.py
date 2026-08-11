@@ -6,6 +6,24 @@ import sys
 from pathlib import Path
 
 
+def package_tier() -> str | None:
+    """Return the installed offline package tier, when this is a packaged app."""
+    configured = os.getenv("YOUTUBE_LOCALIZER_PACKAGE_TIER", "").strip().casefold()
+    if configured in {"standard", "complete"}:
+        return configured
+    for home in (os.getenv("YOUTUBE_LOCALIZER_HOME"),):
+        if not home:
+            continue
+        marker = Path(home).expanduser() / "package-tier.txt"
+        try:
+            tier = marker.read_text(encoding="utf-8").strip().casefold()
+        except OSError:
+            continue
+        if tier in {"standard", "complete"}:
+            return tier
+    return None
+
+
 def model_roots() -> list[Path]:
     """Return model roots for an installed offline bundle and a source checkout."""
     candidates: list[Path] = []

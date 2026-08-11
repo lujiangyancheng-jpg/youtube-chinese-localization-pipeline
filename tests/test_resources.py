@@ -8,6 +8,7 @@ from youtube_localizer.resources import (
     cuda_runtime_directories,
     find_bundled_model,
     nvenc_compatibility_ffmpeg,
+    package_tier,
     resolve_whisper_model,
 )
 
@@ -21,6 +22,14 @@ def test_bundled_model_resolution_uses_configured_model_root(tmp_path, monkeypat
     reference, local_only = resolve_whisper_model("medium")
     assert reference == str(model.resolve())
     assert local_only is True
+
+
+def test_package_tier_uses_the_installer_marker(tmp_path, monkeypatch) -> None:
+    (tmp_path / "package-tier.txt").write_text("standard\n", encoding="utf-8")
+    monkeypatch.delenv("YOUTUBE_LOCALIZER_PACKAGE_TIER", raising=False)
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_HOME", str(tmp_path))
+
+    assert package_tier() == "standard"
 
 
 def test_whisper_size_remains_downloadable_without_a_bundle() -> None:

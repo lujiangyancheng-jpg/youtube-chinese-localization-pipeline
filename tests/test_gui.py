@@ -181,6 +181,12 @@ def test_mode_description_explains_download_only_and_local_ai() -> None:
 
 def test_progress_updates_show_real_download_translation_and_rendering_progress() -> None:
     value, message = progress_update_from_output(
+        "INFO Preflight ready: package=standard", provider="offline"
+    ) or (None, "")
+    assert value == 2.0
+    assert "检查硬件" in message
+
+    value, message = progress_update_from_output(
         "[download] 50.0% of 20MiB", provider="ollama"
     ) or (None, "")
     assert value == 11.0

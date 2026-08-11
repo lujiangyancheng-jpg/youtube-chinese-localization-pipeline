@@ -20,6 +20,7 @@ from .download.youtube import (
 from .errors import InputValidationError, LocalizerError, ProjectExistsError
 from .logging_config import configure_logging
 from .models import ProjectPaths, SourceMetadata, SubtitleCue
+from .preflight import build_job_preflight
 from .publishing.metadata_generator import generate_publishing_assets
 from .rendering.ffmpeg import render_hardsub, render_softsub
 from .rendering.media_warnings import rendering_media_warnings
@@ -605,6 +606,30 @@ def process_pipeline(
     project, metadata, raw_info = prepare_project(value, config, resume=resume, overwrite=overwrite)
     configure_logging(project.logs / "pipeline.log", verbose=verbose)
     state = PipelineState(project.state_file, source_input=value)
+    preflight = build_job_preflight(metadata, config)
+    atomic_write_json(project.logs / "preflight.json", preflight.as_dict())
+    for warning in preflight.warnings:
+        LOGGER.warning("Preflight warning: %s", warning)
+    LOGGER.info(
+        "Preflight ready: package=%s; workspace estimate=%.1f GiB; %s; %s",
+        preflight.package,
+        preflight.estimated_working_bytes / 1024**3,
+        preflight.transcription_plan,
+        preflight.encoding_plan,
+    )
+    if preflight.warnings:
+        state.data.warnings = list(dict.fromkeys([*state.data.warnings, *preflight.warnings]))
+        state.save()
+    if preflight.blockers:
+        state.data.warnings = list(dict.fromkeys([*state.data.warnings, *preflight.blockers]))
+        state.mark_status("preflight_blocked")
+        raise LocalizerError(
+            "Preflight stopped this job. "
+            + " ".join(preflight.blockers)
+            + f" See {project.logs / 'preflight.json'}."
+        )
+    config = preflight.config
+    save_project_config(project, config)
     if not state.data.warnings:
         previous_report_path = project.logs / "report.json"
         if previous_report_path.is_file():

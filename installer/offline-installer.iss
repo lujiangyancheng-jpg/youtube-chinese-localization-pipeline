@@ -5,7 +5,10 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.5.8"
+  #define AppVersion "0.5.9"
+#endif
+#ifndef PackageTier
+  #define PackageTier "Complete"
 #endif
 
 [Setup]
@@ -21,7 +24,7 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=YouTube-Chinese-Localizer-{#AppVersion}-Offline-Setup
+OutputBaseFilename=YouTube-Chinese-Localizer-{#AppVersion}-{#PackageTier}-Offline-Setup
 Compression=none
 SolidCompression=no
 DiskSpanning=yes
@@ -38,6 +41,13 @@ Name: "{userdocs}\YouTube Localizer Projects"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+#if PackageTier == "Standard"
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\models\faster-whisper-medium"
+Type: filesandordirs; Name: "{app}\models\ollama"
+Type: filesandordirs; Name: "{app}\runtime\ollama"
+#endif
 
 [Icons]
 Name: "{autoprograms}\YouTube Chinese Localizer"; Filename: "{app}\Launch Localizer.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"

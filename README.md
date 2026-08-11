@@ -69,10 +69,20 @@ with material that you are not authorized to translate or publish.
 ## Windows quick start
 
 For a normal Windows installation, use the split offline setup set from `dist`: keep the setup
-`.exe` and all adjacent `.bin` files together, then run the `.exe`. It installs its own Python,
-FFmpeg, Ollama runtime, Whisper Medium and Whisper Small, Qwen3:4b, and both fast translation
-models. No model is downloaded on first use. See [installer/README.md](installer/README.md) for reproducible build
-instructions.
+`.exe` and all adjacent `.bin` files together, then run the `.exe`. Choose the package that fits
+the computer and workflow:
+
+- **Standard** includes its own Python, FFmpeg, Whisper Small, both fast offline translation
+  models, and subtitle fonts. It is the smaller choice for everyday work and automatically uses
+  the bundled models without downloading anything.
+- **Complete** additionally includes Whisper Medium, the Ollama runtime, and Qwen3:4b for local
+  paragraph-aware translation. It is the recommended no-API quality package for computers with
+  sufficient disk space and memory.
+
+Both packages stay offline on first use. Before every job, the app checks available storage,
+installed package tier, GPU memory, and model availability, then selects a safe bundled fallback
+when necessary. See [installer/README.md](installer/README.md) for reproducible build
+instructions. Chinese installation notes: [docs/INSTALLATION.zh-CN.md](docs/INSTALLATION.zh-CN.md).
 
 The following steps are for running directly from a source checkout:
 
@@ -111,6 +121,13 @@ application, but `faster-whisper`/CTranslate2 wheels may not yet be available fo
    ```powershell
    python main.py process "D:\Videos\owned-video.mp4"
    python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
+   ```
+
+   To inspect the effective offline model, hardware plan, and required temporary space before
+   processing, run:
+
+   ```powershell
+   python main.py preflight "D:\Videos\owned-video.mp4"
    ```
 
 The command-line default translation provider is `manual`. Add `--translation-provider

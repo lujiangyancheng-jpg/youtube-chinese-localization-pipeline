@@ -19,6 +19,7 @@ from .logging_config import configure_logging
 from .models import ProjectPaths
 from .pipeline import (
     FORCE_STEPS,
+    _inspect_input,
     _language_pair,
     _source_subtitle,
     _target_ass,
@@ -37,6 +38,7 @@ from .pipeline import (
     translate_with_local_ai,
     translate_with_offline,
 )
+from .preflight import build_job_preflight
 from .profiles import (
     OutputQuality,
     ProcessingProfile,
@@ -167,6 +169,46 @@ def _configured(
     if processing_profile:
         resolved = apply_processing_profile(resolved, processing_profile)
     return apply_output_quality(resolved, output_quality) if output_quality else resolved
+
+
+@app.command("preflight")
+def preflight_command(
+    input_value: Annotated[str, typer.Argument(help="Public YouTube URL or local video path.")],
+    config_path: ConfigOption = None,
+    output_dir: Annotated[
+        Path | None, typer.Option("--output-dir", "-o", help="Override output directory.")
+    ] = None,
+    processing_profile: Annotated[
+        ProcessingProfile | None,
+        typer.Option("--processing-profile", help="auto, fast, balanced, quality, or safe_cpu."),
+    ] = None,
+) -> None:
+    """Preview the offline model, hardware fallback, and disk requirements without starting."""
+    config = _configured(
+        config_path,
+        output_dir=output_dir,
+        processing_profile=processing_profile,
+    )
+    metadata, _ = _inspect_input(input_value)
+    plan = build_job_preflight(metadata, config)
+    table = Table("Item", "Plan")
+    table.add_row("Package", plan.package)
+    table.add_row("Workspace estimate", f"{plan.estimated_working_bytes / 1024**3:.1f} GiB")
+    table.add_row(
+        "Available space",
+        f"{plan.available_bytes / 1024**3:.1f} GiB"
+        if plan.available_bytes is not None
+        else "unavailable",
+    )
+    table.add_row("Transcription", plan.transcription_plan)
+    table.add_row("Encoding", plan.encoding_plan)
+    console.print(table)
+    for warning in plan.warnings:
+        console.print(f"[yellow]Warning:[/] {warning}")
+    for blocker in plan.blockers:
+        error_console.print(f"[red]Blocked:[/] {blocker}")
+    if plan.blockers:
+        raise typer.Exit(1)
 
 
 @app.command("process")
@@ -801,6 +843,7 @@ def gui_command() -> None:
 
 
 KNOWN_COMMANDS = {
+    "preflight",
     "process",
     "batch",
     "inspect",

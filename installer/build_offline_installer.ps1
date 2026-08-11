@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.5.8",
+    [string]$Version = "0.5.9",
+    [ValidateSet("Complete", "Standard")]
+    [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",
     [string]$PythonArchiveSha256 = "4ACBED6DD1C744B0376E3B1CF57CE906F9DC9E95E68824584C8099A63025A3C3",
     [string]$PythonInstallerSha256 = "67B5635E80EA51072B87941312D00EC8927C4DB9BA18938F7AD2D27B328B95FB",
@@ -36,6 +38,8 @@ $BuildRoot = Join-Path $ProjectRoot "build\offline-installer"
 $StageRoot = Join-Path $BuildRoot "stage"
 $CacheRoot = Join-Path $BuildRoot "download-cache"
 $DistRoot = Join-Path $ProjectRoot "dist"
+$PackageTierNormalized = $PackageTier.ToLowerInvariant()
+$IsCompletePackage = $PackageTier -eq "Complete"
 
 function Assert-ChildPath([string]$Path, [string]$Parent) {
     $resolvedPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -89,6 +93,7 @@ $ModelsRoot = Join-Path $StageRoot "models"
 $FontsRoot = Join-Path $StageRoot "fonts"
 $LicenseRoot = Join-Path $StageRoot "licenses"
 New-Item -ItemType Directory -Path $AppRoot, $RuntimeRoot, $ModelsRoot, $FontsRoot, $LicenseRoot -Force | Out-Null
+$PackageTierNormalized | Set-Content -LiteralPath (Join-Path $StageRoot "package-tier.txt") -Encoding ascii
 
 Write-Host "[1/9] Staging application source..."
 foreach ($file in @("main.py", "localizer_gui.pyw", "config.example.yaml", "LICENSE", "README.md")) {
@@ -191,11 +196,18 @@ try {
     Pop-Location
 }
 
-Write-Host "[3/9] Downloading the multilingual Whisper Medium and Small models..."
-$WhisperBundles = @(
-    @{ Name = $WhisperModel; Revision = $WhisperRevision; Sha256 = $WhisperModelSha256 },
-    @{ Name = $WhisperSmallModel; Revision = $WhisperSmallRevision; Sha256 = $WhisperSmallModelSha256 }
-)
+if ($IsCompletePackage) {
+    Write-Host "[3/9] Downloading the multilingual Whisper Medium and Small models..."
+    $WhisperBundles = @(
+        @{ Name = $WhisperModel; Revision = $WhisperRevision; Sha256 = $WhisperModelSha256 },
+        @{ Name = $WhisperSmallModel; Revision = $WhisperSmallRevision; Sha256 = $WhisperSmallModelSha256 }
+    )
+} else {
+    Write-Host "[3/9] Downloading the multilingual Whisper Small model for the Standard package..."
+    $WhisperBundles = @(
+        @{ Name = $WhisperSmallModel; Revision = $WhisperSmallRevision; Sha256 = $WhisperSmallModelSha256 }
+    )
+}
 foreach ($bundle in $WhisperBundles) {
     $WhisperDestination = Join-Path $ModelsRoot "faster-whisper-$($bundle.Name)"
     & $EmbeddedPython -c "from faster_whisper.utils import download_model; download_model('$($bundle.Name)', output_dir=r'$WhisperDestination', revision='$($bundle.Revision)')"
@@ -250,34 +262,38 @@ Download-File "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevi
 Download-File "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevision/Serif/LICENSE" (Join-Path $LicenseRoot "Noto-Serif-CJK-SC-OFL-1.1.txt")
 Download-File "https://raw.githubusercontent.com/lxgw/LxgwWenKai/$LxgwWenKaiRevision/OFL.txt" (Join-Path $LicenseRoot "LXGW-WenKai-OFL-1.1.txt")
 
-Write-Host "[6/9] Copying Qwen3:4b and downloading the standalone Ollama runtime..."
-if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $OllamaModelRoot "blobs\sha256-$($QwenModelBlobSha256.ToLowerInvariant())")).Hash -ne $QwenModelBlobSha256) {
-    throw "Qwen3:4b model checksum mismatch."
-}
-Copy-RequiredDirectory $OllamaModelRoot (Join-Path $ModelsRoot "ollama")
-$QwenLicenseBlob = Get-ChildItem -LiteralPath (Join-Path $OllamaModelRoot "blobs") -File |
-    Where-Object { $_.Length -gt 10000 -and $_.Length -lt 13000 } |
-    Select-Object -First 1
-if (-not $QwenLicenseBlob) { throw "Could not locate the Qwen Apache-2.0 license blob." }
-Copy-Item -LiteralPath $QwenLicenseBlob.FullName -Destination (Join-Path $LicenseRoot "Qwen3-Apache-2.0.txt") -Force
+if ($IsCompletePackage) {
+    Write-Host "[6/9] Copying Qwen3:4b and downloading the standalone Ollama runtime..."
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $OllamaModelRoot "blobs\sha256-$($QwenModelBlobSha256.ToLowerInvariant())")).Hash -ne $QwenModelBlobSha256) {
+        throw "Qwen3:4b model checksum mismatch."
+    }
+    Copy-RequiredDirectory $OllamaModelRoot (Join-Path $ModelsRoot "ollama")
+    $QwenLicenseBlob = Get-ChildItem -LiteralPath (Join-Path $OllamaModelRoot "blobs") -File |
+        Where-Object { $_.Length -gt 10000 -and $_.Length -lt 13000 } |
+        Select-Object -First 1
+    if (-not $QwenLicenseBlob) { throw "Could not locate the Qwen Apache-2.0 license blob." }
+    Copy-Item -LiteralPath $QwenLicenseBlob.FullName -Destination (Join-Path $LicenseRoot "Qwen3-Apache-2.0.txt") -Force
 
-$OllamaRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/ollama/ollama/releases/tags/$OllamaVersion"
-$OllamaAsset = $OllamaRelease.assets | Where-Object { $_.name -eq "ollama-windows-amd64.zip" } | Select-Object -First 1
-$ChecksumAsset = $OllamaRelease.assets | Where-Object { $_.name -eq "sha256sum.txt" } | Select-Object -First 1
-if (-not $OllamaAsset -or -not $ChecksumAsset) { throw "The latest Ollama release is missing Windows assets." }
-$OllamaArchive = Join-Path $CacheRoot "$($OllamaRelease.tag_name)-ollama-windows-amd64.zip"
-$OllamaChecksums = Join-Path $CacheRoot "$($OllamaRelease.tag_name)-sha256sum.txt"
-Download-File $OllamaAsset.browser_download_url $OllamaArchive
-Download-File $ChecksumAsset.browser_download_url $OllamaChecksums
-$ChecksumLine = Get-Content -LiteralPath $OllamaChecksums | Where-Object { $_ -match "ollama-windows-amd64\.zip" } | Select-Object -First 1
-if (-not $ChecksumLine) { throw "Ollama checksum entry is missing." }
-$ExpectedChecksum = ($ChecksumLine -split '\s+')[0].ToUpperInvariant()
-$ActualChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $OllamaArchive).Hash
-if ($ActualChecksum -ne $ExpectedChecksum) { throw "Ollama archive checksum mismatch." }
-$OllamaRoot = Join-Path $RuntimeRoot "ollama"
-New-Item -ItemType Directory -Path $OllamaRoot -Force | Out-Null
-Expand-Archive -LiteralPath $OllamaArchive -DestinationPath $OllamaRoot -Force
-Download-File "https://raw.githubusercontent.com/ollama/ollama/main/LICENSE" (Join-Path $LicenseRoot "Ollama-MIT.txt")
+    $OllamaRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/ollama/ollama/releases/tags/$OllamaVersion"
+    $OllamaAsset = $OllamaRelease.assets | Where-Object { $_.name -eq "ollama-windows-amd64.zip" } | Select-Object -First 1
+    $ChecksumAsset = $OllamaRelease.assets | Where-Object { $_.name -eq "sha256sum.txt" } | Select-Object -First 1
+    if (-not $OllamaAsset -or -not $ChecksumAsset) { throw "The latest Ollama release is missing Windows assets." }
+    $OllamaArchive = Join-Path $CacheRoot "$($OllamaRelease.tag_name)-ollama-windows-amd64.zip"
+    $OllamaChecksums = Join-Path $CacheRoot "$($OllamaRelease.tag_name)-sha256sum.txt"
+    Download-File $OllamaAsset.browser_download_url $OllamaArchive
+    Download-File $ChecksumAsset.browser_download_url $OllamaChecksums
+    $ChecksumLine = Get-Content -LiteralPath $OllamaChecksums | Where-Object { $_ -match "ollama-windows-amd64\.zip" } | Select-Object -First 1
+    if (-not $ChecksumLine) { throw "Ollama checksum entry is missing." }
+    $ExpectedChecksum = ($ChecksumLine -split '\s+')[0].ToUpperInvariant()
+    $ActualChecksum = (Get-FileHash -Algorithm SHA256 -LiteralPath $OllamaArchive).Hash
+    if ($ActualChecksum -ne $ExpectedChecksum) { throw "Ollama archive checksum mismatch." }
+    $OllamaRoot = Join-Path $RuntimeRoot "ollama"
+    New-Item -ItemType Directory -Path $OllamaRoot -Force | Out-Null
+    Expand-Archive -LiteralPath $OllamaArchive -DestinationPath $OllamaRoot -Force
+    Download-File "https://raw.githubusercontent.com/ollama/ollama/main/LICENSE" (Join-Path $LicenseRoot "Ollama-MIT.txt")
+} else {
+    Write-Host "[6/9] Standard package: Omitting Qwen3:4b and Ollama; fast offline translation remains included."
+}
 
 Write-Host "[7/9] Copying FFmpeg and its NVENC compatibility build..."
 $FfmpegExe = (Get-Command ffmpeg -ErrorAction Stop).Source
@@ -315,16 +331,20 @@ Copy-Item -LiteralPath (Join-Path $FfmpegCompatibilityRoot "README.txt") `
 
 Write-Host "[8/9] Writing a checksummed offline asset manifest..."
 $ManifestAssets = @(
-    @{ name = "faster-whisper-$WhisperModel"; path = "models/faster-whisper-$WhisperModel/model.bin"; license = "MIT" },
     @{ name = "faster-whisper-$WhisperSmallModel"; path = "models/faster-whisper-$WhisperSmallModel/model.bin"; license = "MIT" },
     @{ name = "argos-en-zh-1.9"; path = "models/translate-en_zh-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "argos-zh-en-1.9"; path = "models/translate-zh_en-1_9/model/model.bin"; license = "CC-BY-4.0" },
-    @{ name = "qwen3-4b-q4_k_m"; path = "models/ollama/blobs/sha256-3e4cb14174460404e7a233e531675303b2fbf7749c02f91864fe311ab6344e4f"; license = "Apache-2.0" }
     @{ name = "runtime-dependencies-lock"; path = "runtime-dependencies.lock"; license = "N/A" }
     @{ name = "noto-sans-cjk-sc-regular"; path = "fonts/NotoSansCJKsc-Regular.otf"; license = "OFL-1.1" }
     @{ name = "noto-serif-cjk-sc-regular"; path = "fonts/NotoSerifCJKsc-Regular.otf"; license = "OFL-1.1" }
     @{ name = "lxgw-wenkai-regular"; path = "fonts/LXGWWenKai-Regular.ttf"; license = "OFL-1.1" }
 )
+if ($IsCompletePackage) {
+    $ManifestAssets = @(
+        @{ name = "faster-whisper-$WhisperModel"; path = "models/faster-whisper-$WhisperModel/model.bin"; license = "MIT" },
+        @{ name = "qwen3-4b-q4_k_m"; path = "models/ollama/blobs/sha256-3e4cb14174460404e7a233e531675303b2fbf7749c02f91864fe311ab6344e4f"; license = "Apache-2.0" }
+    ) + $ManifestAssets
+}
 $Manifest = foreach ($asset in $ManifestAssets) {
     $assetPath = Join-Path $StageRoot ($asset.path.Replace('/', '\'))
     if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf)) { throw "Manifest asset is missing: $assetPath" }
@@ -340,6 +360,7 @@ $Manifest = foreach ($asset in $ManifestAssets) {
 [ordered]@{
     application = "YouTube Chinese Localizer"
     version = $Version
+    package_tier = $PackageTierNormalized
     generated_utc = [DateTime]::UtcNow.ToString("o")
     assets = $Manifest
 } | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $StageRoot "offline-assets.json") -Encoding utf8
@@ -357,7 +378,11 @@ if (-not $SkipSmokeTest) {
         $env:YOUTUBE_LOCALIZER_FONTS = $FontsRoot
         $env:FFMPEG_PATH = Join-Path $FfmpegBin "ffmpeg.exe"
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
-        & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; from faster_whisper import WhisperModel; refs=[resolve_whisper_model(name) for name in ('$WhisperModel', '$WhisperSmallModel')]; assert all(local for _,local in refs); assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); [WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True) for reference,_ in refs]; print('offline runtime smoke test: ok')"
+        if ($IsCompletePackage) {
+            & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; from faster_whisper import WhisperModel; refs=[resolve_whisper_model(name) for name in ('$WhisperModel', '$WhisperSmallModel')]; assert all(local for _,local in refs); assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); [WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True) for reference,_ in refs]; print('complete offline runtime smoke test: ok')"
+        } else {
+            & $EmbeddedPython -c "from youtube_localizer.resources import resolve_whisper_model, bundled_fonts_directory, nvenc_compatibility_ffmpeg; from faster_whisper import WhisperModel; reference, local=resolve_whisper_model('$WhisperSmallModel'); assert local; assert bundled_fonts_directory(); assert nvenc_compatibility_ffmpeg(); WhisperModel(reference, device='cpu', compute_type='int8', local_files_only=True); print('standard offline runtime smoke test: ok')"
+        }
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
         & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }
@@ -387,15 +412,24 @@ if (-not $SkipInstaller) {
     if (-not $Iscc) {
         throw "Inno Setup 6 is required. Install it with: winget install JRSoftware.InnoSetup"
     }
-    & $Iscc "/DStageDir=$StageRoot" "/DOutputDir=$DistRoot" "/DAppVersion=$Version" (Join-Path $PSScriptRoot "offline-installer.iss")
+    & $Iscc "/DStageDir=$StageRoot" "/DOutputDir=$DistRoot" "/DAppVersion=$Version" "/DPackageTier=$PackageTier" (Join-Path $PSScriptRoot "offline-installer.iss")
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed to build the installer." }
     $SetupFiles = Get-ChildItem -LiteralPath $DistRoot -File |
-        Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-Offline-Setup*" } |
+        Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-$PackageTier-Offline-Setup*" } |
         Sort-Object Name
     $Checksums = foreach ($file in $SetupFiles) {
         "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant(), $file.Name
     }
-    $Checksums | Set-Content -LiteralPath (Join-Path $DistRoot "SHA256SUMS.txt") -Encoding ascii
+    $Checksums | Set-Content `
+        -LiteralPath (Join-Path $DistRoot "SHA256SUMS-$Version-$PackageTierNormalized.txt") `
+        -Encoding ascii
+    $ReleaseFiles = Get-ChildItem -LiteralPath $DistRoot -File |
+        Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-*-Offline-Setup*" } |
+        Sort-Object Name
+    $ReleaseChecksums = foreach ($file in $ReleaseFiles) {
+        "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant(), $file.Name
+    }
+    $ReleaseChecksums | Set-Content -LiteralPath (Join-Path $DistRoot "SHA256SUMS.txt") -Encoding ascii
 }
 
 $StageBytes = (Get-ChildItem -LiteralPath $StageRoot -File -Recurse | Measure-Object Length -Sum).Sum

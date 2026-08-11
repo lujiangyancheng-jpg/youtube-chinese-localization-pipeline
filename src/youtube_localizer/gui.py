@@ -93,6 +93,10 @@ def queue_input_values(value: str) -> list[str]:
 
 def progress_update_from_output(line: str, *, provider: str) -> tuple[float, str] | None:
     """Map the pipeline's real progress messages to a single GUI progress percentage."""
+    if "Preflight ready:" in line:
+        return 2.0, "正在检查硬件、离线模型和磁盘空间…"
+    if "Preflight warning:" in line:
+        return 2.0, "发现兼容性提示，正在采用安全方案…"
     if download := _DOWNLOAD_PROGRESS_RE.search(line):
         percent = min(100.0, float(download.group(1)))
         if provider == "download_only":

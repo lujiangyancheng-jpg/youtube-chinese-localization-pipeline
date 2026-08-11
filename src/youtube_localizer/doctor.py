@@ -20,6 +20,7 @@ from .resources import (
     bundled_fonts_directory,
     find_bundled_model,
     ollama_executable,
+    package_tier,
     resolve_whisper_model,
 )
 from .transcription.whisper_engine import cuda_runtime_status
@@ -105,6 +106,7 @@ def run_doctor(
     offline_model_directory: Path | None = None,
     offline_zh_en_model_directory: Path | None = None,
 ) -> list[DoctorCheck]:
+    installed_tier = package_tier()
     version_ok = sys.version_info >= (3, 11)
     checks = [
         DoctorCheck(
@@ -215,18 +217,35 @@ def run_doctor(
         DoctorCheck(
             "Local AI paragraph translation",
             "ok" if ollama_path else "optional",
-            str(ollama_path) if ollama_path else "install with: winget install Ollama.Ollama",
+            (
+                str(ollama_path)
+                if ollama_path
+                else (
+                    "not included in the Standard package; fast offline translation is ready"
+                    if installed_tier == "standard"
+                    else "install with: winget install Ollama.Ollama"
+                )
+            ),
             False,
         )
     )
     checks.append(_module_check("faster_whisper", "faster-whisper", required=False))
     for whisper_name in ("medium", "small"):
         whisper_model, whisper_is_local = resolve_whisper_model(whisper_name)
+        standard_omission = installed_tier == "standard" and whisper_name == "medium"
         checks.append(
             DoctorCheck(
                 f"Whisper {whisper_name} model",
                 "ok" if whisper_is_local else "optional",
-                whisper_model if whisper_is_local else "downloads on first source-checkout use",
+                (
+                    whisper_model
+                    if whisper_is_local
+                    else (
+                        "not included in the Standard package; Small is selected automatically"
+                        if standard_omission
+                        else "downloads on first source-checkout use"
+                    )
+                ),
                 False,
             )
         )

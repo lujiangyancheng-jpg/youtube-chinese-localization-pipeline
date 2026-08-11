@@ -16,6 +16,7 @@ from youtube_localizer.utils.files import atomic_write_json, load_json
 def test_implicit_process_command() -> None:
     assert normalize_argv(["input.mp4"]) == ["process", "input.mp4"]
     assert normalize_argv(["doctor"]) == ["doctor"]
+    assert normalize_argv(["preflight", "input.mp4"]) == ["preflight", "input.mp4"]
     assert normalize_argv(["--batch", "inputs.txt"]) == ["batch", "inputs.txt"]
 
 
