@@ -49,11 +49,24 @@ def test_cli_configuration_overrides_subtitle_font_size() -> None:
     config = _configured(None, subtitle_font_size=56)
 
     assert config.subtitles.font_size == 56
+    assert config.subtitles.english_font_size == 40
 
 
 def test_cli_configuration_rejects_unsafe_subtitle_font_size() -> None:
     with pytest.raises(LocalizerError, match="12"):
         _configured(None, subtitle_font_size=121)
+
+
+def test_cli_configuration_overrides_subtitle_preview_position() -> None:
+    config = _configured(None, subtitle_position_x=33, subtitle_position_y=76)
+
+    assert config.subtitles.position_x_percent == 33
+    assert config.subtitles.position_y_percent == 76
+
+
+def test_cli_configuration_rejects_an_unsafe_subtitle_preview_position() -> None:
+    with pytest.raises(LocalizerError, match="position-x"):
+        _configured(None, subtitle_position_x=99)
 
 
 def test_cli_configuration_supports_download_only_mode() -> None:

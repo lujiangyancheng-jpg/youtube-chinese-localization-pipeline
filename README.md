@@ -472,6 +472,12 @@ or extra-large subtitle size. FFmpeg loads the bundled font directly from the ap
 does not need to be installed system-wide. Source-checkout users can still set `subtitles.font`
 to any installed family. Render a short preview before the full video:
 
+Before starting a task, the desktop app also offers **Preview and adjust subtitles**. Drag the
+subtitle box to set its horizontal/vertical position, then drag the green lower-right handle to
+set an exact size. The selected values are passed to the renderer as `position_x_percent`,
+`position_y_percent`, and `font_size`, so the final ASS and hard-subtitle video use the layout
+you approved. The preview is a layout canvas; it does not download a video or start processing.
+
 ```powershell
 python main.py preview "output\PROJECT_NAME" --start 60 --duration 15
 ```
@@ -524,11 +530,12 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.0 separates Whisper Small and Medium into independently checksummed model packs.
-Install one pack after the base application; a packaged app blocks subtitle processing with a clear
-instruction when no model pack is present. After installation, run **Verify YouTube Localizer
-Installation** from the Start menu to validate the packaged base manifest and load the desktop app
-without processing a video. The full repository verification command also starts bundled Qwen once:
+Version 0.6.1 adds the interactive subtitle layout preview, while retaining independently
+checksummed Whisper Small and Medium model packs. Install one pack after the base application; a
+packaged app blocks subtitle processing with a clear instruction when no model pack is present.
+After installation, run **Verify YouTube Localizer Installation** from the Start menu to validate
+the packaged base manifest and load the desktop app without processing a video. The full repository
+verification command also starts bundled Qwen once:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\installer\test_offline_install.ps1 `

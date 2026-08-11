@@ -118,6 +118,8 @@ class SubtitleConfig(StrictModel):
     font: str = "Noto Sans CJK SC"
     font_size: int = Field(default=48, ge=12, le=120)
     english_font_size: int = Field(default=34, ge=10, le=100)
+    position_x_percent: int = Field(default=50, ge=2, le=98)
+    position_y_percent: int = Field(default=96, ge=2, le=98)
     outline: int = Field(default=3, ge=0, le=10)
     shadow: int = Field(default=1, ge=0, le=10)
     margin_v: int = Field(default=45, ge=0, le=500)

@@ -70,6 +70,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
 
+def subtitle_position(
+    config: SubtitleConfig, video_size: tuple[int, int] | None = None
+) -> tuple[int, int]:
+    """Return the ASS canvas coordinate selected in the subtitle preview."""
+    play_res_x, play_res_y = ass_play_resolution(video_size)
+    return (
+        round(play_res_x * config.position_x_percent / 100),
+        round(play_res_y * config.position_y_percent / 100),
+    )
+
+
+def _position_override(config: SubtitleConfig, video_size: tuple[int, int] | None) -> str:
+    x, y = subtitle_position(config, video_size)
+    return rf"{{\an2\pos({x},{y})}}"
+
+
 def write_ass(
     path: Path,
     cues: list[SubtitleCue],
@@ -83,6 +99,7 @@ def write_ass(
     header = _header(config, video_size)
     events: list[str] = []
     default_style = "English" if bilingual_mode == "english" else "Chinese"
+    position = _position_override(config, video_size)
     for cue in cues:
         text = _escape_ass(cue.text)
         if bilingual_mode != "english":
@@ -91,7 +108,7 @@ def write_ass(
                 text = rf"{{\fs{fitted_font_size}}}{text}"
         events.append(
             f"Dialogue: 0,{ms_to_ass(cue.start_ms)},{ms_to_ass(cue.end_ms)},"
-            f"{default_style},,0,0,0,,{text}"
+            f"{default_style},,0,0,0,,{position}{text}"
         )
     atomic_write_text(path, header + "\n".join(events) + "\n")
 
@@ -111,6 +128,7 @@ def write_bilingual_ass(
         raise ValueError("English and Chinese cue counts differ.")
 
     events: list[str] = []
+    position = _position_override(config, video_size)
     for en, zh in zip(english, chinese, strict=True):
         if en.id != zh.id or en.start_ms != zh.start_ms or en.end_ms != zh.end_ms:
             raise ValueError(f"Bilingual cue {en.id} has mismatched IDs or timestamps.")
@@ -121,10 +139,10 @@ def write_bilingual_ass(
         if fitted_font_size < config.font_size:
             chinese_style = rf"{{\rChinese\fs{fitted_font_size}}}"
         if mode == "bilingual_en_zh":
-            text = rf"{{\rEnglish}}{en_text}\N{chinese_style}{zh_text}"
+            text = rf"{position}{{\rEnglish}}{en_text}\N{chinese_style}{zh_text}"
             default_style = "English"
         else:
-            text = rf"{chinese_style}{zh_text}\N{{\rEnglish}}{en_text}"
+            text = rf"{position}{chinese_style}{zh_text}\N{{\rEnglish}}{en_text}"
             default_style = "Chinese"
         events.append(
             f"Dialogue: 0,{ms_to_ass(en.start_ms)},{ms_to_ass(en.end_ms)},"

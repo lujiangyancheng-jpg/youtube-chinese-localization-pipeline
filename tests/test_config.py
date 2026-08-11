@@ -32,6 +32,8 @@ def test_load_configuration_overrides_defaults(tmp_path) -> None:
     assert config.translation.ollama_context_tokens == 4096
     assert config.translation.ollama_endpoint == "http://localhost:11434"
     assert config.subtitles.font == "Noto Sans CJK SC"
+    assert config.subtitles.position_x_percent == 50
+    assert config.subtitles.position_y_percent == 96
 
 
 def test_retired_youtube_subtitle_setting_is_ignored_for_saved_projects() -> None:

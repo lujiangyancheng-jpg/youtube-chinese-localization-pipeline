@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 import tkinter as tk
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
@@ -57,6 +57,10 @@ SUBTITLE_FONT_SIZES = {
     "大号（56）": 56,
     "超大（64）": 64,
 }
+SUBTITLE_POSITION_MIN = 2
+SUBTITLE_POSITION_MAX = 98
+SUBTITLE_PREVIEW_WIDTH = 16
+SUBTITLE_PREVIEW_HEIGHT = 9
 
 
 PROCESSING_PROFILES = frozenset({"auto", "fast", "balanced", "quality", "safe_cpu"})
@@ -157,6 +161,17 @@ def mode_description(subtitle_mode: str, translation_provider: str) -> str:
     return descriptions.get(translation_provider, "选择处理方式后即可开始。")
 
 
+def clamp_subtitle_preview_values(
+    x_percent: int, y_percent: int, font_size: int
+) -> tuple[int, int, int]:
+    """Keep interactive preview values valid for the ASS renderer and CLI."""
+    return (
+        max(SUBTITLE_POSITION_MIN, min(SUBTITLE_POSITION_MAX, round(x_percent))),
+        max(SUBTITLE_POSITION_MIN, min(SUBTITLE_POSITION_MAX, round(y_percent))),
+        max(12, min(120, round(font_size))),
+    )
+
+
 def build_process_command(
     input_value: str,
     *,
@@ -165,6 +180,8 @@ def build_process_command(
     translation_direction: str = "en-to-zh",
     subtitle_font: str = DEFAULT_SUBTITLE_FONT,
     subtitle_font_size: int | None = None,
+    subtitle_position_x: int | None = None,
+    subtitle_position_y: int | None = None,
     processing_profile: str | None = None,
     output_quality: str | None = None,
     output_fps: int | None = None,
@@ -188,6 +205,15 @@ def build_process_command(
         raise ValueError("未知的字幕字体。")
     if subtitle_font_size is not None and not 12 <= subtitle_font_size <= 120:
         raise ValueError("字幕字号必须在 12 到 120 之间。")
+    for position_value, label in (
+        (subtitle_position_x, "水平"),
+        (subtitle_position_y, "垂直"),
+    ):
+        if (
+            position_value is not None
+            and not SUBTITLE_POSITION_MIN <= position_value <= SUBTITLE_POSITION_MAX
+        ):
+            raise ValueError(f"字幕{label}位置必须在 2% 到 98% 之间。")
     if processing_profile is not None and processing_profile not in PROCESSING_PROFILES:
         raise ValueError("Unknown processing profile.")
     if output_quality is not None and output_quality not in OUTPUT_QUALITIES.values():
@@ -218,6 +244,10 @@ def build_process_command(
     ]
     if subtitle_font_size is not None:
         command.extend(["--subtitle-font-size", str(subtitle_font_size)])
+    if subtitle_position_x is not None:
+        command.extend(["--subtitle-position-x", str(subtitle_position_x)])
+    if subtitle_position_y is not None:
+        command.extend(["--subtitle-position-y", str(subtitle_position_y)])
     if output_path is not None:
         command.extend(["--output-dir", str(output_path)])
     if processing_profile:
@@ -257,6 +287,228 @@ def terminate_process_tree(process: subprocess.Popen[str]) -> None:
         process.terminate()
 
 
+class SubtitlePreviewDialog:
+    """Interactive layout preview that stores an ASS-compatible subtitle position."""
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        *,
+        subtitle_mode: str,
+        x_percent: int,
+        y_percent: int,
+        font_size: int,
+        on_apply: Callable[[int, int, int], None],
+    ) -> None:
+        self.on_apply = on_apply
+        self.subtitle_mode = subtitle_mode
+        self.x_percent, self.y_percent, self.font_size = clamp_subtitle_preview_values(
+            x_percent, y_percent, font_size
+        )
+        self._drag_mode: str | None = None
+        self._drag_start = (0, 0)
+        self._drag_initial = (self.x_percent, self.y_percent, self.font_size)
+        self._preview_box = (0.0, 0.0, 1.0, 1.0)
+        self._subtitle_bounds: tuple[float, float, float, float] | None = None
+
+        self.window = tk.Toplevel(parent)
+        self.window.title("字幕样式预览")
+        self.window.configure(background=APP_BACKGROUND)
+        self.window.geometry("920x650")
+        self.window.minsize(700, 520)
+        self.window.transient(parent)
+        self.window.grab_set()
+
+        body = ttk.Frame(self.window, style="App.TFrame", padding=(20, 18, 20, 16))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="拖动字幕位置与大小", style="SectionTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="拖动字幕本体调整位置；拖动右下角绿色控制点调整字号。此设置会用于最终压制。",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(3, 12))
+
+        self.canvas = tk.Canvas(
+            body,
+            background="#E9EDF1",
+            highlightthickness=0,
+            borderwidth=0,
+            cursor="fleur",
+        )
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", lambda _event: self._draw())
+        self.canvas.bind("<ButtonPress-1>", self._start_drag)
+        self.canvas.bind("<B1-Motion>", self._drag)
+        self.canvas.bind("<ButtonRelease-1>", self._stop_drag)
+
+        self.status = tk.StringVar()
+        ttk.Label(body, textvariable=self.status, style="Muted.TLabel").pack(
+            anchor="w", pady=(10, 8)
+        )
+        buttons = ttk.Frame(body, style="App.TFrame")
+        buttons.pack(fill="x")
+        ttk.Button(buttons, text="恢复默认", style="Secondary.TButton", command=self._reset).pack(
+            side="left"
+        )
+        ttk.Button(buttons, text="取消", style="Secondary.TButton", command=self.window.destroy).pack(
+            side="right"
+        )
+        ttk.Button(buttons, text="应用到任务", style="Primary.TButton", command=self._apply).pack(
+            side="right", padx=(0, 8)
+        )
+        self.window.bind("<Escape>", lambda _event: self.window.destroy())
+        self.window.after_idle(self._draw)
+
+    def _preview_sample(self) -> str:
+        if self.subtitle_mode == "bilingual_en_zh":
+            return "Natural subtitles begin with the complete idea.\n先理解完整段落，再呈现自然字幕。"
+        if self.subtitle_mode == "bilingual_zh_en":
+            return "先理解完整段落，再呈现自然字幕。\nNatural subtitles begin with the complete idea."
+        return "先理解完整段落，再呈现自然字幕。"
+
+    def _canvas_preview_box(self) -> tuple[float, float, float, float]:
+        canvas_width = max(1, self.canvas.winfo_width())
+        canvas_height = max(1, self.canvas.winfo_height())
+        unit = min((canvas_width - 24) / SUBTITLE_PREVIEW_WIDTH, (canvas_height - 24) / SUBTITLE_PREVIEW_HEIGHT)
+        width = max(320.0, unit * SUBTITLE_PREVIEW_WIDTH)
+        height = max(180.0, unit * SUBTITLE_PREVIEW_HEIGHT)
+        left = (canvas_width - width) / 2
+        top = (canvas_height - height) / 2
+        return left, top, left + width, top + height
+
+    def _draw(self) -> None:
+        if not self.window.winfo_exists():
+            return
+        self.canvas.delete("all")
+        left, top, right, bottom = self._preview_box = self._canvas_preview_box()
+        self.canvas.create_rectangle(left, top, right, bottom, fill="#151B26", outline="#273244", width=1)
+        self.canvas.create_rectangle(left, top, right, top + 48, fill="#1E2939", outline="")
+        self.canvas.create_text(
+            left + 18,
+            top + 24,
+            text="字幕布局预览 · 16:9",
+            anchor="w",
+            fill="#C7D0DC",
+            font=(UI_FONT, 10),
+        )
+        self.canvas.create_text(
+            (left + right) / 2,
+            (top + bottom) / 2 - 26,
+            text="VIDEO PREVIEW",
+            fill="#39485E",
+            font=("Segoe UI", 18, "bold"),
+        )
+        self.canvas.create_text(
+            (left + right) / 2,
+            (top + bottom) / 2 + 7,
+            text="预览仅用于调整字幕布局，不会下载视频",
+            fill="#5D6C82",
+            font=(UI_FONT, 10),
+        )
+
+        preview_width = right - left
+        preview_height = bottom - top
+        x = left + preview_width * self.x_percent / 100
+        y = top + preview_height * self.y_percent / 100
+        size = max(14, round(self.font_size * preview_width / 1920))
+        text = self._preview_sample()
+        for offset_x, offset_y in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+            self.canvas.create_text(
+                x + offset_x,
+                y + offset_y,
+                text=text,
+                anchor="s",
+                width=preview_width - 56,
+                justify="center",
+                fill="#101010",
+                font=(DEFAULT_SUBTITLE_FONT, size),
+                tags=("subtitle",),
+            )
+        subtitle = self.canvas.create_text(
+            x,
+            y,
+            text=text,
+            anchor="s",
+            width=preview_width - 56,
+            justify="center",
+            fill="#FFFFFF",
+            font=(DEFAULT_SUBTITLE_FONT, size),
+            tags=("subtitle", "subtitle_foreground"),
+        )
+        bbox = self.canvas.bbox(subtitle)
+        if bbox is not None:
+            bound_left, bound_top, bound_right, bound_bottom = (value - 7 if index < 2 else value + 7 for index, value in enumerate(bbox))
+            self._subtitle_bounds = (bound_left, bound_top, bound_right, bound_bottom)
+            self.canvas.create_rectangle(
+                bound_left,
+                bound_top,
+                bound_right,
+                bound_bottom,
+                outline=PRIMARY,
+                dash=(4, 3),
+                width=1,
+                tags=("subtitle_bounds",),
+            )
+            self.canvas.create_rectangle(
+                bound_right - 6,
+                bound_bottom - 6,
+                bound_right + 6,
+                bound_bottom + 6,
+                fill=PRIMARY,
+                outline="#FFFFFF",
+                width=1,
+                tags=("subtitle_handle",),
+            )
+        self.status.set(
+            f"位置：水平 {self.x_percent}% · 垂直 {self.y_percent}%　|　字号：{self.font_size}"
+        )
+
+    def _start_drag(self, event: tk.Event[tk.Misc]) -> None:
+        item_ids = self.canvas.find_overlapping(event.x, event.y, event.x, event.y)
+        tags = {tag for item in item_ids for tag in self.canvas.gettags(item)}
+        if "subtitle_handle" in tags:
+            self._drag_mode = "resize"
+        elif "subtitle" in tags or "subtitle_bounds" in tags:
+            self._drag_mode = "move"
+        else:
+            self._drag_mode = None
+            return
+        self._drag_start = (event.x, event.y)
+        self._drag_initial = (self.x_percent, self.y_percent, self.font_size)
+
+    def _drag(self, event: tk.Event[tk.Misc]) -> None:
+        if self._drag_mode is None:
+            return
+        left, top, right, bottom = self._preview_box
+        preview_width = max(1.0, right - left)
+        preview_height = max(1.0, bottom - top)
+        initial_x, initial_y, initial_size = self._drag_initial
+        if self._drag_mode == "move":
+            x = round((event.x - left) * 100 / preview_width)
+            y = round((event.y - top) * 100 / preview_height)
+            self.x_percent, self.y_percent, self.font_size = clamp_subtitle_preview_values(
+                x, y, initial_size
+            )
+        else:
+            delta = max(event.x - self._drag_start[0], event.y - self._drag_start[1])
+            size_change = round(delta * 1920 / preview_width)
+            self.x_percent, self.y_percent, self.font_size = clamp_subtitle_preview_values(
+                initial_x, initial_y, initial_size + size_change
+            )
+        self._draw()
+
+    def _stop_drag(self, _event: tk.Event[tk.Misc]) -> None:
+        self._drag_mode = None
+
+    def _reset(self) -> None:
+        self.x_percent, self.y_percent, self.font_size = 50, 96, 48
+        self._draw()
+
+    def _apply(self) -> None:
+        self.on_apply(self.x_percent, self.y_percent, self.font_size)
+        self.window.destroy()
+
+
 class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -288,6 +540,9 @@ class LocalizerWindow:
         self.subtitle_label = tk.StringVar(value="仅目标语言字幕")
         self.translation_label = tk.StringVar(value=default_translation)
         self.font_size_label = tk.StringVar(value="标准（48，推荐）")
+        self.subtitle_font_size_value = tk.IntVar(value=48)
+        self.subtitle_position_x = tk.IntVar(value=50)
+        self.subtitle_position_y = tk.IntVar(value=96)
         self.output_quality_label = tk.StringVar(value="最高质量（推荐）")
         self.output_fps_label = tk.StringVar(value="保持原视频帧率（推荐）")
         self.output_height_label = tk.StringVar(value="保持原视频分辨率（推荐）")
@@ -576,6 +831,7 @@ class LocalizerWindow:
             style="Modern.TCombobox",
         )
         self.font_size_combo.grid(row=1, column=3, sticky="ew", padx=(6, 0))
+        self.font_size_combo.bind("<<ComboboxSelected>>", self._select_subtitle_font_size)
         self.translation_combo = ttk.Combobox(
             options,
             textvariable=self.translation_label,
@@ -588,8 +844,15 @@ class LocalizerWindow:
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
         ttk.Label(options, textvariable=self.mode_hint, style="Muted.TLabel").grid(
-            row=2, column=0, columnspan=4, sticky="w", pady=(9, 0)
+            row=2, column=0, columnspan=3, sticky="w", pady=(9, 0)
         )
+        self.preview_button = ttk.Button(
+            options,
+            text="预览并调整字幕",
+            style="Secondary.TButton",
+            command=self._show_subtitle_preview,
+        )
+        self.preview_button.grid(row=2, column=3, sticky="e", pady=(8, 0))
 
         ttk.Label(options, text="智能加速", style="Field.TLabel").grid(
             row=3, column=0, sticky="w", pady=(12, 5), padx=(0, 6)
@@ -905,6 +1168,42 @@ class LocalizerWindow:
         if path:
             self.output_directory.set(path)
 
+    def _select_subtitle_font_size(self, _event: object | None = None) -> None:
+        selected = self.font_size_label.get()
+        if selected in SUBTITLE_FONT_SIZES:
+            self.subtitle_font_size_value.set(SUBTITLE_FONT_SIZES[selected])
+
+    def _apply_subtitle_layout(self, x_percent: int, y_percent: int, font_size: int) -> None:
+        x_percent, y_percent, font_size = clamp_subtitle_preview_values(
+            x_percent, y_percent, font_size
+        )
+        self.subtitle_position_x.set(x_percent)
+        self.subtitle_position_y.set(y_percent)
+        self.subtitle_font_size_value.set(font_size)
+        matching_label = next(
+            (label for label, value in SUBTITLE_FONT_SIZES.items() if value == font_size),
+            f"自定义（{font_size}）",
+        )
+        self.font_size_label.set(matching_label)
+        values = list(SUBTITLE_FONT_SIZES)
+        if matching_label not in values:
+            values.append(matching_label)
+        self.font_size_combo.configure(values=values)
+
+    def _show_subtitle_preview(self) -> None:
+        subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
+        if subtitle_mode == "download_only":
+            messagebox.showinfo("无需字幕预览", "当前为无字幕下载模式。", parent=self.root)
+            return
+        SubtitlePreviewDialog(
+            self.root,
+            subtitle_mode=subtitle_mode,
+            x_percent=self.subtitle_position_x.get(),
+            y_percent=self.subtitle_position_y.get(),
+            font_size=self.subtitle_font_size_value.get(),
+            on_apply=self._apply_subtitle_layout,
+        )
+
     def _update_translation_fields(self) -> None:
         subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
         provider = TRANSLATION_MODES[self.translation_label.get()]
@@ -912,6 +1211,7 @@ class LocalizerWindow:
         selection_state = "disabled" if download_only else "readonly"
         self.direction_combo.configure(state=selection_state)
         self.font_size_combo.configure(state=selection_state)
+        self.preview_button.configure(state="disabled" if download_only else "normal")
         self.translation_combo.configure(state=selection_state)
         for combo in (
             self.output_quality_combo,
@@ -978,7 +1278,9 @@ class LocalizerWindow:
                 translation_provider=provider,
                 translation_direction=TRANSLATION_DIRECTIONS[self.direction_label.get()],
                 subtitle_font=DEFAULT_SUBTITLE_FONT,
-                subtitle_font_size=SUBTITLE_FONT_SIZES[self.font_size_label.get()],
+                subtitle_font_size=self.subtitle_font_size_value.get(),
+                subtitle_position_x=self.subtitle_position_x.get(),
+                subtitle_position_y=self.subtitle_position_y.get(),
                 processing_profile="auto",
                 output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
                 output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],

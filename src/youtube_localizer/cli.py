@@ -116,6 +116,8 @@ def _configured(
     translation_direction: str | None = None,
     subtitle_font: str | None = None,
     subtitle_font_size: int | None = None,
+    subtitle_position_x: int | None = None,
+    subtitle_position_y: int | None = None,
     processing_profile: ProcessingProfile | None = None,
     output_quality: OutputQuality | None = None,
     output_height: int | None = None,
@@ -137,16 +139,28 @@ def _configured(
                 "or bilingual_zh_en."
             )
         changes["subtitle_mode"] = subtitle_mode
+    subtitle_changes: dict[str, int | str] = {}
     if subtitle_font is not None:
         normalized_font = subtitle_font.strip()
         if not normalized_font or "\n" in normalized_font or "\r" in normalized_font:
             raise LocalizerError("--subtitle-font must be a non-empty font family name.")
-        changes["subtitles"] = config.subtitles.model_copy(update={"font": normalized_font})
+        subtitle_changes["font"] = normalized_font
     if subtitle_font_size is not None:
         if not 12 <= subtitle_font_size <= 120:
             raise LocalizerError("--subtitle-font-size must be between 12 and 120.")
-        base_subtitles = changes.get("subtitles", config.subtitles)
-        changes["subtitles"] = base_subtitles.model_copy(update={"font_size": subtitle_font_size})
+        subtitle_changes["font_size"] = subtitle_font_size
+        subtitle_changes["english_font_size"] = max(10, min(100, round(subtitle_font_size * 34 / 48)))
+    for value, option, key in (
+        (subtitle_position_x, "--subtitle-position-x", "position_x_percent"),
+        (subtitle_position_y, "--subtitle-position-y", "position_y_percent"),
+    ):
+        if value is None:
+            continue
+        if not 2 <= value <= 98:
+            raise LocalizerError(f"{option} must be between 2 and 98.")
+        subtitle_changes[key] = value
+    if subtitle_changes:
+        changes["subtitles"] = config.subtitles.model_copy(update=subtitle_changes)
     render_changes: dict[str, int] = {}
     if output_height is not None:
         if not 144 <= output_height <= 4320:
@@ -258,6 +272,14 @@ def process_command(
         int | None,
         typer.Option("--subtitle-font-size", help="Chinese subtitle font size, from 12 to 120."),
     ] = None,
+    subtitle_position_x: Annotated[
+        int | None,
+        typer.Option("--subtitle-position-x", help="Subtitle horizontal position as a 2-98 percent."),
+    ] = None,
+    subtitle_position_y: Annotated[
+        int | None,
+        typer.Option("--subtitle-position-y", help="Subtitle vertical position as a 2-98 percent."),
+    ] = None,
     processing_profile: Annotated[
         ProcessingProfile | None,
         typer.Option(
@@ -302,6 +324,8 @@ def process_command(
         translation_direction=translation_direction,
         subtitle_font=subtitle_font,
         subtitle_font_size=subtitle_font_size,
+        subtitle_position_x=subtitle_position_x,
+        subtitle_position_y=subtitle_position_y,
         processing_profile=processing_profile,
         output_quality=output_quality,
         output_height=output_height,

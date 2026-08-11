@@ -48,10 +48,13 @@ translation:
 
 subtitles:
   format: ass
-  # Bundled offline choices: Noto Sans CJK SC, Noto Serif CJK SC, or LXGW WenKai.
+  # The packaged app bundles Noto Sans CJK SC for consistent rendering.
   font: Noto Sans CJK SC
   font_size: 48
   english_font_size: 34
+  # Bottom center by default. The desktop preview can set these by dragging.
+  position_x_percent: 50
+  position_y_percent: 96
   outline: 3
   shadow: 1
   margin_v: 45

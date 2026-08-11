@@ -11,6 +11,7 @@ from youtube_localizer.gui import (
     SUBTITLE_FONTS,
     api_configuration,
     build_process_command,
+    clamp_subtitle_preview_values,
     gui_process_creationflags,
     local_ai_available,
     mode_description,
@@ -126,6 +127,25 @@ def test_build_process_command_passes_smart_output_controls() -> None:
     assert command[command.index("--output-quality") + 1] == "best"
     assert command[command.index("--output-fps") + 1] == "60"
     assert command[command.index("--output-height") + 1] == "2160"
+
+
+def test_build_process_command_passes_preview_position_and_manual_size() -> None:
+    command = build_process_command(
+        "video.mp4",
+        subtitle_mode="chinese",
+        translation_provider="offline",
+        subtitle_font_size=59,
+        subtitle_position_x=37,
+        subtitle_position_y=81,
+    )
+
+    assert command[command.index("--subtitle-font-size") + 1] == "59"
+    assert command[command.index("--subtitle-position-x") + 1] == "37"
+    assert command[command.index("--subtitle-position-y") + 1] == "81"
+
+
+def test_subtitle_preview_values_are_clamped_to_renderer_safe_ranges() -> None:
+    assert clamp_subtitle_preview_values(-1, 101, 121) == (2, 98, 120)
 
 
 def test_build_process_command_passes_the_selected_output_directory() -> None:
