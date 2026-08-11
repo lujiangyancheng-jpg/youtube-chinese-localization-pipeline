@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.1",
+    [string]$Version = "0.6.2",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",

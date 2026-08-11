@@ -194,7 +194,7 @@ def build_process_command(
     """Build the argument-array command used by the desktop launcher."""
     value = input_value.strip()
     if not value:
-        raise ValueError("请粘贴 YouTube 链接或选择本地视频。")
+        raise ValueError("请粘贴 YouTube 或直接媒体链接，或选择本地视频。")
     if subtitle_mode not in SUBTITLE_MODES.values():
         raise ValueError("未知的字幕模式。")
     if translation_provider not in TRANSLATION_MODES.values():
@@ -751,7 +751,7 @@ class LocalizerWindow:
         ).pack()
         ttk.Label(
             empty_content,
-            text="复制一个链接，或复制多行链接后点击上方“粘贴链接”",
+            text="支持 YouTube、直接 MP4/M3U8 链接，或复制多行链接后点击上方“粘贴链接”",
             style="AppMuted.TLabel",
         ).pack(pady=(7, 3))
         ttk.Label(
@@ -1136,7 +1136,11 @@ class LocalizerWindow:
         try:
             value = self.root.clipboard_get().strip()
         except tk.TclError:
-            messagebox.showinfo("剪贴板为空", "请先复制 YouTube 链接。", parent=self.root)
+            messagebox.showinfo(
+                "剪贴板为空",
+                "请先复制 YouTube 链接或直接媒体地址。",
+                parent=self.root,
+            )
             return
         self.input_value.set(value)
         self.input_entry.icursor("end")
@@ -1270,7 +1274,7 @@ class LocalizerWindow:
             raise ValueError(whisper_message)
         values = queue_input_values(self.input_value.get())
         if not values:
-            raise ValueError("请粘贴 YouTube 链接或选择本地视频文件。")
+            raise ValueError("请粘贴 YouTube 或直接媒体链接，或选择本地视频文件。")
         commands = [
             build_process_command(
                 value,

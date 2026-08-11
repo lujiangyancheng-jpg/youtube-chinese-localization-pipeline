@@ -7,6 +7,12 @@ from time import monotonic
 from typing import Any
 
 from .config import AppConfig, validate_config_data
+from .download.direct import (
+    direct_media_id,
+    download_direct_media,
+    inspect_direct_media,
+    is_direct_media_url,
+)
 from .download.local import import_local, inspect_local
 from .download.metadata import metadata_from_probe, probe_media
 from .download.youtube import (
@@ -124,6 +130,10 @@ def _source_identifier(value: str) -> str:
     video_id = youtube_video_id(value)
     if video_id:
         return video_id
+    if is_direct_media_url(value):
+        return direct_media_id(value)
+    if value.lower().startswith(("http://", "https://")):
+        return hash_text(value)[:10]
     path = Path(value).expanduser().resolve()
     return hash_text(str(path).casefold())[:10]
 
@@ -147,9 +157,12 @@ def _find_existing_project(output_root: Path, identifier: str) -> Path | None:
 def _inspect_input(value: str) -> tuple[SourceMetadata, dict[str, Any] | None]:
     if is_youtube_url(value):
         return inspect_youtube(value)
+    if is_direct_media_url(value):
+        return inspect_direct_media(value)
     if value.lower().startswith(("http://", "https://")):
         raise InputValidationError(
-            "Only public YouTube URLs are supported. Other remote URLs are not downloaded."
+            "Paste a public YouTube URL, a direct MP4/WebM/MOV/MKV/M3U8/MPD media URL, or a "
+            "local video file. Playback webpages are not downloaded."
         )
     metadata = inspect_local(Path(value))
     return metadata, None
@@ -171,6 +184,11 @@ def prepare_project(
         project = ProjectPaths(existing)
         project.create()
         metadata = load_project_metadata(project)
+        if metadata.source_type == "direct_media" and is_direct_media_url(value):
+            # Signed media URLs often expire. Their stable path maps to the same project, while
+            # this refreshes the time-limited query string before the resumed download.
+            metadata = metadata.model_copy(update={"source_input": value, "source_url": value})
+            atomic_write_json(project.metadata, metadata.model_dump(mode="json"))
         save_project_config(project, config)
         return project, metadata, None
 
@@ -692,14 +710,29 @@ def process_pipeline(
                     source_video = import_local(original, project.source)
                 else:
                     if raw_info is None:
-                        refreshed, raw_info = inspect_youtube(metadata.source_input)
+                        if metadata.source_type == "youtube":
+                            refreshed, raw_info = inspect_youtube(metadata.source_input)
+                        elif metadata.source_type == "direct_media":
+                            refreshed, raw_info = inspect_direct_media(metadata.source_input)
+                        else:  # pragma: no cover - protects saved project metadata from corruption
+                            raise LocalizerError(
+                                f"Unsupported remote source type: {metadata.source_type}"
+                            )
                         metadata = refreshed
-                    download = download_youtube(
-                        metadata.source_url or metadata.source_input,
-                        raw_info,
-                        project.source,
-                        config.download,
-                    )
+                    if metadata.source_type == "youtube":
+                        download = download_youtube(
+                            metadata.source_url or metadata.source_input,
+                            raw_info,
+                            project.source,
+                            config.download,
+                        )
+                    else:
+                        download = download_direct_media(
+                            metadata.source_url or metadata.source_input,
+                            raw_info,
+                            project.source,
+                            config.download,
+                        )
                     remember_warnings(download.warnings)
                     source_video = download.video
                     try:

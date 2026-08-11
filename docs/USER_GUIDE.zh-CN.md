@@ -8,9 +8,9 @@
 
 ## 1. 软件能做什么
 
-输入一个公开的 YouTube 视频链接或本地视频文件，软件可以生成：
+输入一个公开的 YouTube 视频链接、你有权下载的直接媒体地址，或本地视频文件，软件可以生成：
 
-- 原始视频的安全副本或公开 YouTube 视频下载文件
+- 原始视频的安全副本、公开 YouTube 视频下载文件或直接媒体下载文件
 - 可选“仅下载原视频（无字幕）”，直接保存最高画质与最高质量音频的合并文件
 - 规范化的英文 SRT 字幕
 - 简体中文 SRT 字幕
@@ -24,7 +24,7 @@
 
 ```mermaid
 flowchart LR
-    A["公开 YouTube 链接或本地视频"] --> B["检查并导入视频"]
+    A["公开 YouTube 链接、直接媒体地址或本地视频"] --> B["检查并导入视频"]
     B --> J["无字幕直接下载完成"]
     B --> C["本地 faster-whisper 识别原语言"]
     C --> D["清理与合并原文字幕"]
@@ -43,7 +43,7 @@ flowchart LR
 - 许可范围允许翻译和转载的 Creative Commons 内容
 - 已取得明确翻译和再发布许可的内容
 
-本软件不会绕过 DRM、付费墙、私人视频权限、年龄限制、地区验证或平台登录控制。
+本软件不会绕过 DRM、付费墙、私人视频权限、年龄限制、地区验证或平台登录控制；不会抓取播放页、读取浏览器 Cookie 或使用登录凭据。
 
 发布前请自行核实：
 
@@ -56,10 +56,11 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.5.8-Offline-Setup.exe` 和同目录下所有 `.bin`
-分卷放在一起，双击 `.exe` 安装即可。该版本已包含 Python、FFmpeg、
-Ollama、Whisper Medium、Whisper Small、Qwen3:4b、三款开源中文字幕字体以及英中/中英两套快速翻译模型，首次
-使用不再下载模型。安装后从桌面或开始菜单打开即可。
+把 `YouTube-Chinese-Localizer-0.6.2-Standard-Offline-Setup.exe` 或
+`YouTube-Chinese-Localizer-0.6.2-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
+Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
+Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
 
 正式版安装后，可在开始菜单运行“Verify YouTube Localizer Installation”。它会核验随安装包提供的
 模型和字体大小及 SHA-256 哈希，再检查图形界面与本地模型能否加载；此快速核验不会运行较慢的 Qwen
@@ -160,7 +161,7 @@ Start Localizer.cmd
 
 打开窗口后：
 
-1. 复制并粘贴一个你有权处理的公开 YouTube 视频链接，也可以选择本地视频。
+1. 复制并粘贴一个你有权处理的公开 YouTube 视频链接、直接媒体地址，也可以选择本地视频。
 2. 如果需要字幕，选择“英文 → 简体中文”或“简体中文 → 英文”。
 3. 选择“仅下载原视频（无字幕）”、仅目标语言字幕或中英双语字幕。
 4. 如果需要字幕，软件会统一使用内置的 Noto Sans CJK SC 字体；按需要选择小号、标准、大号或超大字幕字号。
@@ -187,6 +188,10 @@ output\项目名称\rendered\english_hardsub.mp4
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
 新版已取消“使用 YouTube 字幕”选项。无论链接是否提供字幕，程序都只下载视频/音频，再用本地 Whisper 识别英文或中文。
+
+直接媒体地址必须是实际媒体文件或播放清单，例如以 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 或 `.mpd`
+结尾的公开链接；不要粘贴网站的 `play/...html` 播放页。软件不会解析播放页、读取 Cookie、模拟登录或绕过 DRM。
+带临时签名的链接失效时，重新取得同一文件的新直链、粘贴后勾选“断点续跑”即可刷新下载地址。
 
 ChatGPT Plus 不能直接作为本地程序的 API 使用，也不包含 OpenAI API 额度。
 
@@ -307,7 +312,7 @@ python main.py validate "output\Owned demo_a1b2c3d4e5"
 - 输出时长是否接近源视频
 - 视频是否可以解码
 
-## 6. 处理公开 YouTube 视频
+## 6. 处理公开 YouTube 视频或直接媒体地址
 
 确认你有权翻译和再发布后运行：
 
@@ -368,9 +373,23 @@ CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话�
 - 年龄限制视频
 - DRM 内容
 - 正在直播的内容
-- 非 YouTube 的远程 URL
+- 非 YouTube 的播放网页
+- 不是 MP4/WebM/MOV/MKV/M3U8/MPD 的远程地址
 
 本软件不会读取浏览器 Cookie，也不会绕过平台限制。
+
+### 6.1 处理你有权下载的直接媒体地址
+
+如果你已经从内容方获得了实际视频文件地址或 HLS/DASH 播放清单，可直接粘贴该 URL。例如：
+
+```powershell
+python main.py process "https://media.example.com/authorized/video.m3u8" `
+  --translation-provider offline
+```
+
+也可在桌面程序的“粘贴链接”输入框直接粘贴。支持 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 与 `.mpd`。
+这不是网页下载器：`https://example.com/play/123.html` 这类播放页会被拒绝，请向内容方取得真正的媒体地址。
+受 DRM、登录、付费或地区权限保护的流同样不能处理。
 
 ## 7. 使用 OpenAI-compatible API 自动翻译
 
@@ -540,14 +559,14 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。离线安装包已经包含 CUDA 12 运行库；v0.5.8 会在
-启动 Whisper 前自动注册这套运行库并进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
+Whisper 的设备选择与离线翻译相互独立。当前离线基础安装包已经包含 CUDA 12 运行库，并会在
+启动 Whisper 前自动注册这套运行库和进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
 运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底会根据核心数与
 内存自动保留桌面响应；需要固定行为时可把 `cpu_threads` 设为 1 到 32。离线字幕翻译的
 `offline_device: auto` 则始终稳定使用 CPU `int8`。
 
-离线安装包已包含 Whisper Medium 和 Whisper Small，首次识别不需要联网。自动、快速和安全 CPU
-档位都会在这两种已打包模型之间选择；从源码手动安装并改用其他 Whisper 尺寸时，才需要下载相应模型。
+Whisper Small 和 Whisper Medium 是独立模型包：安装基础包后按需安装其中一个，首次识别不需要联网。
+自动、快速和安全 CPU 档位会在已安装模型中选择；从源码手动安装并改用其他 Whisper 尺寸时，才需要下载相应模型。
 
 ### 视频质量
 
@@ -736,9 +755,9 @@ python -m pip install -e ".[transcription]"
 
 ### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
 
-v0.5.8 的离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+当前离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
 “GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
-GPU 任务。请安装 v0.5.8；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+GPU 任务。请安装当前版本的基础包和一个 Whisper 模型包；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
 `YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
 `transcription.device: cpu`。
 
@@ -760,6 +779,12 @@ python main.py doctor
 新版不请求 YouTube 字幕端点，因此不会再出现“字幕下载 429”。如果视频下载
 本身收到 429，请暂停一段时间，再对同一个输入勾选“断点续跑”后重试。不要连续
 反复点击开始，否则临时限制可能持续更久。
+
+### 直接媒体地址无法下载
+
+确认粘贴的是实际 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 或 `.mpd` 地址，而不是播放页。含有
+`token`、`expires`、`signature` 等查询参数的直链可能会过期；从你有权访问的内容方重新取得新直链，粘贴后勾选
+“断点续跑”。如果来源需要浏览器登录、Cookie、付费权限或 DRM，本软件不会绕过这些限制。
 
 ### FFmpeg 退出码为 `3221225786` 或 `0xC000013A`
 

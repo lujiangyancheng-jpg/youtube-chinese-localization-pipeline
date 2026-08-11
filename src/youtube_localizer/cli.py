@@ -66,8 +66,9 @@ app = typer.Typer(
     no_args_is_help=True,
     add_completion=False,
     help=(
-        "Create bilingual localization assets from public, authorized YouTube videos or local "
-        "video files. Do not use it for content you lack permission to translate/redistribute."
+        "Create bilingual localization assets from public, authorized YouTube videos, direct "
+        "media URLs, or local video files. Do not use it for content you lack permission to "
+        "download, translate, or redistribute."
     ),
 )
 console = Console()
@@ -193,7 +194,10 @@ def _configured(
 
 @app.command("preflight")
 def preflight_command(
-    input_value: Annotated[str, typer.Argument(help="Public YouTube URL or local video path.")],
+    input_value: Annotated[
+        str,
+        typer.Argument(help="Public YouTube URL, direct MP4/WebM/M3U8/MPD URL, or local video path."),
+    ],
     config_path: ConfigOption = None,
     output_dir: Annotated[
         Path | None, typer.Option("--output-dir", "-o", help="Override output directory.")
@@ -233,7 +237,10 @@ def preflight_command(
 
 @app.command("process")
 def process_command(
-    input_value: Annotated[str, typer.Argument(help="Public YouTube URL or local video path.")],
+    input_value: Annotated[
+        str,
+        typer.Argument(help="Public YouTube URL, direct MP4/WebM/M3U8/MPD URL, or local video path."),
+    ],
     config_path: ConfigOption = None,
     output_dir: Annotated[
         Path | None, typer.Option("--output-dir", "-o", help="Override output directory.")

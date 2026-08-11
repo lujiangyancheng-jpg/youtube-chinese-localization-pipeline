@@ -1,7 +1,7 @@
 # YouTube Chinese Localization Pipeline
 
 A production-oriented local Python application that localizes authorized English- or
-Chinese-language YouTube and local videos in either direction. Each reusable project contains
+Chinese-language YouTube videos, direct media URLs, and local videos in either direction. Each reusable project contains
 normalized English subtitles, Simplified Chinese subtitles, optional bilingual subtitles, and
 a validated hard-subtitled MP4. A download-only mode keeps the highest-quality merged source
 video without creating or burning subtitles.
@@ -12,6 +12,8 @@ and local translation models. YouTube caption tracks are never downloaded or con
 ChatGPT export/import remains available.
 
 > 中文用户：请阅读完整的[中文使用说明书](docs/USER_GUIDE.zh-CN.md)。
+
+> 每一版的新增、优化和修复请见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## Legal-use notice
 
@@ -25,6 +27,10 @@ Use this tool only for:
 It does not bypass DRM, paywalls, private-video controls, age gates, region/authentication
 requirements, or platform access controls. You are responsible for verifying the license,
 attribution requirements, and publishing-platform rules.
+
+For non-YouTube sources, paste only a public, direct media URL you are authorized to download
+(`.mp4`, `.webm`, `.mov`, `.mkv`, `.m3u8`, or `.mpd`). Playback webpages, browser cookies,
+login credentials, and DRM-protected streams are intentionally unsupported.
 
 ## Phase 1 capabilities
 
@@ -180,7 +186,7 @@ project folder. The streamlined downloader-style interface makes **Paste Link** 
 action, keeps the empty state distraction-free, and reveals the current task only after a video
 is added. Processing settings, API fields, and the run log stay collapsed until needed. You can then:
 
-1. paste an authorized public YouTube URL (or select a local video);
+1. paste an authorized public YouTube URL, an authorized direct media URL, or select a local video;
 2. choose **English → Simplified Chinese** or **Simplified Chinese → English**;
 3. choose target-only or bilingual subtitles;
 4. confirm that you have the required rights or permission; and
@@ -196,6 +202,12 @@ stream without restricting the source codec to MP4/M4A. Formats are ranked by re
 frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitled MP4. The
 project dependency set includes Deno and `yt-dlp-ejs`; `python main.py doctor` must report
 `yt-dlp JavaScript support: ok` so YouTube's complete format list can be discovered.
+
+An authorized direct media address can be pasted in the same field. The URL must point to the
+actual MP4/WebM/MOV/MKV file or HLS/DASH manifest (`.m3u8`/`.mpd`), not to a site playback page.
+The app does not scrape player pages, supply browser cookies, or bypass DRM. If a signed media URL
+expires, paste its refreshed direct URL and keep **resume** enabled; the project is matched by its
+stable media path rather than the temporary query string.
 
 The desktop interface offers four translation modes:
 
@@ -530,9 +542,11 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.1 adds the interactive subtitle layout preview, while retaining independently
-checksummed Whisper Small and Medium model packs. Install one pack after the base application; a
-packaged app blocks subtitle processing with a clear instruction when no model pack is present.
+Version 0.6.2 adds authorized direct MP4/WebM/MOV/MKV/HLS/DASH URL input while retaining the
+interactive subtitle layout preview and independently checksummed Whisper Small and Medium model
+packs. Install one pack after the base application; a packaged app blocks subtitle processing with
+a clear instruction when no model pack is present. See [CHANGELOG.md](CHANGELOG.md) for the
+complete per-version history.
 After installation, run **Verify YouTube Localizer Installation** from the Start menu to validate
 the packaged base manifest and load the desktop app without processing a video. The full repository
 verification command also starts bundled Qwen once:

@@ -180,12 +180,14 @@ def _run_youtube_download(url: str, options: dict[str, Any]) -> Path:
         return Path(ydl.prepare_filename(downloaded_info))
 
 
-def download_youtube(
+def download_media(
     url: str,
-    _info: dict[str, Any],
     destination_dir: Path,
     config: DownloadConfig,
-) -> YouTubeDownloadResult:
+    *,
+    source_description: str,
+) -> Path:
+    """Download one public, non-DRM media source without requesting captions."""
     destination_dir.mkdir(parents=True, exist_ok=True)
     options: dict[str, Any] = {
         "quiet": False,
@@ -213,8 +215,8 @@ def download_youtube(
         if isinstance(exc, LocalizerError):
             raise
         raise LocalizerError(
-            "yt-dlp failed to download the public video. The partial download is retained so "
-            f"a later --resume can continue it. Details: {exc}"
+            f"yt-dlp failed to download the {source_description}. The partial download is "
+            f"retained so a later --resume can continue it. Details: {exc}"
         ) from exc
 
     candidates = [
@@ -231,8 +233,24 @@ def download_youtube(
     destination = destination_dir / f"source_video{video.suffix.lower()}"
     if video != destination:
         video.replace(destination)
+    return destination
 
-    return YouTubeDownloadResult(video=destination)
+
+def download_youtube(
+    url: str,
+    _info: dict[str, Any],
+    destination_dir: Path,
+    config: DownloadConfig,
+) -> YouTubeDownloadResult:
+    """Download a public YouTube source at the configured best available quality."""
+    return YouTubeDownloadResult(
+        video=download_media(
+            url,
+            destination_dir,
+            config,
+            source_description="public YouTube video",
+        )
+    )
 
 
 def save_thumbnail(url: str, destination: Path) -> None:
