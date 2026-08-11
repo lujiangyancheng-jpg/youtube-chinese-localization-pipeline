@@ -56,8 +56,8 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.6.2-Standard-Offline-Setup.exe` 或
-`YouTube-Chinese-Localizer-0.6.2-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.6.3-Standard-Offline-Setup.exe` 或
+`YouTube-Chinese-Localizer-0.6.3-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
 Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
 Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
@@ -190,7 +190,8 @@ output\项目名称\rendered\english_hardsub.mp4
 新版已取消“使用 YouTube 字幕”选项。无论链接是否提供字幕，程序都只下载视频/音频，再用本地 Whisper 识别英文或中文。
 
 直接媒体地址必须是实际媒体文件或播放清单，例如以 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 或 `.mpd`
-结尾的公开链接；不要粘贴网站的 `play/...html` 播放页。软件不会解析播放页、读取 Cookie、模拟登录或绕过 DRM。
+结尾的公开链接；没有后缀的 CDN 直链也可以，只要服务器响应明确标识为视频/HLS/DASH。不要粘贴网站的
+`play/...html` 播放页。软件不会解析播放页、读取 Cookie、模拟登录或绕过 DRM。
 带临时签名的链接失效时，重新取得同一文件的新直链、粘贴后勾选“断点续跑”即可刷新下载地址。
 
 ChatGPT Plus 不能直接作为本地程序的 API 使用，也不包含 OpenAI API 额度。
@@ -387,8 +388,9 @@ python main.py process "https://media.example.com/authorized/video.m3u8" `
   --translation-provider offline
 ```
 
-也可在桌面程序的“粘贴链接”输入框直接粘贴。支持 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 与 `.mpd`。
-这不是网页下载器：`https://example.com/play/123.html` 这类播放页会被拒绝，请向内容方取得真正的媒体地址。
+也可在桌面程序的“粘贴链接”输入框直接粘贴。支持 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 与 `.mpd`，
+以及服务器以 `video/*`、HLS 或 DASH 标识的无后缀 CDN 直链。这不是网页下载器：
+`https://example.com/play/123.html` 这类播放页会被拒绝，请向内容方取得真正的媒体地址。
 受 DRM、登录、付费或地区权限保护的流同样不能处理。
 
 ## 7. 使用 OpenAI-compatible API 自动翻译
@@ -782,7 +784,8 @@ python main.py doctor
 
 ### 直接媒体地址无法下载
 
-确认粘贴的是实际 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 或 `.mpd` 地址，而不是播放页。含有
+确认粘贴的是实际 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8`、`.mpd` 地址，或服务器返回视频类型的无后缀
+CDN 直链，而不是播放页。含有
 `token`、`expires`、`signature` 等查询参数的直链可能会过期；从你有权访问的内容方重新取得新直链，粘贴后勾选
 “断点续跑”。如果来源需要浏览器登录、Cookie、付费权限或 DRM，本软件不会绕过这些限制。
 

@@ -10,6 +10,7 @@ from youtube_localizer.download.direct import (
     direct_media_id,
     download_direct_media,
     inspect_direct_media,
+    is_direct_media_candidate_url,
     is_direct_media_url,
 )
 from youtube_localizer.errors import InputValidationError
@@ -68,6 +69,9 @@ def test_direct_media_recognition_rejects_playback_pages_and_credentials() -> No
     assert is_direct_media_url("https://cdn.example.test/owned/master.m3u8")
     assert not is_direct_media_url("https://www.lmm85.com/play/7072_2_2.html")
     assert not is_direct_media_url("https://user:pass@cdn.example.test/owned/demo.mp4")
+    assert is_direct_media_candidate_url("https://cdn.example.test/opaque/video/resource/")
+    assert not is_direct_media_url("https://cdn.example.test/opaque/video/resource/")
+    assert not is_direct_media_candidate_url("https://www.example.test/play/123.html")
 
 
 def test_direct_media_identifier_ignores_refreshed_signed_query_values() -> None:
@@ -89,6 +93,22 @@ def test_direct_media_inspection_creates_direct_media_metadata() -> None:
     assert metadata.video_id == direct_media_id(url)
     assert metadata.title == "Authorized clip"
     assert raw["width"] == 1920
+
+
+def test_extensionless_video_url_is_verified_by_content_type_before_inspection() -> None:
+    url = "https://cdn.example.test/opaque/video/resource/"
+    with (
+        patch(
+            "youtube_localizer.download.direct._probe_direct_media_content_type",
+            return_value="video/mp4",
+        ) as probe,
+        patch("youtube_localizer.download.direct._youtube_dl", side_effect=FakeInspectionYDL),
+    ):
+        metadata, _ = inspect_direct_media(url)
+
+    probe.assert_called_once_with(url)
+    assert metadata.source_type == "direct_media"
+    assert metadata.video_id == direct_media_id(url)
 
 
 def test_resuming_a_direct_media_project_refreshes_an_expired_signed_url(tmp_path, monkeypatch) -> None:

@@ -29,8 +29,9 @@ requirements, or platform access controls. You are responsible for verifying the
 attribution requirements, and publishing-platform rules.
 
 For non-YouTube sources, paste only a public, direct media URL you are authorized to download
-(`.mp4`, `.webm`, `.mov`, `.mkv`, `.m3u8`, or `.mpd`). Playback webpages, browser cookies,
-login credentials, and DRM-protected streams are intentionally unsupported.
+(`.mp4`, `.webm`, `.mov`, `.mkv`, `.m3u8`, or `.mpd`), or an extensionless URL whose server
+explicitly identifies it as video/HLS/DASH. Playback webpages, browser cookies, login credentials,
+and DRM-protected streams are intentionally unsupported.
 
 ## Phase 1 capabilities
 
@@ -205,6 +206,7 @@ project dependency set includes Deno and `yt-dlp-ejs`; `python main.py doctor` m
 
 An authorized direct media address can be pasted in the same field. The URL must point to the
 actual MP4/WebM/MOV/MKV file or HLS/DASH manifest (`.m3u8`/`.mpd`), not to a site playback page.
+An extensionless CDN URL is also accepted when its response identifies it as video or a playlist.
 The app does not scrape player pages, supply browser cookies, or bypass DRM. If a signed media URL
 expires, paste its refreshed direct URL and keep **resume** enabled; the project is matched by its
 stable media path rather than the temporary query string.
@@ -542,11 +544,11 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.2 adds authorized direct MP4/WebM/MOV/MKV/HLS/DASH URL input while retaining the
-interactive subtitle layout preview and independently checksummed Whisper Small and Medium model
-packs. Install one pack after the base application; a packaged app blocks subtitle processing with
-a clear instruction when no model pack is present. See [CHANGELOG.md](CHANGELOG.md) for the
-complete per-version history.
+Version 0.6.3 adds validation for extensionless CDN video URLs while retaining the interactive
+subtitle layout preview and independently checksummed Whisper Small and Medium model packs. Install
+one pack after the base application; a packaged app blocks subtitle processing with a clear
+instruction when no model pack is present. See [CHANGELOG.md](CHANGELOG.md) for the complete
+per-version history.
 After installation, run **Verify YouTube Localizer Installation** from the Start menu to validate
 the packaged base manifest and load the desktop app without processing a video. The full repository
 verification command also starts bundled Qwen once:
