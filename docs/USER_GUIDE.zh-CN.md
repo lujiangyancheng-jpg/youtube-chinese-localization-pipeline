@@ -56,8 +56,8 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.6.3-Standard-Offline-Setup.exe` 或
-`YouTube-Chinese-Localizer-0.6.3-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.6.4-Standard-Offline-Setup.exe` 或
+`YouTube-Chinese-Localizer-0.6.4-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
 Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
 Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
@@ -186,6 +186,12 @@ output\项目名称\rendered\english_hardsub.mp4
 - 两种本地翻译都会应用 `glossary.yaml` 中的术语。
 - “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
+
+### 3.3 其他语种（本地 AI 或 API）
+
+现在可把英文或简体中文字幕翻译为日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语或阿拉伯语。选择这些方向后，窗口只保留“本地 AI 段落翻译并压制”和“自动翻译并压制字幕”两项：前者需要安装 Complete 包中的本地 Ollama/Qwen 模型（或自行安装能力足够的本地 Ollama 模型），后者需要填写 OpenAI-compatible API。
+
+快速离线模型、人工翻译流程和中英双语字幕排版仅用于中英互译，因此不会在这些语种方向中出现。其他语种使用“仅目标语言字幕”，例如西班牙语会生成 `subtitles/es.srt`、`subtitles/es.ass` 和 `rendered/es_hardsub.mp4`。
 
 新版已取消“使用 YouTube 字幕”选项。无论链接是否提供字幕，程序都只下载视频/音频，再用本地 Whisper 识别英文或中文。
 
@@ -509,7 +515,7 @@ transcription:
   cpu_threads: 0  # 0 会根据 CPU 核心数与内存自动选择安全线程数
 
 translation:
-  direction: en-to-zh  # en-to-zh 或 zh-to-en
+  direction: en-to-zh  # 中英互译；其他目标可用 ja、ko、es、fr、de、pt、ru、ar
   provider: ollama  # 推荐高质量本地模式；offline 为轻量快速模式
   batch_size: 40
   offline_device: auto  # 自动模式稳定使用 CPU；CUDA 需明确选择

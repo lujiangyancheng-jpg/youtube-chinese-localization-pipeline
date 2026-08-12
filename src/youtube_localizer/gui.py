@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
-from .config import default_output_directory, output_directory_advice
+from .config import default_output_directory, output_directory_advice, requires_local_ai_or_api
 from .models import ProjectPaths
 from .resources import installed_whisper_models, ollama_executable, package_tier
 from .support import create_support_bundle
@@ -42,12 +42,40 @@ SUBTITLE_MODES = {
 TRANSLATION_DIRECTIONS = {
     "英文 → 简体中文": "en-to-zh",
     "简体中文 → 英文": "zh-to-en",
+    "英文 → 日语": "en-to-ja",
+    "英文 → 韩语": "en-to-ko",
+    "英文 → 西班牙语": "en-to-es",
+    "英文 → 法语": "en-to-fr",
+    "英文 → 德语": "en-to-de",
+    "英文 → 葡萄牙语": "en-to-pt",
+    "英文 → 俄语": "en-to-ru",
+    "英文 → 阿拉伯语": "en-to-ar",
+    "简体中文 → 日语": "zh-to-ja",
+    "简体中文 → 韩语": "zh-to-ko",
+    "简体中文 → 西班牙语": "zh-to-es",
+    "简体中文 → 法语": "zh-to-fr",
+    "简体中文 → 德语": "zh-to-de",
+    "简体中文 → 葡萄牙语": "zh-to-pt",
+    "简体中文 → 俄语": "zh-to-ru",
+    "简体中文 → 阿拉伯语": "zh-to-ar",
 }
 TRANSLATION_MODES = {
     "免费模式（处理到人工翻译）": "manual",
     "本地快速翻译并压制（无需 API）": "offline",
     "本地 AI 段落翻译并压制（高质量，无 API Key）": "ollama",
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
+}
+LANGUAGE_DISPLAY_NAMES = {
+    "zh": "简体中文",
+    "en": "英文",
+    "ja": "日语",
+    "ko": "韩语",
+    "es": "西班牙语",
+    "fr": "法语",
+    "de": "德语",
+    "pt": "葡萄牙语",
+    "ru": "俄语",
+    "ar": "阿拉伯语",
 }
 DEFAULT_SUBTITLE_FONT = "Noto Sans CJK SC"
 SUBTITLE_FONTS = {"Noto Sans CJK SC（默认）": DEFAULT_SUBTITLE_FONT}
@@ -161,6 +189,12 @@ def mode_description(subtitle_mode: str, translation_provider: str) -> str:
     return descriptions.get(translation_provider, "选择处理方式后即可开始。")
 
 
+def language_name(direction: str, *, target: bool) -> str:
+    """Return the Chinese display name for either side of a direction identifier."""
+    source_code, target_code = direction.split("-to-", maxsplit=1)
+    return LANGUAGE_DISPLAY_NAMES[target_code if target else source_code]
+
+
 def clamp_subtitle_preview_values(
     x_percent: int, y_percent: int, font_size: int
 ) -> tuple[int, int, int]:
@@ -201,6 +235,16 @@ def build_process_command(
         raise ValueError("未知的翻译模式。")
     if translation_direction not in TRANSLATION_DIRECTIONS.values():
         raise ValueError("未知的翻译方向。")
+    if requires_local_ai_or_api(translation_direction) and translation_provider not in {
+        "ollama",
+        "openai-compatible",
+    }:
+        raise ValueError("其他语种仅支持本地 AI 翻译或 API 自动翻译。")
+    if (
+        requires_local_ai_or_api(translation_direction)
+        and subtitle_mode in {"bilingual_en_zh", "bilingual_zh_en"}
+    ):
+        raise ValueError("其他语种仅支持“仅目标语言字幕”，不能使用中英双语排版。")
     if subtitle_font not in SUBTITLE_FONTS.values():
         raise ValueError("未知的字幕字体。")
     if subtitle_font_size is not None and not 12 <= subtitle_font_size <= 120:
@@ -1210,6 +1254,29 @@ class LocalizerWindow:
 
     def _update_translation_fields(self) -> None:
         subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
+        direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
+        requires_capable_translator = requires_local_ai_or_api(direction)
+        allowed_modes = (
+            [label for label, value in TRANSLATION_MODES.items() if value in {"ollama", "openai-compatible"}]
+            if requires_capable_translator
+            else list(TRANSLATION_MODES)
+        )
+        self.translation_combo.configure(values=allowed_modes)
+        if self.translation_label.get() not in allowed_modes:
+            self.translation_label.set(
+                "本地 AI 段落翻译并压制（高质量，无 API Key）"
+                if local_ai_available()
+                else "自动翻译并压制字幕（需要 API）"
+            )
+        allowed_subtitle_modes = (
+            [label for label, value in SUBTITLE_MODES.items() if value in {"download_only", "chinese"}]
+            if requires_capable_translator
+            else list(SUBTITLE_MODES)
+        )
+        self.subtitle_combo.configure(values=allowed_subtitle_modes)
+        if self.subtitle_label.get() not in allowed_subtitle_modes:
+            self.subtitle_label.set("仅目标语言字幕")
+            subtitle_mode = "chinese"
         provider = TRANSLATION_MODES[self.translation_label.get()]
         download_only = subtitle_mode == "download_only"
         selection_state = "disabled" if download_only else "readonly"
@@ -1224,7 +1291,10 @@ class LocalizerWindow:
         ):
             combo.configure(state=selection_state)
         self.start_button.configure(text="开始下载" if download_only else "开始本地化")
-        self.mode_hint.set(mode_description(subtitle_mode, provider))
+        hint = mode_description(subtitle_mode, provider)
+        if requires_capable_translator and not download_only:
+            hint += " 其他语种需要本地 AI（Ollama）或 API；不支持快速离线模型。"
+        self.mode_hint.set(hint)
         if download_only:
             summary = "当前方案：最高源画质 · 最高源帧率 · 最佳音频 · 不生成字幕"
         else:
@@ -1351,13 +1421,13 @@ class LocalizerWindow:
                     "当前为英文转中文离线模式：使用本地 Whisper 识别英文，再进行英译中。\n\n"
                 )
         elif provider == "ollama":
-            target_name = "英文" if self.active_direction == "zh-to-en" else "简体中文"
+            target_name = language_name(self.active_direction, target=True)
             self._append_log(
                 f"当前为本地 AI 段落翻译：会先理解完整段落，再自然翻译成{target_name}。"
                 "不需要 API Key；离线安装包已内置本地模型。\n\n"
             )
         else:
-            target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
+            target_name = language_name(self.active_direction, target=True)
             self._append_log(f"当前为自动模式：完成翻译后会继续压制{target_name}字幕。\n\n")
         self._set_status("正在处理，请保持窗口打开", "active")
         self.progress.configure(mode="indeterminate", value=0)
@@ -1558,11 +1628,10 @@ class LocalizerWindow:
                 parent=self.root,
             )
         else:
-            target_name = "英文" if self.active_direction == "zh-to-en" else "中文"
-            output_name = (
-                "english_hardsub.mp4"
-                if self.active_direction == "zh-to-en"
-                else "chinese_hardsub.mp4"
+            target_code = self.active_direction.split("-to-", maxsplit=1)[1]
+            target_name = language_name(self.active_direction, target=True)
+            output_name = f"{target_code}_hardsub.mp4" if target_code not in {"en", "zh"} else (
+                "english_hardsub.mp4" if target_code == "en" else "chinese_hardsub.mp4"
             )
             self._set_status(f"本地化完成，已生成 {total} 个{target_name}字幕视频", "success")
             messagebox.showinfo(

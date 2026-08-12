@@ -8,11 +8,72 @@ from typing import Literal
 
 import yaml
 from dotenv import load_dotenv
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from .errors import ConfigurationError
 
 MINIMUM_OUTPUT_FREE_BYTES = 20 * 1024**3
+
+# The bundled Argos models only cover the two fast, fully offline directions below.
+# All other pairs deliberately require a capable local LLM (Ollama) or an API.
+TRANSLATION_DIRECTIONS = (
+    "en-to-zh",
+    "zh-to-en",
+    "en-to-ja",
+    "en-to-ko",
+    "en-to-es",
+    "en-to-fr",
+    "en-to-de",
+    "en-to-pt",
+    "en-to-ru",
+    "en-to-ar",
+    "zh-to-ja",
+    "zh-to-ko",
+    "zh-to-es",
+    "zh-to-fr",
+    "zh-to-de",
+    "zh-to-pt",
+    "zh-to-ru",
+    "zh-to-ar",
+)
+FAST_OFFLINE_DIRECTIONS = frozenset({"en-to-zh", "zh-to-en"})
+LOCAL_AI_ONLY_DIRECTIONS = frozenset(TRANSLATION_DIRECTIONS) - FAST_OFFLINE_DIRECTIONS
+LANGUAGE_NAMES = {
+    "zh": "Simplified Chinese",
+    "en": "English",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "ar": "Arabic",
+}
+FFMPEG_LANGUAGE_CODES = {
+    "zh": "zho",
+    "en": "eng",
+    "ja": "jpn",
+    "ko": "kor",
+    "es": "spa",
+    "fr": "fra",
+    "de": "deu",
+    "pt": "por",
+    "ru": "rus",
+    "ar": "ara",
+}
+
+
+def language_pair(direction: str) -> tuple[str, str]:
+    """Return the source and target ISO language codes for a supported direction."""
+    if direction not in TRANSLATION_DIRECTIONS:
+        raise ConfigurationError(f"Unsupported translation direction: {direction}")
+    source, target = direction.split("-to-", maxsplit=1)
+    return source, target
+
+
+def requires_local_ai_or_api(direction: str) -> bool:
+    return direction in LOCAL_AI_ONLY_DIRECTIONS
 
 
 def default_output_directory() -> Path:
@@ -84,7 +145,11 @@ class TranscriptionConfig(StrictModel):
 
 
 class TranslationConfig(StrictModel):
-    direction: Literal["en-to-zh", "zh-to-en"] = "en-to-zh"
+    direction: Literal[
+        "en-to-zh", "zh-to-en", "en-to-ja", "en-to-ko", "en-to-es", "en-to-fr",
+        "en-to-de", "en-to-pt", "en-to-ru", "en-to-ar", "zh-to-ja", "zh-to-ko",
+        "zh-to-es", "zh-to-fr", "zh-to-de", "zh-to-pt", "zh-to-ru", "zh-to-ar",
+    ] = "en-to-zh"
     provider: Literal["manual", "offline", "ollama", "openai-compatible"] = "manual"
     model: str = ""
     endpoint: str = ""
@@ -111,6 +176,18 @@ class TranslationConfig(StrictModel):
     ollama_context_tokens: int = Field(default=4096, ge=2048, le=8192)
     ollama_auto_pull: bool = True
     ollama_timeout_seconds: int = Field(default=600, ge=30, le=3600)
+
+    @model_validator(mode="after")
+    def require_capable_translator_for_extra_languages(self) -> TranslationConfig:
+        if requires_local_ai_or_api(self.direction) and self.provider not in {
+            "ollama",
+            "openai-compatible",
+        }:
+            raise ValueError(
+                "Translations to Japanese, Korean, Spanish, French, German, Portuguese, "
+                "Russian, or Arabic require the local AI (Ollama) or an OpenAI-compatible API."
+            )
+        return self
 
 
 class SubtitleConfig(StrictModel):
@@ -167,6 +244,18 @@ class AppConfig(StrictModel):
     subtitles: SubtitleConfig = SubtitleConfig()
     render: RenderConfig = RenderConfig()
     publishing: PublishingConfig = PublishingConfig()
+
+    @model_validator(mode="after")
+    def restrict_bilingual_layout_to_chinese_and_english(self) -> AppConfig:
+        if (
+            self.subtitle_mode in {"bilingual_en_zh", "bilingual_zh_en"}
+            and requires_local_ai_or_api(self.translation.direction)
+        ):
+            raise ValueError(
+                "Bilingual layouts are available only for Chinese-English translation. "
+                "Choose target-language subtitles for other languages."
+            )
+        return self
 
 
 def migrate_config_data(data: dict) -> dict:

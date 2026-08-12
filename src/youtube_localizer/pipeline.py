@@ -6,7 +6,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from .config import AppConfig, validate_config_data
+from .config import FFMPEG_LANGUAGE_CODES, AppConfig, language_pair, validate_config_data
 from .download.direct import (
     direct_media_id,
     download_direct_media,
@@ -247,32 +247,32 @@ def _video_size(metadata: SourceMetadata | None) -> tuple[int, int] | None:
 
 
 def _language_pair(config: AppConfig) -> tuple[str, str]:
-    return ("zh", "en") if config.translation.direction == "zh-to-en" else ("en", "zh")
+    return language_pair(config.translation.direction)
 
 
 def _source_subtitle(project: ProjectPaths, config: AppConfig) -> Path:
     source_code, _ = _language_pair(config)
-    return project.chinese_srt if source_code == "zh" else project.english_srt
+    return project.subtitle_srt(source_code)
 
 
 def _target_subtitle(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
-    return project.english_srt if target_code == "en" else project.chinese_srt
+    return project.subtitle_srt(target_code)
 
 
 def _target_ass(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
-    return project.english_ass if target_code == "en" else project.chinese_ass
+    return project.subtitle_ass(target_code)
 
 
 def rendered_output(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
-    return project.english_hardsub if target_code == "en" else project.chinese_hardsub
+    return project.hardsub_output(target_code)
 
 
 def softsub_output(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
-    return project.english_softsub if target_code == "en" else project.chinese_softsub
+    return project.softsub_output(target_code)
 
 
 def _write_localized_subtitles(
@@ -281,8 +281,39 @@ def _write_localized_subtitles(
     chinese: list[SubtitleCue],
     config: AppConfig,
     metadata: SourceMetadata | None = None,
+    *,
+    source_cues: list[SubtitleCue] | None = None,
+    target_cues: list[SubtitleCue] | None = None,
 ) -> tuple[list[Path], list[str]]:
     video_size = _video_size(metadata)
+    source_code, target_code = _language_pair(config)
+    if target_cues is not None:
+        # Extra language pairs have no special styling or bilingual layout.  The local LLM/API
+        # output is already projected back onto the original cue timings.
+        if config.subtitle_mode != "chinese":
+            raise LocalizerError(
+                "Bilingual subtitle layouts are available only for Chinese-English translation."
+            )
+        readable = target_cues
+        issues = []
+        if target_code == "zh":
+            readable, issues = readability_pass(
+                target_cues,
+                width=chinese_line_width(config.subtitles, video_size),
+                max_lines=config.subtitles.max_lines,
+            )
+        target_srt = _target_subtitle(project, config)
+        target_ass = _target_ass(project, config)
+        write_srt(target_srt, readable)
+        write_ass(
+            target_ass,
+            readable,
+            config.subtitles,
+            bilingual_mode="chinese" if target_code == "zh" else "english",
+            video_size=video_size,
+        )
+        return [target_srt, target_ass], [f"Cue {issue.cue_id}: {issue.message}" for issue in issues]
+
     if config.translation.direction == "zh-to-en":
         write_srt(project.english_srt, english)
         write_ass(
@@ -404,6 +435,16 @@ def translate_with_api(
             glossary=base_context.glossary,
         )
         translated.extend(provider.translate_batch(batch, batch_context))
+    if target_code not in {"en", "zh"}:
+        return _write_localized_subtitles(
+            project,
+            [],
+            [],
+            config,
+            metadata,
+            source_cues=source_cues,
+            target_cues=translated,
+        )
     english = source_cues if source_code == "en" else translated
     chinese = source_cues if source_code == "zh" else translated
     return _write_localized_subtitles(project, english, chinese, config, metadata)
@@ -460,6 +501,11 @@ def _translate_with_offline(
         target_code=target_code,
         batch_size=batch_size,
     )
+    if target_code not in {"en", "zh"}:
+        raise LocalizerError(
+            "The fast offline translator only supports English-Chinese and Chinese-English. "
+            "Choose local AI or an API for other languages."
+        )
     english = source_cues if source_code == "en" else translated
     chinese = source_cues if source_code == "zh" else translated
     return _write_localized_subtitles(project, english, chinese, config, metadata)
@@ -519,6 +565,16 @@ def _translate_with_local_ai(
         )
         translated.extend(paragraph_cues)
         next_id += len(paragraph_cues)
+    if target_code not in {"en", "zh"}:
+        return _write_localized_subtitles(
+            project,
+            [],
+            [],
+            config,
+            metadata,
+            source_cues=source_cues,
+            target_cues=translated,
+        )
     english = source_cues if source_code == "en" else translated
     chinese = source_cues if source_code == "zh" else translated
     return _write_localized_subtitles(project, english, chinese, config, metadata)
@@ -531,6 +587,7 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
             "change subtitle_mode before rendering."
         )
     metadata = load_project_metadata(project)
+    source_code, target_code = _language_pair(config)
     for warning in rendering_media_warnings(metadata):
         LOGGER.warning("%s", warning)
     source = find_source_video(project)
@@ -538,7 +595,7 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
         subtitle = _target_ass(project, config)
         if not subtitle.is_file():
             target = parse_subtitle(_target_subtitle(project, config))
-            target_mode = "english" if config.translation.direction == "zh-to-en" else "chinese"
+            target_mode = "chinese" if target_code == "zh" else "english"
             write_ass(
                 subtitle,
                 target,
@@ -547,6 +604,10 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
                 video_size=_video_size(metadata),
             )
     else:
+        if {source_code, target_code} != {"en", "zh"}:
+            raise LocalizerError(
+                "Bilingual subtitle layouts are available only for Chinese-English translation."
+            )
         subtitle = project.bilingual_ass
         if not subtitle.is_file():
             english = parse_subtitle(project.english_srt)
@@ -554,7 +615,7 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
             english, chinese = align_bilingual_tracks(
                 english,
                 chinese,
-                reference_language=("en" if config.translation.direction == "zh-to-en" else "zh"),
+                reference_language=target_code,
             )
             write_bilingual_ass(
                 subtitle,
@@ -596,7 +657,7 @@ def render_softsub_project(project: ProjectPaths, config: AppConfig) -> Path:
         find_source_video(project),
         subtitle,
         output,
-        language="eng" if target_code == "en" else "zho",
+        language=FFMPEG_LANGUAGE_CODES[target_code],
     )
     validate_rendered_video(output, expected_duration=metadata.duration)
     return output
@@ -886,6 +947,9 @@ def process_pipeline(
                 project.temp / "manual_translations.json",
                 project.chinese_hardsub,
                 project.english_hardsub,
+                _target_ass(project, config),
+                rendered_output(project, config),
+                softsub_output(project, config),
             ]
             if english_changed:
                 stale_files.append(project.chinese_srt)
@@ -998,13 +1062,23 @@ def process_pipeline(
                 step_outputs.extend(translated_outputs)
                 remember_warnings(translation_warnings)
 
-        localized_outputs, localized_warnings = _write_localized_subtitles(
-            project,
-            parse_subtitle(project.english_srt) if project.english_srt.is_file() else [],
-            parse_subtitle(project.chinese_srt),
-            config,
-            metadata,
-        )
+        if target_code in {"en", "zh"}:
+            localized_outputs, localized_warnings = _write_localized_subtitles(
+                project,
+                parse_subtitle(project.english_srt) if project.english_srt.is_file() else [],
+                parse_subtitle(project.chinese_srt),
+                config,
+                metadata,
+            )
+        else:
+            localized_outputs, localized_warnings = _write_localized_subtitles(
+                project,
+                [],
+                [],
+                config,
+                metadata,
+                target_cues=parse_subtitle(_target_subtitle(project, config)),
+            )
         outputs.extend(localized_outputs)
         remember_warnings(localized_warnings)
 

@@ -24,7 +24,7 @@ transcription:
   word_timestamps: true
 
 translation:
-  direction: en-to-zh  # en-to-zh or zh-to-en
+  direction: en-to-zh  # en-to-zh / zh-to-en; other targets: ja, ko, es, fr, de, pt, ru, ar
   provider: manual  # manual, offline, ollama, or openai-compatible
   model: ""
   endpoint: ""

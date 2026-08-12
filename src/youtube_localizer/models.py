@@ -157,6 +157,39 @@ class ProjectPaths:
     def english_softsub(self) -> Path:
         return self.rendered / "english_softsub.mp4"
 
+    def subtitle_srt(self, language_code: str) -> Path:
+        """Return the stable subtitle path for a target language.
+
+        Keep the legacy Chinese and English names so existing projects remain resumable.
+        Other languages use their ISO code, for example ``subtitles/es.srt``.
+        """
+        if language_code == "en":
+            return self.english_srt
+        if language_code == "zh":
+            return self.chinese_srt
+        return self.subtitles / f"{language_code}.srt"
+
+    def subtitle_ass(self, language_code: str) -> Path:
+        if language_code == "en":
+            return self.english_ass
+        if language_code == "zh":
+            return self.chinese_ass
+        return self.subtitles / f"{language_code}.ass"
+
+    def hardsub_output(self, language_code: str) -> Path:
+        if language_code == "en":
+            return self.english_hardsub
+        if language_code == "zh":
+            return self.chinese_hardsub
+        return self.rendered / f"{language_code}_hardsub.mp4"
+
+    def softsub_output(self, language_code: str) -> Path:
+        if language_code == "en":
+            return self.english_softsub
+        if language_code == "zh":
+            return self.chinese_softsub
+        return self.rendered / f"{language_code}_softsub.mp4"
+
     @property
     def state_file(self) -> Path:
         return self.root / "pipeline_state.json"

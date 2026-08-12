@@ -6,7 +6,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .config import AppConfig, output_directory_advice
+from .config import FAST_OFFLINE_DIRECTIONS, AppConfig, language_pair, output_directory_advice
 from .hardware import (
     NvidiaGPU,
     SystemResources,
@@ -117,9 +117,9 @@ def _with_safe_bundled_models(config: AppConfig, warnings: list[str]) -> AppConf
         is_standard_package
         and result.translation.provider == "ollama"
         and find_bundled_model("ollama") is None
+        and result.translation.direction in FAST_OFFLINE_DIRECTIONS
     ):
-        source_code = "zh" if result.translation.direction == "zh-to-en" else "en"
-        target_code = "en" if source_code == "zh" else "zh"
+        source_code, target_code = language_pair(result.translation.direction)
         model_name = f"translate-{source_code}_{target_code}-1_9"
         if find_bundled_model(model_name) is not None:
             translation = result.translation.model_copy(update={"provider": "offline"})

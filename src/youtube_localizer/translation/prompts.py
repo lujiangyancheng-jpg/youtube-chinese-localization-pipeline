@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from ..config import LANGUAGE_NAMES
 from .base import TranslationContext
 
 
 def translation_rules(source_code: str = "en", target_code: str = "zh") -> str:
-    source_name = "English" if source_code == "en" else "Simplified Chinese"
-    target_name = "English" if target_code == "en" else "natural Simplified Chinese"
+    source_name = LANGUAGE_NAMES.get(source_code, source_code)
+    target_name = f"natural {LANGUAGE_NAMES.get(target_code, target_code)}"
     return f"""Translate every {source_name} subtitle cue into {target_name}.
 Return every cue exactly once. Preserve each id, start, and end exactly.
 Do not omit, summarize, invent, censor, or add explanatory notes.

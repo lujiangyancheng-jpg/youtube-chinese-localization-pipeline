@@ -8,8 +8,10 @@ video without creating or burning subtitles.
 
 The pipeline is resumable, keeps intermediate files, never uploads content, and can complete
 English↔Chinese localization without an API by using local multilingual Whisper transcription
-and local translation models. YouTube caption tracks are never downloaded or consumed. Manual
-ChatGPT export/import remains available.
+and local translation models. It can also translate English or Simplified Chinese into Japanese,
+Korean, Spanish, French, German, Portuguese, Russian, or Arabic through a local LLM or an API.
+YouTube caption tracks are never downloaded or consumed. Manual ChatGPT export/import remains
+available for the Chinese-English workflow.
 
 > 中文用户：请阅读完整的[中文使用说明书](docs/USER_GUIDE.zh-CN.md)。
 
@@ -188,7 +190,7 @@ action, keeps the empty state distraction-free, and reveals the current task onl
 is added. Processing settings, API fields, and the run log stay collapsed until needed. You can then:
 
 1. paste an authorized public YouTube URL, an authorized direct media URL, or select a local video;
-2. choose **English → Simplified Chinese** or **Simplified Chinese → English**;
+2. choose an English/Chinese source and its target language;
 3. choose target-only or bilingual subtitles;
 4. confirm that you have the required rights or permission; and
 5. click **开始本地化**.
@@ -231,6 +233,12 @@ The desktop interface offers four translation modes:
   endpoint and model settings may be recorded in the local project's resolved configuration
   so an interrupted run can be resumed.
 
+For Japanese, Korean, Spanish, French, German, Portuguese, Russian, and Arabic output, choose
+**Local AI paragraph mode** (a capable local Ollama model is required) or **API automatic mode**.
+The fast bundled models and the Chinese-English bilingual layouts intentionally remain limited to
+English↔Simplified Chinese. Extra-language jobs create target-only subtitle files such as
+`subtitles/es.srt`, `subtitles/es.ass`, and `rendered/es_hardsub.mp4`.
+
 ChatGPT Plus cannot be used by the local program as an API and does not include API credits.
 The interface can also be opened from PowerShell with:
 
@@ -250,6 +258,10 @@ python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
 # Higher-quality local paragraph translation; no cloud API or API key.
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
   --translation-provider ollama
+
+# Chinese speech to Spanish subtitles using a local Ollama model.
+python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
+  --translation-direction zh-to-es --translation-provider ollama
 ```
 
 The offline models are stored under
@@ -373,7 +385,7 @@ transcription:
   word_timestamps: true
 
 translation:
-  direction: en-to-zh   # en-to-zh or zh-to-en
+  direction: en-to-zh   # en-to-zh / zh-to-en; extra targets: ja, ko, es, fr, de, pt, ru, ar
   provider: ollama      # manual, offline, ollama, or openai-compatible
   batch_size: 40
   offline_device: auto  # auto uses reliable CPU; cuda must be selected explicitly
@@ -544,10 +556,10 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.3 adds validation for extensionless CDN video URLs while retaining the interactive
-subtitle layout preview and independently checksummed Whisper Small and Medium model packs. Install
-one pack after the base application; a packaged app blocks subtitle processing with a clear
-instruction when no model pack is present. See [CHANGELOG.md](CHANGELOG.md) for the complete
+Version 0.6.4 adds local-AI/API-only translation paths from English or Simplified Chinese to eight
+additional target languages, while retaining extensionless CDN video URL validation and the
+interactive subtitle layout preview. Install one Whisper pack after the base application; a
+packaged app blocks subtitle processing with a clear instruction when no model pack is present. See [CHANGELOG.md](CHANGELOG.md) for the complete
 per-version history.
 After installation, run **Verify YouTube Localizer Installation** from the Start menu to validate
 the packaged base manifest and load the desktop app without processing a video. The full repository

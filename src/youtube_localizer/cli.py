@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
-from .config import AppConfig, load_config
+from .config import TRANSLATION_DIRECTIONS, AppConfig, load_config
 from .doctor import run_doctor
 from .errors import LocalizerError
 from .logging_config import configure_logging
@@ -181,15 +181,22 @@ def _configured(
             )
         translation_changes["provider"] = translation_provider
     if translation_direction:
-        if translation_direction not in {"en-to-zh", "zh-to-en"}:
-            raise LocalizerError("--translation-direction must be en-to-zh or zh-to-en.")
+        if translation_direction not in TRANSLATION_DIRECTIONS:
+            raise LocalizerError(
+                "--translation-direction must be one of: "
+                + ", ".join(TRANSLATION_DIRECTIONS)
+                + "."
+            )
         translation_changes["direction"] = translation_direction
     if translation_changes:
         changes["translation"] = config.translation.model_copy(update=translation_changes)
     resolved = config.model_copy(update=changes)
     if processing_profile:
         resolved = apply_processing_profile(resolved, processing_profile)
-    return apply_output_quality(resolved, output_quality) if output_quality else resolved
+    resolved = apply_output_quality(resolved, output_quality) if output_quality else resolved
+    # model_copy intentionally skips Pydantic validation; validate CLI overrides before a job
+    # starts so unsupported language/provider combinations fail immediately.
+    return AppConfig.model_validate(resolved.model_dump())
 
 
 @app.command("preflight")
@@ -263,7 +270,7 @@ def process_command(
         str | None,
         typer.Option(
             "--translation-direction",
-            help="en-to-zh or zh-to-en.",
+            help="en-to-zh, zh-to-en, or English/Chinese to ja, ko, es, fr, de, pt, ru, ar.",
         ),
     ] = None,
     subtitle_font: Annotated[

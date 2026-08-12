@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from ..config import LANGUAGE_NAMES
 from ..errors import LocalizerError
 from ..models import SubtitleCue
 from ..resources import bundled_ollama_models, ollama_executable
@@ -175,8 +176,8 @@ class LocalOllamaProvider(TranslationProvider):
         *,
         correction: str = "",
     ) -> list[dict[str, str]]:
-        source_name = "Simplified Chinese" if self.source_code == "zh" else "English"
-        target_name = "natural English" if self.target_code == "en" else "natural Simplified Chinese"
+        source_name = LANGUAGE_NAMES.get(self.source_code, self.source_code)
+        target_name = f"natural {LANGUAGE_NAMES.get(self.target_code, self.target_code)}"
         glossary = (
             "\nRequired terminology (use these target forms exactly):\n"
             + json.dumps(context.glossary, ensure_ascii=False)
