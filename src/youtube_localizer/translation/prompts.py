@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+from ..config import LANGUAGE_NAMES
 from .base import TranslationContext
 
-TRANSLATION_RULES = """Translate every English subtitle cue into natural Simplified Chinese.
+
+def translation_rules(source_code: str = "en", target_code: str = "zh") -> str:
+    source_name = LANGUAGE_NAMES.get(source_code, source_code)
+    target_name = f"natural {LANGUAGE_NAMES.get(target_code, target_code)}"
+    return f"""Translate every {source_name} subtitle cue into {target_name}.
 Return every cue exactly once. Preserve each id, start, and end exactly.
 Do not omit, summarize, invent, censor, or add explanatory notes.
 Do not translate URLs, code, commands, paths, or variable names.
 Preserve numbers and units accurately. Keep uncertain names in Latin script.
-Use concise, spoken Chinese suitable for subtitles and keep terminology consistent.
-Output JSONL only: one JSON object per line with keys id, start, end, en, zh."""
+Use concise, natural spoken language suitable for subtitles and keep terminology consistent.
+Output JSONL only: one JSON object per line with keys id, start, end, {source_code}, {target_code}."""
+
+
+TRANSLATION_RULES = translation_rules()
 
 
 def context_prompt(context: TranslationContext) -> str:

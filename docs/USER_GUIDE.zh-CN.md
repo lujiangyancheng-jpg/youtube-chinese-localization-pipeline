@@ -8,9 +8,10 @@
 
 ## 1. 软件能做什么
 
-输入一个公开的 YouTube 视频链接或本地视频文件，软件可以生成：
+输入一个公开的 YouTube 视频链接、你有权下载的直接媒体地址，或本地视频文件，软件可以生成：
 
-- 原始视频的安全副本或公开 YouTube 视频下载文件
+- 原始视频的安全副本、公开 YouTube 视频下载文件或直接媒体下载文件
+- 可选“仅下载原视频（无字幕）”，直接保存最高画质与最高质量音频的合并文件
 - 规范化的英文 SRT 字幕
 - 简体中文 SRT 字幕
 - 可选的中英双语字幕
@@ -23,12 +24,11 @@
 
 ```mermaid
 flowchart LR
-    A["公开 YouTube 链接或本地视频"] --> B["检查并导入视频"]
-    B --> C{"有可用英文字幕？"}
-    C -- "有" --> D["清理英文字幕"]
-    C -- "没有" --> E["faster-whisper 英文转录"]
-    E --> D
-    D --> F["人工翻译或 API 翻译"]
+    A["公开 YouTube 链接、直接媒体地址或本地视频"] --> B["检查并导入视频"]
+    B --> J["无字幕直接下载完成"]
+    B --> C["本地 faster-whisper 识别原语言"]
+    C --> D["清理与合并原文字幕"]
+    D --> F["本地或 API 翻译"]
     F --> G["生成中文/双语字幕"]
     G --> H["FFmpeg 渲染 MP4"]
     H --> I["验证并生成报告"]
@@ -43,7 +43,7 @@ flowchart LR
 - 许可范围允许翻译和转载的 Creative Commons 内容
 - 已取得明确翻译和再发布许可的内容
 
-本软件不会绕过 DRM、付费墙、私人视频权限、年龄限制、地区验证或平台登录控制。
+本软件不会绕过 DRM、付费墙、私人视频权限、年龄限制、地区验证或平台登录控制；不会抓取播放页、读取浏览器 Cookie 或使用登录凭据。
 
 发布前请自行核实：
 
@@ -53,6 +53,20 @@ flowchart LR
 - 发布平台是否有额外规则
 
 ## 3. Windows 快速安装
+
+### 3.0 推荐：离线安装包
+
+把 `YouTube-Chinese-Localizer-0.6.5-Standard-Offline-Setup.exe` 或
+`YouTube-Chinese-Localizer-0.6.5-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
+Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
+Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
+
+正式版安装后，可在开始菜单运行“Verify YouTube Localizer Installation”。它会核验随安装包提供的
+模型和字体大小及 SHA-256 哈希，再检查图形界面与本地模型能否加载；此快速核验不会运行较慢的 Qwen
+推理。
+
+下面 3.1–3.6 是从 GitHub 源码手动安装时才需要的步骤。
 
 ### 3.1 安装 Git
 
@@ -109,13 +123,7 @@ FFmpeg 必须包含 `ass`/`subtitles`（libass）字幕滤镜。
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
-python -m pip install -e ".[transcription]"
-```
-
-如果只处理已经带英文字幕的视频，不需要 Whisper：
-
-```powershell
-python -m pip install -e .
+python -m pip install -e ".[transcription,offline-translation]"
 ```
 
 ### 3.6 检查环境
@@ -130,9 +138,69 @@ python main.py doctor
 - FFmpeg：`ok`
 - ffprobe：`ok`
 - yt-dlp：`ok`
+- yt-dlp JavaScript support：`ok`（Deno 与 yt-dlp-ejs 均已安装）
 - faster-whisper：`ok` 或 `optional`
+- Offline translation runtime：`ok`
+- Offline English→Chinese model：离线安装包中应为 `ok`
+- Offline Chinese-to-English model：离线安装包中应为 `ok`
 - 输出目录：`ok`
 - 中文字体：`ok` 或可接受的警告
+
+### 3.7 双击打开“粘贴链接”界面
+
+新版桌面界面采用简洁的下载器式布局：“粘贴链接”是顶部最醒目的主操作，
+尚未添加视频时只显示两步提示；粘贴后才出现当前任务、授权确认和开始按钮。一次复制多行
+链接也可以：每行一个链接，程序会把它们加入安全队列，按顺序处理，并在每一项之间保留断点续跑。
+处理设置、API 参数与运行记录均按需展开，避免第一次使用时被大量选项干扰。
+
+安装和环境检查完成后，在项目目录中双击：
+
+```text
+Start Localizer.cmd
+```
+
+打开窗口后：
+
+1. 复制并粘贴一个你有权处理的公开 YouTube 视频链接、直接媒体地址，也可以选择本地视频。
+2. 如果需要字幕，选择“英文 → 简体中文”或“简体中文 → 英文”。
+3. 选择“仅下载原视频（无字幕）”、仅目标语言字幕或中英双语字幕。
+4. 如果需要字幕，软件会统一使用内置的 Noto Sans CJK SC 字体；按需要选择小号、标准、大号或超大字幕字号。
+5. 如果需要字幕，选择翻译方式；然后确认授权。
+6. 点击“开始本地化”。
+
+在“调整处理设置”里点击“预览并调整字幕”，可打开 16:9 布局预览。直接拖动字幕框可调整位置，拖动右下角绿色控制点可自由调整字号；点击“应用到任务”后，位置和字号会写入最终 ASS 字幕与压制视频。预览不下载视频，也不会开始处理任务。
+
+窗口会实时显示下载、Whisper 本地转录、翻译和视频压制进度。点击“打开输出文件夹”可以查看处理项目。英译中和中译英的最终视频分别位于：
+
+```text
+output\项目名称\rendered\chinese_hardsub.mp4
+output\项目名称\rendered\english_hardsub.mp4
+```
+
+翻译方式说明：
+
+- “仅下载原视频（无字幕）”始终使用最高画质视频和最高质量音频并自动合并，完成后直接停下，不运行 Whisper、翻译或字幕压制；文件位于项目的 `source` 文件夹。
+- “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
+- “本地快速翻译并压制”不需要 API，会使用约 85 MB 的轻量模型在本机完成翻译。它现在会先合并完整段落再翻译，适合速度优先或配置较低的电脑。
+- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。离线安装包自带 Ollama 和 `qwen3:4b`，先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
+- 两种本地翻译都会应用 `glossary.yaml` 中的术语。
+- “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
+- 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
+
+### 3.3 其他语种（本地 AI 或 API）
+
+现在可把英文或简体中文字幕翻译为日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语或阿拉伯语。选择这些方向后，窗口只保留“本地 AI 段落翻译并压制”和“自动翻译并压制字幕”两项：前者需要安装 Complete 包中的本地 Ollama/Qwen 模型（或自行安装能力足够的本地 Ollama 模型），后者需要填写 OpenAI-compatible API。
+
+快速离线模型、人工翻译流程和中英双语字幕排版仅用于中英互译，因此不会在这些语种方向中出现。其他语种使用“仅目标语言字幕”，例如西班牙语会生成 `subtitles/es.srt`、`subtitles/es.ass` 和 `rendered/es_hardsub.mp4`。
+
+新版已取消“使用 YouTube 字幕”选项。无论链接是否提供字幕，程序都只下载视频/音频，再用本地 Whisper 识别英文或中文。
+
+直接媒体地址必须是实际媒体文件或播放清单，例如以 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 或 `.mpd`
+结尾的公开链接；没有后缀的 CDN 直链也可以，只要服务器响应明确标识为视频/HLS/DASH。不要粘贴网站的
+`play/...html` 播放页。软件不会解析播放页、读取 Cookie、模拟登录或绕过 DRM。
+带临时签名的链接失效时，重新取得同一文件的新直链、粘贴后勾选“断点续跑”即可刷新下载地址。
+
+ChatGPT Plus 不能直接作为本地程序的 API 使用，也不包含 OpenAI API 额度。
 
 ## 4. 第一次处理本地视频
 
@@ -151,8 +219,8 @@ python main.py "D:\Videos\owned-demo.mp4"
 默认使用不需要 API Key 的人工翻译模式。第一次运行通常会：
 
 1. 检查并复制视频
-2. 查找英文字幕
-3. 没有字幕时调用 faster-whisper 转录
+2. 调用本地 faster-whisper 转录原语言
+3. 生成统一的原文时间轴
 4. 清理英文字幕
 5. 导出人工翻译分块
 6. 显示项目目录并等待翻译导入
@@ -251,7 +319,7 @@ python main.py validate "output\Owned demo_a1b2c3d4e5"
 - 输出时长是否接近源视频
 - 视频是否可以解码
 
-## 6. 处理公开 YouTube 视频
+## 6. 处理公开 YouTube 视频或直接媒体地址
 
 确认你有权翻译和再发布后运行：
 
@@ -259,12 +327,51 @@ python main.py validate "output\Owned demo_a1b2c3d4e5"
 python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-字幕优先顺序：
+字幕来源固定为本地 `faster-whisper-medium`。程序不会请求、下载或使用
+YouTube 的作者字幕和自动字幕，因此原文时间轴在不同链接上保持同一套
+本地识别规则。
 
-1. 作者上传的英文字幕
-2. 作者上传的 `en-US`、`en-GB` 等英文变体
-3. YouTube 自动生成的英文字幕
-4. 本地 faster-whisper 转录
+完全不使用 API 的一站式命令：
+
+```powershell
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
+  --translation-provider offline
+```
+
+更自然的本地 AI 段落翻译（不需要云端 API 或 API Key）：
+
+```powershell
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" `
+  --translation-provider ollama
+```
+
+离线安装包会在独立的本机端口自动启动自带的 Ollama 服务并读取已打包的
+`qwen3:4b`；这样不会被电脑上另一个 Ollama 服务遮蔽，也不需要
+另外执行 `winget` 或 `ollama pull`。程序只把视频标题作为理解语境，模型只
+输出字幕正文，不会把标题或翻译说明混入字幕。
+
+把已获授权的中文视频本地化为英文：
+
+```powershell
+python main.py process "D:\Videos\authorized-Chinese-video.mp4" `
+  --translation-direction zh-to-en --translation-provider offline
+```
+
+中译英模式固定用多语言 Whisper 的 `zh` 模式识别中文语音，然后使用
+本地中译英模型生成和压制英文字幕。英译中模式同样先在本地识别英文，
+再进行英译中。
+
+离线安装包内的模型位于安装目录 `models` 下。从源码手动安装时，缺少的
+快速翻译模型才会下载到：
+
+```text
+%USERPROFILE%\.youtube-chinese-localizer\models\translate-en_zh-1_9
+%USERPROFILE%\.youtube-chinese-localizer\models\translate-zh_en-1_9
+```
+
+两个快速翻译模型每个约占用 85 MB 磁盘。它们源自 OPUS-MT，模型包附带
+CC-BY 4.0 说明。离线模型方便且隐私性好，但专有名词、笑话和专业术语仍需要
+人工复核。
 
 以下内容会被拒绝或无法处理：
 
@@ -273,13 +380,28 @@ python main.py process "https://www.youtube.com/watch?v=VIDEO_ID"
 - 年龄限制视频
 - DRM 内容
 - 正在直播的内容
-- 非 YouTube 的远程 URL
+- 非 YouTube 的播放网页
+- 不是 MP4/WebM/MOV/MKV/M3U8/MPD 的远程地址
 
 本软件不会读取浏览器 Cookie，也不会绕过平台限制。
 
+### 6.1 处理你有权下载的直接媒体地址
+
+如果你已经从内容方获得了实际视频文件地址或 HLS/DASH 播放清单，可直接粘贴该 URL。例如：
+
+```powershell
+python main.py process "https://media.example.com/authorized/video.m3u8" `
+  --translation-provider offline
+```
+
+也可在桌面程序的“粘贴链接”输入框直接粘贴。支持 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8` 与 `.mpd`，
+以及服务器以 `video/*`、HLS 或 DASH 标识的无后缀 CDN 直链。这不是网页下载器：
+`https://example.com/play/123.html` 这类播放页会被拒绝，请向内容方取得真正的媒体地址。
+受 DRM、登录、付费或地区权限保护的流同样不能处理。
+
 ## 7. 使用 OpenAI-compatible API 自动翻译
 
-只有希望单命令完成翻译时才需要配置 API。
+只有选择云端 OpenAI-compatible 翻译时才需要配置 API；本地离线模式不需要。
 
 ### 7.1 设置环境变量
 
@@ -313,6 +435,14 @@ python main.py process "D:\Videos\owned-demo.mp4" --translation-provider openai-
 
 ## 8. 生成双语字幕
 
+只下载原视频、不生成字幕：
+
+```powershell
+python main.py process "https://www.youtube.com/watch?v=VIDEO_ID" --subtitle-mode download_only
+```
+
+该模式不会调用 Whisper、翻译模型或 FFmpeg 字幕压制，下载完成的合并视频保存在 `output\项目名称\source`。
+
 英文在上、中文在下：
 
 ```powershell
@@ -337,6 +467,9 @@ python main.py process "D:\Videos\owned-demo.mp4" --subtitle-mode chinese
 subtitles\bilingual.srt
 subtitles\bilingual.ass
 ```
+
+双语字幕使用同一条本地 Whisper 时间轴进行翻译投影，不再合并两条互不匹配的
+YouTube 字幕轨道。
 
 ## 9. 先预览字幕样式
 
@@ -371,20 +504,34 @@ python main.py process "D:\Videos\owned-demo.mp4" --config config.local.yaml
 常用设置：
 
 ```yaml
-output_directory: output
-subtitle_mode: chinese
+# 尽量放在本地硬盘，而不是 OneDrive 或项目目录。
+output_directory: ~/Videos/YouTube Chinese Localizer
+subtitle_mode: chinese  # download_only 表示仅下载原视频，不生成字幕
 
 transcription:
   model: medium
   device: auto
   compute_type: auto
+  cpu_threads: 0  # 0 会根据 CPU 核心数与内存自动选择安全线程数
 
 translation:
-  provider: manual
+  direction: en-to-zh  # 中英互译；其他目标可用 ja、ko、es、fr、de、pt、ru、ar
+  provider: ollama  # 推荐高质量本地模式；offline 为轻量快速模式
   batch_size: 40
+  offline_device: auto  # 自动模式稳定使用 CPU；CUDA 需明确选择
+  ollama_endpoint: http://localhost:11434
+  ollama_model: qwen3:4b
+  ollama_context_tokens: 4096  # 适合 12 GB 显存的完整段落上下文
+  ollama_auto_pull: true
+
+download:
+  # 最高源画质：依次优先分辨率、帧率、码率和文件大小。
+  format: bestvideo+bestaudio/best
+  format_sort: [res, fps, br, size]
+  concurrent_fragment_downloads: 4  # 高画质 DASH/HLS 视频最多并发下载 4 个分片
 
 subtitles:
-  font: Microsoft YaHei
+  font: Noto Sans CJK SC
   font_size: 48
   outline: 3
   shadow: 1
@@ -392,30 +539,42 @@ subtitles:
   max_chinese_chars_per_line: 20
 
 render:
-  codec: libx264
-  crf: 18
+  # 自动实测 NVIDIA NVENC、Intel Quick Sync、AMD AMF；均不可用时才改用 libx264。
+  codec: auto
+  crf: 17
   preset: medium
+  output_height: null  # 保持原分辨率；可填 2160、1440、1080 或 720 作为上限
+  output_fps: null  # 保持原帧率；可填 60 或 30，只降低更高帧率
 ```
+
+桌面界面默认把项目、缓存和成片放入用户“视频”目录，也可以为每个任务点击“调整处理设置”后选择其他
+位置。若选择 OneDrive 路径或可用空间低于 20 GiB，开始前会明确提示；同步大码率源视频和成片会显著
+拖慢下载与字幕压制。
+
+`max_chinese_chars_per_line` 是横屏上限。竖屏、方形视频以及带 90° 旋转信息的手机视频会根据实际显示比例自动缩短每行字数，并生成匹配比例的 ASS 画布。
 
 ### 字幕字体
 
-Windows 推荐：
+离线安装包只内置 `Noto Sans CJK SC`：现代、清晰，适合大多数视频。软件统一使用它，避免不同电脑因系统字体不同而出现排版变化；可在界面选择小号、标准（48，推荐）、大号或超大字号。需要更细调时，点击“预览并调整字幕”，在画面里拖动字幕框和右下角控制点即可设置最终位置与精确字号。
 
-- Microsoft YaHei
-- SimHei
-- Noto Sans CJK SC
-
-软件不附带商业字体文件。配置的字体必须已经安装在系统中。
+该字体采用 SIL Open Font License 1.1，已随离线安装包分发。FFmpeg 会从软件目录直接加载，不需要安装到 Windows。源码安装用户仍可在配置中填写其他已经安装的字体名称。
 
 ### Whisper 模型
 
 - CPU：建议 `small` 或 `medium`
 - NVIDIA GPU：显存足够时可以使用 `large-v3`
-- `device: auto`：自动检测 CUDA，否则使用 CPU
+- `device: auto`：先验证 CUDA 运行库，验证通过才使用显卡；否则直接稳定使用 CPU `int8`
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-首次使用某个 Whisper 模型时需要联网下载模型文件。
+Whisper 的设备选择与离线翻译相互独立。当前离线基础安装包已经包含 CUDA 12 运行库，并会在
+启动 Whisper 前自动注册这套运行库和进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
+运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底会根据核心数与
+内存自动保留桌面响应；需要固定行为时可把 `cpu_threads` 设为 1 到 32。离线字幕翻译的
+`offline_device: auto` 则始终稳定使用 CPU `int8`。
+
+Whisper Small 和 Whisper Medium 是独立模型包：安装基础包后按需安装其中一个，首次识别不需要联网。
+自动、快速和安全 CPU 档位会在已安装模型中选择；从源码手动安装并改用其他 Whisper 尺寸时，才需要下载相应模型。
 
 ### 视频质量
 
@@ -442,7 +601,7 @@ python main.py process "D:\Videos\owned-demo.mp4" --resume
 
 匹配时会跳过已完成步骤。
 
-如果英文字幕发生变化，旧中文字幕、人工翻译缓存和渲染视频会被自动判定为过期，避免混用新旧内容。
+如果本地识别字幕发生变化，旧目标字幕、人工翻译缓存和渲染视频会被自动判定为过期，避免混用新旧内容。
 
 强制重做某一步：
 
@@ -472,7 +631,9 @@ output\
       thumbnail.jpg
     subtitles\
       source.en.vtt
+      source.zh.vtt
       english.cleaned.srt
+      english.ass
       chinese.srt
       chinese.ass
       bilingual.srt
@@ -483,6 +644,7 @@ output\
       transcription_audio.wav
     rendered\
       chinese_hardsub.mp4
+      english_hardsub.mp4
       preview_60_15.mp4
     publishing\
       title.txt
@@ -599,6 +761,46 @@ py -3.12 -m venv .venv
 python -m pip install -e ".[transcription]"
 ```
 
+### Whisper 提示 `cublas64_12.dll`、cuDNN 或 CUDA 无法加载
+
+当前离线安装包自带 CUDA 12 运行库，会在开始识别前验证并自动启用 GPU。若日志显示
+“GPU acceleration is unavailable”，程序会直接稳定使用 CPU `int8`，不会先运行一次可能卡死的
+GPU 任务。请安装当前版本的基础包和一个 Whisper 模型包；源码用户需要安装 Ollama，或把含有 `cublas64_12.dll` 的目录设置为
+`YOUTUBE_LOCALIZER_CUDA_RUNTIME`。仍然失败时可在 `config.yaml` 中设置
+`transcription.device: cpu`。
+
+### 本地离线翻译模型无法下载或加载
+
+先安装离线翻译运行组件：
+
+```powershell
+python -m pip install -e ".[offline-translation]"
+python main.py doctor
+```
+
+离线安装包已包含 `translate-en_zh-1_9` 和 `translate-zh_en-1_9`。如果这两个
+目录缺失，请重新安装并确保所有 `.bin` 分卷与 Setup.exe 在同一目录。
+`offline_device: auto` 会稳定使用 CPU `int8`；只有明确设置 `cuda` 才使用显卡翻译。
+
+### YouTube 视频下载出现 HTTP 429
+
+新版不请求 YouTube 字幕端点，因此不会再出现“字幕下载 429”。如果视频下载
+本身收到 429，请暂停一段时间，再对同一个输入勾选“断点续跑”后重试。不要连续
+反复点击开始，否则临时限制可能持续更久。
+
+### 直接媒体地址无法下载
+
+确认粘贴的是实际 `.mp4`、`.webm`、`.mov`、`.mkv`、`.m3u8`、`.mpd` 地址，或服务器返回视频类型的无后缀
+CDN 直链，而不是播放页。含有
+`token`、`expires`、`signature` 等查询参数的直链可能会过期；从你有权访问的内容方重新取得新直链，粘贴后勾选
+“断点续跑”。如果来源需要浏览器登录、Cookie、付费权限或 DRM，本软件不会绕过这些限制。
+
+### FFmpeg 退出码为 `3221225786` 或 `0xC000013A`
+
+这个状态表示压制过程收到了停止或关闭信号，并不是字幕、编码器或显卡故障。常见原因是点击了“停止”、关闭了本地化窗口，或者外部程序中断了 FFmpeg。
+
+保持软件窗口打开，对同一个链接勾选“断点续跑”后重新开始即可。已经完成的下载、字幕识别和离线翻译会保留，只会重做未完成的压制阶段。压制时窗口会每两秒显示完成百分比、视频时间和处理速度，请等待进度达到 100%。
+
 ### Whisper 显存不足
 
 修改配置：
@@ -612,12 +814,12 @@ transcription:
 
 ### 人工翻译文件无法导入
 
-确认：
+确认导出文件里的 `source_code` 和 `target_code` 与当前方向一致，并检查：
 
 - 返回内容是 JSONL
 - 每行是一个完整 JSON 对象
-- `id`、`start`、`end` 和 `en` 未改变
-- 每个 `zh` 都有内容
+- `id`、`start`、`end` 和原文栏（`en` 或 `zh`）未改变
+- 每个目标栏（`zh` 或 `en`）都有内容
 - URL 没有被修改或删除
 
 必要时重新导出原始分块：
@@ -648,22 +850,23 @@ python main.py process INPUT --overwrite
 - 视频是否仍然可用
 - 是否存在年龄、地区或账号限制
 - yt-dlp 是否为最新版本
+- `python main.py doctor` 中的 `yt-dlp JavaScript support` 是否为 `ok`
 
 更新 yt-dlp：
 
 ```powershell
-python -m pip install --upgrade yt-dlp
+python -m pip install --upgrade "yt-dlp[default,deno]"
 ```
 
 软件不会通过 Cookie 或其他方式绕过访问限制。
 
 ### 中文显示为方框
 
-将配置中的字体改为系统已安装的中文字体：
+离线安装包用户先在界面中切换到内置字体。源码安装用户可将配置改为系统已安装的中文字体：
 
 ```yaml
 subtitles:
-  font: Microsoft YaHei
+  font: Noto Sans CJK SC
 ```
 
 然后重新生成预览或渲染。
@@ -702,6 +905,13 @@ PROJECT_PATH\logs\pipeline.log
 - 未授权视频
 - 含个人敏感信息的完整日志
 
+界面右上角的“导出诊断包”会让你选择项目文件夹，并生成可发送的 ZIP。它不会包含视频或字幕正文，
+并会隐藏路径、链接和凭证。命令行也可以使用：
+
+```powershell
+python main.py support-bundle "PROJECT_PATH"
+```
+
 ## 18. 已知限制
 
 - YouTube 支持情况取决于当前 yt-dlp 版本和平台变化
@@ -710,11 +920,70 @@ PROJECT_PATH\logs\pipeline.log
 - 发布标题和许可文字必须由用户最终确认
 - 当前版本不自动上传视频到发布平台
 - 当前版本不自动进行高级字幕重定时
-- 首次下载 Whisper 模型需要网络和额外磁盘空间
+- 离线安装包约 7–8 GB，安装和运行需要足够磁盘空间
+
+## 18.1 智能加速、输出质量与可开关字幕
+
+桌面界面不再要求选择“性能预设”。默认方案始终是 **最高质量输出 + 自动硬件加速**：程序会先检测
+NVIDIA CUDA/NVENC；可用时使用显卡进行语音识别和视频编码，不可用或运行失败时自动回退至 CPU 与
+libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 和最高质量成片参数。
+
+桌面界面不会再弹出或依赖可关闭的系统命令窗口。进度条会显示真实的下载百分比、本地 AI 段落进度和
+字幕压制百分比；高画质 DASH/HLS 下载最多同时下载 4 个分片。本地 AI 会在不超出模型安全上下文的
+前提下合并更完整的段落，减少模型请求次数并保持上下文质量。一次粘贴多行链接时，桌面端会逐项处理，
+并把总体进度和当前任务编号显示在同一根进度条上；失败任务会记录原因且不会阻止后续任务。
+
+软件会先实测 NVIDIA NVENC（包括安装包内置的兼容编码器）、Intel Quick Sync 和 AMD AMF。它适合
+保留稳定驱动或使用非 NVIDIA 显卡的用户：任一编码器成功就继续使用硬件压制；只有全部不可用时才自动
+使用 CPU `libx264` 兜底，并保持同一画质设置。不需要为此修改软件设置或更新驱动。
+
+处理完成后会生成 `logs/subtitle_quality.json`。若只有少数片段需要人工检查，
+`subtitles/review_required.srt` 会只保留阅读过快、闪烁、重复或超长的对应时间段，便于定向校对。
+
+YouTube 原视频始终按 **分辨率、帧率、码率、文件大小** 的顺序选择最佳可用流。处理设置中只保留三项
+明确的成片选择：
+
+- **输出画质**：最高质量（默认）、高质量（文件更小）、标准质量（节省空间）。
+- **输出帧率**：保持原视频帧率（默认）、60 FPS、30 FPS。选择 60/30 FPS 只会降低更高的源帧率，
+  不会把 30 FPS 人为补成 60 FPS。
+- **输出分辨率**：保持原视频分辨率（默认），或限制为 4K、2K、1080p、720p；不会放大小于所选值的源视频。
+
+命令行可在 `process` 后加入：
+
+```powershell
+python main.py process "D:\Videos\owned-demo.mp4" --translation-provider offline --processing-profile auto --output-quality best --output-fps 60 --output-height 2160
+```
+
+多个视频可写入 UTF-8 文本文件（一行一个链接或本地路径）后执行：
+
+```powershell
+python main.py batch inputs.txt --parallel-jobs 2
+```
+
+该模式最多同时处理两个项目的下载；Whisper、本地 AI 翻译和硬字幕压制会自动排队，共用一个性能槽位，
+不会同时争抢显存或 CPU 编码资源。需要完全串行时使用 `--parallel-jobs 1`。
+
+完成本地化后，`rendered` 文件夹除了硬字幕视频外，还会生成：
+
+```text
+chinese_softsub.mp4 或 english_softsub.mp4
+```
+
+该文件保留原视频和音频流，只封装一个可在播放器中开关的字幕轨，因此通常比压制硬字幕快得多。
+如果某个源视频的封装格式不能安全重封装，程序会保留已完成的硬字幕成片并给出警告，不会把整个
+任务判定为失败。与此同时可查看：
+
+```text
+logs\subtitle_quality.json
+logs\report.md
+```
+
+报告会列出阅读速度过快、闪现时间少于 0.7 秒、行过长和连续重复的字幕编号。它只提示人工
+复核，不会擅自改写翻译或时间轴。
 
 ## 19. 推荐的首次测试顺序
 
-1. 安装 Python、FFmpeg 和项目依赖
+1. 运行离线 Setup.exe，并保持所有 `.bin` 分卷在同一目录
 2. 运行 `python main.py doctor`
 3. 用 30 秒到 2 分钟的自有本地视频测试
 4. 完成人工翻译导入

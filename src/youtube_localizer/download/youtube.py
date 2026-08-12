@@ -4,7 +4,10 @@ import json
 import logging
 import os
 import re
+import shutil
+import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -25,6 +28,18 @@ YOUTUBE_HOSTS = {
     "youtu.be",
 }
 VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,20}$")
+JAVASCRIPT_RUNTIME_EXECUTABLES = {
+    "deno": ("deno.exe", "deno"),
+    "node": ("node.exe", "node"),
+    "quickjs": ("qjs.exe", "qjs", "quickjs.exe", "quickjs"),
+    "bun": ("bun.exe", "bun"),
+}
+
+
+@dataclass(frozen=True)
+class YouTubeDownloadResult:
+    video: Path
+    warnings: tuple[str, ...] = ()
 
 
 def is_youtube_url(value: str) -> bool:
@@ -59,6 +74,38 @@ def _youtube_dl(options: dict[str, Any]):
     return YoutubeDL(options)
 
 
+def discover_javascript_runtimes() -> dict[str, str]:
+    """Find yt-dlp-compatible runtimes, including executables beside the active Python."""
+    discovered: dict[str, str] = {}
+    python_directory = Path(sys.executable).resolve().parent
+    for runtime, executable_names in JAVASCRIPT_RUNTIME_EXECUTABLES.items():
+        path: Path | None = None
+        for executable_name in executable_names:
+            for local in (
+                python_directory / executable_name,
+                python_directory / "Scripts" / executable_name,
+            ):
+                if local.is_file():
+                    path = local
+                    break
+            if path:
+                break
+            if located := shutil.which(executable_name):
+                path = Path(located)
+                break
+        if path:
+            discovered[runtime] = str(path.resolve())
+    return discovered
+
+
+def _enable_javascript_runtime(options: dict[str, Any]) -> None:
+    runtimes = discover_javascript_runtimes()
+    if runtimes:
+        options["js_runtimes"] = {
+            runtime: {"path": path} for runtime, path in runtimes.items()
+        }
+
+
 def _validate_info(info: dict[str, Any]) -> None:
     availability = (info.get("availability") or "public").lower()
     if availability in {"private", "subscriber_only", "premium_only", "needs_auth"}:
@@ -90,6 +137,7 @@ def inspect_youtube(url: str) -> tuple[SourceMetadata, dict[str, Any]]:
         "noplaylist": True,
         "extract_flat": False,
     }
+    _enable_javascript_runtime(options)
     try:
         with _youtube_dl(options) as ydl:
             info = ydl.extract_info(url, download=False)
@@ -124,56 +172,51 @@ def inspect_youtube(url: str) -> tuple[SourceMetadata, dict[str, Any]]:
     return metadata, info
 
 
-def choose_english_subtitle(info: dict[str, Any]) -> tuple[str, str] | None:
-    manual = info.get("subtitles") or {}
-    automatic = info.get("automatic_captions") or {}
-    manual_languages = [language for language in manual if language == "en"]
-    manual_languages += sorted(
-        language for language in manual if language.lower().startswith("en-")
-    )
-    if manual_languages:
-        return manual_languages[0], "creator"
-    automatic_languages = [language for language in automatic if language == "en"]
-    automatic_languages += sorted(
-        language for language in automatic if language.lower().startswith("en-")
-    )
-    if automatic_languages:
-        return automatic_languages[0], "automatic"
-    return None
+def _run_youtube_download(url: str, options: dict[str, Any]) -> Path:
+    with _youtube_dl(options) as ydl:
+        downloaded_info = ydl.extract_info(url, download=True)
+        if not isinstance(downloaded_info, dict):
+            raise LocalizerError("yt-dlp did not return downloaded video information.")
+        return Path(ydl.prepare_filename(downloaded_info))
 
 
-def download_youtube(
+def download_media(
     url: str,
-    info: dict[str, Any],
     destination_dir: Path,
     config: DownloadConfig,
-) -> tuple[Path, Path | None, str, str]:
+    *,
+    source_description: str,
+) -> Path:
+    """Download one public, non-DRM media source without requesting captions."""
     destination_dir.mkdir(parents=True, exist_ok=True)
-    subtitle = choose_english_subtitle(info)
     options: dict[str, Any] = {
         "quiet": False,
         "noplaylist": True,
         "continuedl": True,
         "overwrites": False,
         "format": config.format,
+        "format_sort": list(config.format_sort),
+        # DASH/HLS streams are the usual high-resolution YouTube formats. Fetching a bounded
+        # number of fragments concurrently improves throughput without overwhelming the source.
+        "concurrent_fragment_downloads": config.concurrent_fragment_downloads,
         "outtmpl": str(destination_dir / "download.%(ext)s"),
-        "writesubtitles": bool(subtitle and subtitle[1] == "creator"),
-        "writeautomaticsub": bool(subtitle and subtitle[1] == "automatic"),
-        "subtitleslangs": [subtitle[0]] if subtitle else [],
-        "subtitlesformat": "vtt/srt/best",
+        # Source captions are deliberately disabled. The pipeline always uses its bundled
+        # Whisper model so timing and recognition behavior are consistent and offline-capable.
+        "writesubtitles": False,
+        "writeautomaticsub": False,
+        "subtitleslangs": [],
     }
+    _enable_javascript_runtime(options)
     if config.prefer_mp4:
         options["merge_output_format"] = "mp4"
     try:
-        with _youtube_dl(options) as ydl:
-            downloaded_info = ydl.extract_info(url, download=True)
-            prepared = Path(ydl.prepare_filename(downloaded_info))
+        prepared = _run_youtube_download(url, options)
     except Exception as exc:
         if isinstance(exc, LocalizerError):
             raise
         raise LocalizerError(
-            "yt-dlp failed to download the public video. The partial download is retained so a "
-            f"later --resume can continue it. Details: {exc}"
+            f"yt-dlp failed to download the {source_description}. The partial download is "
+            f"retained so a later --resume can continue it. Details: {exc}"
         ) from exc
 
     candidates = [
@@ -190,25 +233,23 @@ def download_youtube(
     destination = destination_dir / f"source_video{video.suffix.lower()}"
     if video != destination:
         video.replace(destination)
+    return destination
 
-    subtitle_file = None
-    if subtitle:
-        subtitle_candidates = sorted(
-            [
-                *destination_dir.glob("download*.vtt"),
-                *destination_dir.glob("download*.srt"),
-                *destination_dir.glob("download*.ass"),
-            ]
+
+def download_youtube(
+    url: str,
+    _info: dict[str, Any],
+    destination_dir: Path,
+    config: DownloadConfig,
+) -> YouTubeDownloadResult:
+    """Download a public YouTube source at the configured best available quality."""
+    return YouTubeDownloadResult(
+        video=download_media(
+            url,
+            destination_dir,
+            config,
+            source_description="public YouTube video",
         )
-        if subtitle_candidates:
-            original = subtitle_candidates[0]
-            subtitle_file = destination_dir / f"source.en{original.suffix.lower()}"
-            original.replace(subtitle_file)
-    return (
-        destination,
-        subtitle_file,
-        subtitle[0] if subtitle else "",
-        subtitle[1] if subtitle else "",
     )
 
 

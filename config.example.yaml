@@ -1,34 +1,60 @@
-output_directory: output
+# Put large source, cache, and rendered files outside OneDrive/project folders when possible.
+output_directory: ~/Videos/YouTube Chinese Localizer
 subtitle_language: zh-CN
-subtitle_mode: chinese
+subtitle_mode: chinese  # download_only skips transcription, translation, and rendering
 
 download:
-  format: bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best
+  # Highest-resolution video + highest-quality audio, without restricting source codecs.
+  format: bestvideo+bestaudio/best
+  # Prefer resolution first, then frame rate, bitrate, and file size.
+  format_sort: [res, fps, br, size]
+  # Download multiple DASH/HLS fragments at once when the provider supports it.
+  concurrent_fragment_downloads: 4
   prefer_mp4: true
   download_thumbnail: true
   download_metadata: true
 
 transcription:
   model: medium
-  device: auto
+  device: auto  # uses CUDA only after its runtime preflight succeeds; otherwise starts safely on CPU
   compute_type: auto
+  cpu_threads: 0  # adapts to CPU cores and RAM; use 1-32 to override it
   beam_size: 5
   vad_filter: true
   word_timestamps: true
 
 translation:
-  provider: manual
+  direction: en-to-zh  # en-to-zh / zh-to-en; other targets: ja, ko, es, fr, de, pt, ru, ar
+  provider: manual  # manual, offline, ollama, or openai-compatible
   model: ""
   endpoint: ""
   batch_size: 40
   preserve_timestamps: true
   glossary_file: glossary.yaml
+  offline_model_directory: ~/.youtube-chinese-localizer/models/translate-en_zh-1_9
+  offline_model_url: https://argos-net.com/v1/translate-en_zh-1_9.argosmodel
+  offline_zh_en_model_directory: ~/.youtube-chinese-localizer/models/translate-zh_en-1_9
+  offline_zh_en_model_url: https://argos-net.com/v1/translate-zh_en-1_9.argosmodel
+  offline_device: auto  # auto uses reliable CPU; set cuda only with a complete CUDA runtime
+  offline_compute_type: auto
+  offline_auto_download: true
+  # Higher-quality paragraph translation through a model running only on this computer.
+  ollama_endpoint: http://localhost:11434
+  ollama_model: qwen3:4b
+  # 4K context fits 12 GB GPUs well for the app's bounded subtitle paragraphs.
+  ollama_context_tokens: 4096
+  ollama_auto_pull: true
+  ollama_timeout_seconds: 600
 
 subtitles:
   format: ass
-  font: Microsoft YaHei
+  # The packaged app bundles Noto Sans CJK SC for consistent rendering.
+  font: Noto Sans CJK SC
   font_size: 48
   english_font_size: 34
+  # Bottom center by default. The desktop preview can set these by dragging.
+  position_x_percent: 50
+  position_y_percent: 96
   outline: 3
   shadow: 1
   margin_v: 45
@@ -37,13 +63,17 @@ subtitles:
   preserve_sound_descriptions: true
 
 render:
-  codec: libx264
-  crf: 18
+  # Verify NVIDIA NVENC, Intel Quick Sync, and AMD AMF; use libx264 only if none work.
+  codec: auto
+  crf: 17  # highest-quality desktop default; 19/23 make smaller files
   preset: medium
   audio_codec: aac
   audio_bitrate: 192k
   faststart: true
   copy_audio_when_possible: true
+  soft_subtitles: true  # also create a selectable subtitle MP4 without re-encoding video/audio
+  output_height: null  # keep original dimensions; use 2160, 1440, 1080, or 720 to cap output
+  output_fps: null  # keep original FPS; use 60 or 30 only to cap higher-frame-rate sources
 
 publishing:
   generate_metadata: true

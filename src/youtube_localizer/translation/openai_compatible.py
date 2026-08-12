@@ -13,7 +13,7 @@ from ..utils.text import ms_to_srt
 from .base import TranslationContext, TranslationProvider
 from .cache import TranslationCache
 from .manual import parse_imported_translations
-from .prompts import TRANSLATION_RULES, context_prompt
+from .prompts import context_prompt, translation_rules
 
 
 class RetryableAPIError(LocalizerError):
@@ -29,12 +29,16 @@ class OpenAICompatibleProvider(TranslationProvider):
         cache: TranslationCache,
         api_key: str | None = None,
         timeout: float = 120,
+        source_code: str = "en",
+        target_code: str = "zh",
     ) -> None:
         self.endpoint = endpoint.rstrip("/")
         self.model = model
         self.cache = cache
         self.api_key = api_key or os.getenv("OPENAI_COMPATIBLE_API_KEY", "")
         self.timeout = timeout
+        self.source_code = source_code
+        self.target_code = target_code
         if not self.endpoint or not self.model or not self.api_key:
             raise LocalizerError(
                 "OpenAI-compatible translation requires endpoint, model, and "
@@ -82,8 +86,8 @@ class OpenAICompatibleProvider(TranslationProvider):
                 "id": cue.id,
                 "start": ms_to_srt(cue.start_ms),
                 "end": ms_to_srt(cue.end_ms),
-                "en": cue.text,
-                "zh": "",
+                self.source_code: cue.text,
+                self.target_code: "",
             }
             for cue in cues
         ]
@@ -91,6 +95,8 @@ class OpenAICompatibleProvider(TranslationProvider):
             "provider": "openai-compatible",
             "endpoint": self.endpoint,
             "model": self.model,
+            "source_code": self.source_code,
+            "target_code": self.target_code,
             "context": context_prompt(context),
             "records": records,
         }
@@ -103,7 +109,10 @@ class OpenAICompatibleProvider(TranslationProvider):
                 "model": self.model,
                 "temperature": 0.2,
                 "messages": [
-                    {"role": "system", "content": TRANSLATION_RULES},
+                    {
+                        "role": "system",
+                        "content": translation_rules(self.source_code, self.target_code),
+                    },
                     {
                         "role": "user",
                         "content": context_prompt(context)
@@ -126,7 +135,12 @@ class OpenAICompatibleProvider(TranslationProvider):
                     "usage": data.get("usage", {}),
                 },
             )
-        parsed = parse_imported_translations(content, cues)
+        parsed = parse_imported_translations(
+            content,
+            cues,
+            source_code=self.source_code,
+            target_code=self.target_code,
+        )
         if set(parsed) != {cue.id for cue in cues}:
             missing = sorted({cue.id for cue in cues} - set(parsed))
             raise TranslationImportError(f"Translation response omitted cue IDs: {missing}")

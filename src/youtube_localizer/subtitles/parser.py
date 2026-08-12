@@ -53,16 +53,27 @@ def parse_vtt_text(content: str) -> list[SubtitleCue]:
     normalized = re.sub(
         r"(?ms)^(?:NOTE|STYLE|REGION)(?:[^\n]*\n)(?:.*?)(?=\n\s*\n|\Z)", "", normalized
     )
-    blocks = re.split(r"\n\s*\n", normalized.strip())
+    lines = normalized.splitlines()
+    timings = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := TIME_LINE_RE.search(line)) is not None
+    ]
     cues: list[SubtitleCue] = []
-    for block in blocks:
-        lines = [line.rstrip() for line in block.splitlines()]
-        time_index = next((i for i, line in enumerate(lines) if TIME_LINE_RE.search(line)), None)
-        if time_index is None:
-            continue
-        match = TIME_LINE_RE.search(lines[time_index])
-        assert match
-        text = "\n".join(lines[time_index + 1 :]).strip()
+    for position, (time_index, match) in enumerate(timings):
+        next_time_index = timings[position + 1][0] if position + 1 < len(timings) else len(lines)
+        payload = lines[time_index + 1 : next_time_index]
+        # A standard WebVTT cue identifier can sit between a blank line and the next timing
+        # line. Exclude it from the preceding cue while retaining YouTube's leading blank
+        # placeholder before actual rolling-caption text.
+        blank_positions = [index for index, line in enumerate(payload) if not line.strip()]
+        if blank_positions:
+            last_blank = blank_positions[-1]
+            has_text_before = any(line.strip() for line in payload[:last_blank])
+            has_text_after = any(line.strip() for line in payload[last_blank + 1 :])
+            if has_text_before and has_text_after:
+                payload = payload[:last_blank]
+        text = "\n".join(line.rstrip() for line in payload if line.strip()).strip()
         if not text:
             continue
         cue = SubtitleCue(

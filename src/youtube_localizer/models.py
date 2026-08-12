@@ -41,9 +41,18 @@ class SourceMetadata(BaseModel):
     frame_rate: float | None = None
     video_codec: str = ""
     audio_codec: str = ""
+    pixel_format: str = ""
+    color_space: str = ""
+    color_transfer: str = ""
+    color_primaries: str = ""
+    variable_frame_rate: bool = False
     audio_streams: list[dict[str, Any]] = Field(default_factory=list)
     subtitle_language: str = ""
     subtitle_kind: str = ""
+    english_subtitle_language: str = ""
+    english_subtitle_kind: str = ""
+    chinese_subtitle_language: str = ""
+    chinese_subtitle_kind: str = ""
 
 
 class StepRecord(BaseModel):
@@ -65,6 +74,7 @@ class PipelineStateData(BaseModel):
     project_status: str = "incomplete"
     updated_at: str = ""
     steps: dict[str, StepRecord] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -116,12 +126,69 @@ class ProjectPaths:
         return self.subtitles / "chinese.srt"
 
     @property
+    def english_ass(self) -> Path:
+        return self.subtitles / "english.ass"
+
+    @property
+    def chinese_ass(self) -> Path:
+        return self.subtitles / "chinese.ass"
+
+    @property
     def bilingual_srt(self) -> Path:
         return self.subtitles / "bilingual.srt"
 
     @property
     def bilingual_ass(self) -> Path:
         return self.subtitles / "bilingual.ass"
+
+    @property
+    def chinese_hardsub(self) -> Path:
+        return self.rendered / "chinese_hardsub.mp4"
+
+    @property
+    def english_hardsub(self) -> Path:
+        return self.rendered / "english_hardsub.mp4"
+
+    @property
+    def chinese_softsub(self) -> Path:
+        return self.rendered / "chinese_softsub.mp4"
+
+    @property
+    def english_softsub(self) -> Path:
+        return self.rendered / "english_softsub.mp4"
+
+    def subtitle_srt(self, language_code: str) -> Path:
+        """Return the stable subtitle path for a target language.
+
+        Keep the legacy Chinese and English names so existing projects remain resumable.
+        Other languages use their ISO code, for example ``subtitles/es.srt``.
+        """
+        if language_code == "en":
+            return self.english_srt
+        if language_code == "zh":
+            return self.chinese_srt
+        return self.subtitles / f"{language_code}.srt"
+
+    def subtitle_ass(self, language_code: str) -> Path:
+        if language_code == "en":
+            return self.english_ass
+        if language_code == "zh":
+            return self.chinese_ass
+        return self.subtitles / f"{language_code}.ass"
+
+    def hardsub_output(self, language_code: str) -> Path:
+        if language_code == "en":
+            return self.english_hardsub
+        if language_code == "zh":
+            return self.chinese_hardsub
+        return self.rendered / f"{language_code}_hardsub.mp4"
+
+    def softsub_output(self, language_code: str) -> Path:
+        if language_code == "en":
+            return self.english_softsub
+        if language_code == "zh":
+            return self.chinese_softsub
+        return self.rendered / f"{language_code}_softsub.mp4"
 
     @property
     def state_file(self) -> Path:

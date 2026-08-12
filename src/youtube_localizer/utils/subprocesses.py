@@ -4,12 +4,21 @@ import logging
 import os
 import shutil
 import subprocess
-from collections.abc import Sequence
+from collections import deque
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from ..errors import ExternalToolError
 
 LOGGER = logging.getLogger(__name__)
+WINDOWS_CONTROL_C_EXIT = 0xC000013A
+
+
+def hidden_console_kwargs() -> dict[str, int]:
+    """Prevent console windows from appearing for helper tools started by the desktop app."""
+    if os.name == "nt":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
 
 
 def resolve_executable(name: str) -> str | None:
@@ -70,6 +79,7 @@ def run_command(
             errors="replace",
             capture_output=capture_output,
             timeout=timeout,
+            **hidden_console_kwargs(),
         )
     except FileNotFoundError as exc:
         raise ExternalToolError(
@@ -83,9 +93,66 @@ def run_command(
         ) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()[-4000:]
-        raise ExternalToolError(
-            f"{command[0]} failed with exit code {result.returncode}."
-            + (f"\n{detail}" if detail else ""),
-            command=command,
-        )
+        _raise_command_error(command, result.returncode, detail)
     return result
+
+
+def _raise_command_error(command: list[str], returncode: int, detail: str = "") -> None:
+    unsigned_returncode = returncode & 0xFFFFFFFF
+    if unsigned_returncode == WINDOWS_CONTROL_C_EXIT:
+        message = (
+            f"{command[0]} was interrupted by a stop or window-close signal "
+            "(Windows status 0xC000013A). Keep the localizer window open while "
+            "rendering; resume the project to retry only the unfinished stage."
+        )
+    else:
+        message = f"{command[0]} failed with exit code {returncode}."
+    raise ExternalToolError(
+        message + (f"\n{detail}" if detail else ""),
+        command=command,
+    )
+
+
+def run_streaming_command(
+    args: Sequence[str | Path],
+    *,
+    cwd: Path | None = None,
+    line_callback: Callable[[str], None] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """Run a command while consuming merged output without hiding long-task progress."""
+    command = [str(arg) for arg in args]
+    if resolved := resolve_executable(command[0]):
+        command[0] = resolved
+    LOGGER.debug("Running streaming external command", extra={"command": command})
+    try:
+        process = subprocess.Popen(
+            command,
+            cwd=cwd,
+            shell=False,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+            **hidden_console_kwargs(),
+        )
+    except FileNotFoundError as exc:
+        raise ExternalToolError(
+            f"Required executable was not found: {command[0]}. "
+            "Install it and ensure it is available on PATH.",
+            command=command,
+        ) from exc
+
+    output_tail: deque[str] = deque(maxlen=100)
+    assert process.stdout is not None
+    for raw_line in process.stdout:
+        line = raw_line.rstrip("\r\n")
+        output_tail.append(line)
+        if line_callback is not None:
+            line_callback(line)
+    returncode = process.wait()
+    output = "\n".join(output_tail).strip()
+    if returncode != 0:
+        _raise_command_error(command, returncode, output[-4000:])
+    return subprocess.CompletedProcess(command, returncode, stdout=output, stderr="")

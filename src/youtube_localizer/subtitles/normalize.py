@@ -6,6 +6,7 @@ import re
 from ..models import SubtitleCue
 
 TAG_RE = re.compile(r"</?(?:c(?:\.[^ >]+)?|v|lang|ruby|rt|b|i|u|font)(?:\s+[^>]*)?>", re.IGNORECASE)
+VTT_TIMESTAMP_TAG_RE = re.compile(r"<(?:\d{1,2}:)?\d{2}:\d{2}[.,]\d{3}>")
 POSITION_RE = re.compile(r"\{\\[^}]+\}")
 SPACE_RE = re.compile(r"[ \t\u00a0]+")
 WORD_RE = re.compile(r"\S+")
@@ -14,6 +15,7 @@ SOUND_RE = re.compile(r"^\s*[\[(].+[\])]\s*$")
 
 def clean_caption_text(text: str, *, preserve_sound_descriptions: bool = True) -> str:
     text = html.unescape(text)
+    text = VTT_TIMESTAMP_TAG_RE.sub("", text)
     text = TAG_RE.sub("", text)
     text = POSITION_RE.sub("", text)
     text = text.replace("\u200b", "").replace("\ufeff", "")
