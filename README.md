@@ -1,21 +1,71 @@
-# YouTube Chinese Localization Pipeline
+# Localize Studio — 视频本地化工具
 
-A production-oriented local Python application that localizes authorized English- or
-Chinese-language YouTube videos, direct media URLs, and local videos in either direction. Each reusable project contains
-normalized English subtitles, Simplified Chinese subtitles, optional bilingual subtitles, and
-a validated hard-subtitled MP4. A download-only mode keeps the highest-quality merged source
-video without creating or burning subtitles.
+<div align="center">
 
-The pipeline is resumable, keeps intermediate files, never uploads content, and can complete
-English↔Chinese localization without an API by using local multilingual Whisper transcription
-and local translation models. It can also translate English or Simplified Chinese into Japanese,
-Korean, Spanish, French, German, Portuguese, Russian, or Arabic through a local LLM or an API.
-YouTube caption tracks are never downloaded or consumed. Manual ChatGPT export/import remains
-available for the Chinese-English workflow.
+把你有权处理的视频，转换为带自然字幕的本地化成品。支持 YouTube、授权的媒体直链和本地视频；下载、识别、翻译、字幕压制与断点续跑都在本机完成。
 
-> 中文用户：请阅读完整的[中文使用说明书](docs/USER_GUIDE.zh-CN.md)。
+[![Release](https://img.shields.io/github/v/release/lujiangyancheng-jpg/youtube-chinese-localization-pipeline?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases)
+[![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
+[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 
-> 每一版的新增、优化和修复请见 [CHANGELOG.md](CHANGELOG.md)。
+[立即下载 v0.6.5 Standard](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.5/YouTube-Chinese-Localizer-0.6.5-Standard-Offline-Setup.exe)
+· [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
+· [中文完整说明](docs/USER_GUIDE.zh-CN.md)
+
+</div>
+
+> 仅处理你拥有、已获授权、属于公共领域或许可允许本次用途的视频。软件不会绕过 DRM、登录、付费、地区或平台访问限制。
+
+## 🚀 三步开始使用
+
+1. 下载并放在同一文件夹：
+   [Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.5/YouTube-Chinese-Localizer-0.6.5-Standard-Offline-Setup.exe)
+   和
+   [Setup-1.bin](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.5/YouTube-Chinese-Localizer-0.6.5-Standard-Offline-Setup-1.bin)。
+2. 双击 `Setup.exe` 安装；需要生成字幕时，再安装一个 Whisper 模型包（Small 适合多数电脑，Medium 识别质量更高）。
+3. 打开 Localize Studio，粘贴视频链接，选择翻译方向和字幕方式，然后点击“开始本地化”。
+
+| 你想做什么 | 选择方式 | 需要什么 |
+| --- | --- | --- |
+| 最高画质无字幕下载 | “仅下载原视频（无字幕）” | 只需 Standard |
+| 英文 ↔ 简体中文 | “本地快速翻译” | Standard + 一个 Whisper 包 |
+| 更自然的中英字幕 | “本地 AI 段落翻译” | Complete + 一个 Whisper 包 |
+| 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Complete + Whisper，或 API |
+
+**Standard v0.6.5：约 463 MiB 下载体积。** 它包含主程序、Python、FFmpeg、字幕字体、GPU/CPU 编码回退和两套中英快速离线翻译模型。安装完成后不必联网；字幕任务需要单独安装一个 Whisper 模型包。
+
+## ✨ 你能得到什么
+
+| 输入 | 处理 | 输出 |
+| --- | --- | --- |
+| YouTube 公开视频、授权直链或本地视频 | 本地 Whisper 识别、段落翻译、字幕质量检查 | SRT、ASS、硬字幕 MP4、可选软字幕 MP4、项目报告 |
+| 英文或简体中文语音 | 中英双向、本地 AI 或 API 多语种翻译 | 中文、英文、日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语、阿拉伯语字幕 |
+| 高画质视频 | 自动选择已验证的 NVIDIA / Intel / AMD 编码器；不可用则安全回退 CPU | 保持原始分辨率和帧率，或按你的设置限制输出 |
+
+## 👥 适合谁
+
+- 想离线观看、学习英文视频的中文用户；
+- 有授权素材、需要制作多语言字幕的创作者、课程编辑和播客团队；
+- 希望保留项目文件、可中断续跑、可复核字幕和术语的专业用户。
+
+不适合批量搬运、无人值守转载、规避平台限制，或处理未获授权的内容。
+
+## 📌 版本与支持
+
+- 新增、优化和修复：[CHANGELOG.md](CHANGELOG.md)
+- 完整中文使用手册：[docs/USER_GUIDE.zh-CN.md](docs/USER_GUIDE.zh-CN.md)
+- 安装、模型和故障排查：[docs/INSTALLATION.zh-CN.md](docs/INSTALLATION.zh-CN.md)
+- 报告问题或提出功能建议：[Issues](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/issues)
+
+---
+
+## 面向开发者的详细说明
+
+This production-oriented local Python application localizes authorized English- or Chinese-language
+videos in either direction. Each reusable project contains normalized subtitles, optional bilingual
+subtitles, and a validated hard-subtitled MP4. The pipeline is resumable, keeps intermediate files,
+and never uploads content. YouTube caption tracks are never downloaded or consumed.
 
 ## Legal-use notice
 
