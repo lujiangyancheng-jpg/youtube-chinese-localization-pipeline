@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.4"
+  #define AppVersion "0.6.5"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
@@ -25,8 +25,17 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
 OutputBaseFilename=YouTube-Chinese-Localizer-{#AppVersion}-{#PackageTier}-Offline-Setup
+#if PackageTier == "Standard"
+; Standard contains no multi-gigabyte LLM blob, so high LZMA2 compression substantially reduces
+; the download without removing a runtime, model, font, or hardware fallback.
+Compression=lzma2/ultra64
+SolidCompression=yes
+#else
+; The Complete package contains a large already-compressed Qwen blob. Recompressing it gives
+; negligible savings while significantly increasing build and install time.
 Compression=none
 SolidCompression=no
+#endif
 DiskSpanning=yes
 DiskSliceSize=1900000000
 WizardStyle=modern

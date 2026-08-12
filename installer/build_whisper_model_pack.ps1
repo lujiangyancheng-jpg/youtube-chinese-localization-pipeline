@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.4",
+    [string]$Version = "0.6.5",
     [ValidateSet("Small", "Medium")]
     [string]$Model = "Small",
     [string]$SmallRevision = "536b0662742c02347bc0e980a01041f333bce120",

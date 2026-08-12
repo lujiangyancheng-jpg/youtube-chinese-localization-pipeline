@@ -556,9 +556,10 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.4 adds local-AI/API-only translation paths from English or Simplified Chinese to eight
-additional target languages, while retaining extensionless CDN video URL validation and the
-interactive subtitle layout preview. Install one Whisper pack after the base application; a
+Version 0.6.5 keeps Standard's functionality while using high-compression distribution to reduce
+its installer download size. It also includes local-AI/API-only translation paths from English or
+Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,
+and the interactive subtitle layout preview. Install one Whisper pack after the base application; a
 packaged app blocks subtitle processing with a clear instruction when no model pack is present. See [CHANGELOG.md](CHANGELOG.md) for the complete
 per-version history.
 After installation, run **Verify YouTube Localizer Installation** from the Start menu to validate
