@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 
-[立即下载 v0.6.6 Standard](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.6/YouTube-Chinese-Localizer-0.6.6-Standard-Offline-Setup.exe)
+[立即下载 v0.6.7 Standard](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.7/YouTube-Chinese-Localizer-0.6.7-Standard-Offline-Setup.exe)
 · [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 · [中文完整说明](docs/USER_GUIDE.zh-CN.md)
 
@@ -20,9 +20,9 @@
 ## 🚀 三步开始使用
 
 1. 下载并放在同一文件夹：
-   [Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.6/YouTube-Chinese-Localizer-0.6.6-Standard-Offline-Setup.exe)
+   [Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.7/YouTube-Chinese-Localizer-0.6.7-Standard-Offline-Setup.exe)
    和
-   [Setup-1.bin](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.6/YouTube-Chinese-Localizer-0.6.6-Standard-Offline-Setup-1.bin)。
+   [Setup-1.bin](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.7/YouTube-Chinese-Localizer-0.6.7-Standard-Offline-Setup-1.bin)。
 2. 双击 `Setup.exe` 安装；需要生成字幕时，再安装一个 Whisper 模型包（Small 适合多数电脑，Medium 识别质量更高）。
 3. 打开 Localize Studio，粘贴视频链接，选择翻译方向和字幕方式，然后点击“开始本地化”。
 
@@ -33,7 +33,7 @@
 | 更自然的中英字幕 | “本地 AI 段落翻译” | Complete + 一个 Whisper 包 |
 | 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Complete + Whisper，或 API |
 
-**Standard v0.6.6：约 463 MiB 下载体积。** 它包含主程序、Python、FFmpeg、字幕字体、GPU/CPU 编码回退和两套中英快速离线翻译模型。安装完成后不必联网；字幕任务需要单独安装一个 Whisper 模型包。首次启动会用三步说明你下一步需要什么。
+**Standard v0.6.7：约 463 MiB 下载体积。** 它包含主程序、Python、FFmpeg、字幕字体、GPU/CPU 编码回退和两套中英快速离线翻译模型。安装完成后不必联网；字幕任务需要单独安装一个 Whisper 模型包。首次启动会用三步说明你下一步需要什么。
 
 ## ✨ 你能得到什么
 
@@ -554,6 +554,12 @@ set an exact size. The selected values are passed to the renderer as `position_x
 `position_y_percent`, and `font_size`, so the final ASS and hard-subtitle video use the layout
 you approved. The preview is a layout canvas; it does not download a video or start processing.
 
+After a project finishes, use the desktop toolbar's **字幕审核** button, choose that project's
+folder, and edit individual target-language cues without changing their timestamps. **保存修改**
+rebuilds the affected SRT/ASS (including bilingual tracks), while **从此处预览 12 秒** renders a
+separate `review_preview_*.mp4` around the selected cue. The final video is never overwritten by
+the review preview; run the normal full render only after you approve the result.
+
 ```powershell
 python main.py preview "output\PROJECT_NAME" --start 60 --duration 15
 ```
@@ -606,7 +612,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.6 adds a first-run setup guide and a user-initiated update check while preserving the
+Version 0.6.7 adds an in-app subtitle review editor and short real-video preview while preserving the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,
 and the interactive subtitle layout preview. Install one Whisper pack after the base application; a
