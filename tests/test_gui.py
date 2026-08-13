@@ -12,6 +12,7 @@ from youtube_localizer.gui import (
     api_configuration,
     build_process_command,
     clamp_subtitle_preview_values,
+    gui_parallel_job_limit,
     gui_process_creationflags,
     local_ai_available,
     mode_description,
@@ -68,6 +69,13 @@ def test_queue_input_values_keeps_local_paths_and_deduplicates_lines() -> None:
         "https://youtu.be/one",
         "C:/Videos/My clip.mp4",
     ]
+
+
+def test_gui_parallel_queue_is_bounded_to_two_safe_workers() -> None:
+    assert gui_parallel_job_limit(0) == 1
+    assert gui_parallel_job_limit(1) == 1
+    assert gui_parallel_job_limit(2) == 2
+    assert gui_parallel_job_limit(20) == 2
 
 
 def test_api_configuration_does_not_require_or_mutate_environment() -> None:

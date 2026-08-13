@@ -10,6 +10,7 @@ import time
 import tkinter as tk
 import webbrowser
 from collections.abc import Callable, Mapping
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
@@ -144,6 +145,13 @@ def queue_input_values(value: str) -> list[str]:
     if not values and value.strip():
         values = [value.strip()]
     return list(dict.fromkeys(values))
+
+
+def gui_parallel_job_limit(input_count: int) -> int:
+    """Allow two independent downloads while cross-process heavy-work locks protect hardware."""
+    if input_count < 1:
+        return 1
+    return min(2, input_count)
 
 
 def progress_update_from_output(line: str, *, provider: str) -> tuple[float, str] | None:
@@ -947,6 +955,8 @@ class LocalizerWindow:
 
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
         self.process: subprocess.Popen[str] | None = None
+        self._process_lock = threading.Lock()
+        self._active_processes: set[subprocess.Popen[str]] = set()
         self.worker: threading.Thread | None = None
         self.stop_requested = False
         self.active_direction = "en-to-zh"
@@ -954,6 +964,8 @@ class LocalizerWindow:
         self._progress_value = 0.0
         self.active_queue_index = 1
         self.active_queue_total = 1
+        self._task_progress: dict[int, float] = {}
+        self._parallel_queue = False
 
         endpoint, model, api_key = api_configuration(os.environ)
         default_translation = (
@@ -1681,10 +1693,12 @@ class LocalizerWindow:
         self.settings_button.configure(text="处理设置")
         self._update_input_state()
 
+    def _has_active_processes(self) -> bool:
+        with self._process_lock:
+            return any(process.poll() is None for process in self._active_processes)
+
     def _clear_input(self) -> None:
-        if (self.process and self.process.poll() is None) or (
-            self.worker and self.worker.is_alive()
-        ):
+        if self._has_active_processes() or (self.worker and self.worker.is_alive()):
             messagebox.showinfo("任务进行中", "请先停止当前任务，再移除视频。", parent=self.root)
             return
         self.input_value.set("")
@@ -1824,7 +1838,7 @@ class LocalizerWindow:
             )
         queue_count = len(queue_input_values(self.input_value.get()))
         if queue_count > 1:
-            summary += f" · 已排队 {queue_count} 个视频（顺序处理，安全不抢资源）"
+            summary += f" · 已排队 {queue_count} 个视频（最多两个并行，重负载自动排队）"
         self.workflow_summary.set(summary)
         automatic = not download_only and provider == "openai-compatible"
         if automatic and self.settings_visible:
@@ -1892,9 +1906,7 @@ class LocalizerWindow:
         return commands, environment, workflow
 
     def _start(self) -> None:
-        if (self.process and self.process.poll() is None) or (
-            self.worker and self.worker.is_alive()
-        ):
+        if self._has_active_processes() or (self.worker and self.worker.is_alive()):
             return
         try:
             commands, environment, provider = self._validate()
@@ -1907,12 +1919,15 @@ class LocalizerWindow:
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self.active_queue_index = 1
         self.active_queue_total = len(commands)
+        self._task_progress = {}
+        self._parallel_queue = self.active_queue_total > 1
         self._append_log(
             "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"
         )
         if self.active_queue_total > 1:
             self._append_log(
-                f"已加入 {self.active_queue_total} 个视频，将顺序处理以保护显存、CPU 和磁盘。\n\n"
+                f"已加入 {self.active_queue_total} 个视频：最多两个下载/预处理任务并行，"
+                "Whisper、本地 AI 与压制阶段会自动排队以保护显存、CPU 和磁盘。\n\n"
             )
         self._append_log(f"项目输出位置：{self.output_directory.get().strip()}\n")
         if provider == "download_only":
@@ -1967,26 +1982,57 @@ class LocalizerWindow:
         failures = 0
         completed = 0
         total = len(commands)
-        for index, command in enumerate(commands, start=1):
+        parallel_jobs = gui_parallel_job_limit(total)
+        pending = iter(enumerate(commands, start=1))
+        futures: dict[Future[int], int] = {}
+
+        def submit_next(executor: ThreadPoolExecutor) -> bool:
             if self.stop_requested:
-                break
+                return False
+            try:
+                index, command = next(pending)
+            except StopIteration:
+                return False
             self.events.put(("queue_item", (index, total, command[3])))
-            return_code = self._run_process(command, environment)
-            completed = index
-            if return_code != 0:
-                failures += 1
-            if self.stop_requested:
-                break
+            future = executor.submit(self._run_process, command, environment, index, total)
+            futures[future] = index
+            return True
+
+        with ThreadPoolExecutor(
+            max_workers=parallel_jobs,
+            thread_name_prefix="localizer-queue",
+        ) as executor:
+            for _ in range(parallel_jobs):
+                if not submit_next(executor):
+                    break
+            while futures:
+                done, _ = wait(futures, return_when=FIRST_COMPLETED)
+                for future in done:
+                    index = futures.pop(future)
+                    completed += 1
+                    try:
+                        return_code = future.result()
+                    except Exception as exc:  # pragma: no cover - unexpected worker failures
+                        return_code = 1
+                        self.events.put(("line", (index, total, f"\n任务内部失败：{exc}\n")))
+                    if return_code != 0:
+                        failures += 1
+                    self.events.put(("task_finished", (index, total, return_code)))
+                    if not self.stop_requested:
+                        submit_next(executor)
         self.events.put(("done", (1 if failures else 0, provider, completed, total, failures)))
 
     def _run_process(
         self,
         command: list[str],
         environment: dict[str, str],
+        queue_index: int,
+        queue_total: int,
     ) -> int:
         creationflags = gui_process_creationflags()
+        process: subprocess.Popen[str] | None = None
         try:
-            self.process = subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 cwd=PROJECT_ROOT,
                 env=environment,
@@ -1998,12 +2044,15 @@ class LocalizerWindow:
                 bufsize=1,
                 creationflags=creationflags,
             )
+            with self._process_lock:
+                self._active_processes.add(process)
+                self.process = process
             if self.stop_requested:
-                terminate_process_tree(self.process)
+                terminate_process_tree(process)
             last_download_percent: float | None = None
             last_download_update = 0.0
-            assert self.process.stdout is not None
-            for line in self.process.stdout:
+            assert process.stdout is not None
+            for line in process.stdout:
                 if download := _DOWNLOAD_PROGRESS_RE.search(line):
                     percent = float(download.group(1))
                     now = time.monotonic()
@@ -2015,34 +2064,43 @@ class LocalizerWindow:
                         continue
                     last_download_percent = percent
                     last_download_update = now
-                self.events.put(("line", line))
-            return self.process.wait()
+                self.events.put(("line", (queue_index, queue_total, line)))
+            return process.wait()
         except OSError as exc:
-            self.events.put(("line", f"\n无法启动：{exc}\n"))
+            self.events.put(("line", (queue_index, queue_total, f"\n无法启动：{exc}\n")))
             return 1
+        finally:
+            if process is not None:
+                with self._process_lock:
+                    self._active_processes.discard(process)
+                    if self.process is process:
+                        self.process = next(iter(self._active_processes), None)
 
     def _stop(self) -> None:
-        process = self.process
-        if self.stop_requested or not process or process.poll() is not None:
+        with self._process_lock:
+            processes = [process for process in self._active_processes if process.poll() is None]
+        if self.stop_requested or not processes:
             return
         if not messagebox.askyesno(
             "停止处理",
-            "确定停止当前任务吗？已完成的阶段会保留，下次可继续。",
+            "确定停止正在运行的任务吗？已完成的阶段会保留，下次可继续。",
             parent=self.root,
         ):
             return
         self.stop_requested = True
         self._set_status("正在停止……")
-        terminate_process_tree(process)
+        for process in processes:
+            terminate_process_tree(process)
 
     def _poll_events(self) -> None:
         try:
             while True:
                 event, payload = self.events.get_nowait()
                 if event == "line":
-                    line = str(payload)
-                    self._append_log(line)
-                    self._update_progress_from_output(line)
+                    index, total, line = payload  # type: ignore[misc]
+                    prefix = f"[任务 {index}/{total}] " if int(total) > 1 else ""
+                    self._append_log(prefix + str(line))
+                    self._update_progress_from_output(str(line), queue_index=int(index))
                 elif event == "done":
                     return_code, provider, completed, total, failures = payload  # type: ignore[misc]
                     self._finish(
@@ -2056,7 +2114,8 @@ class LocalizerWindow:
                     index, total, source = payload  # type: ignore[misc]
                     self.active_queue_index = int(index)
                     self.active_queue_total = int(total)
-                    self._progress_value = 99.0 * (self.active_queue_index - 1) / self.active_queue_total
+                    self._task_progress[int(index)] = 0.0
+                    self._progress_value = min(self._progress_value, 99.0)
                     self.progress.stop()
                     self.progress.configure(mode="determinate", value=self._progress_value)
                     self._set_status(
@@ -2065,6 +2124,16 @@ class LocalizerWindow:
                     self._append_log(
                         f"\n{'=' * 10} 任务 {self.active_queue_index}/{self.active_queue_total}：{source} {'=' * 10}\n"
                     )
+                elif event == "task_finished":
+                    index, total, return_code = payload  # type: ignore[misc]
+                    self._task_progress[int(index)] = 100.0
+                    if int(total):
+                        aggregate = 99.0 * sum(self._task_progress.values()) / (100.0 * int(total))
+                        self._progress_value = max(self._progress_value, min(99.0, aggregate))
+                        self.progress.stop()
+                        self.progress.configure(mode="determinate", value=self._progress_value)
+                    if int(return_code) == 0:
+                        self._set_status(f"任务 {index}/{total} 已完成，继续处理队列…", "active")
                 elif event == "update":
                     self._show_update_result(payload)  # type: ignore[arg-type]
                 elif event == "review_preview":
@@ -2074,7 +2143,7 @@ class LocalizerWindow:
             pass
         self.root.after(100, self._poll_events)
 
-    def _update_progress_from_output(self, line: str) -> None:
+    def _update_progress_from_output(self, line: str, *, queue_index: int | None = None) -> None:
         update = progress_update_from_output(line, provider=self.active_provider)
         if update is None:
             return
@@ -2082,13 +2151,17 @@ class LocalizerWindow:
         self.progress.stop()
         self.progress.configure(mode="determinate")
         task_progress = min(99.0, value)
-        aggregate = 99.0 * (
-            (self.active_queue_index - 1) + task_progress / 100
-        ) / self.active_queue_total
+        if self._parallel_queue and queue_index is not None:
+            self._task_progress[queue_index] = max(self._task_progress.get(queue_index, 0.0), task_progress)
+            aggregate = 99.0 * sum(self._task_progress.values()) / (100.0 * self.active_queue_total)
+        else:
+            aggregate = 99.0 * (
+                (self.active_queue_index - 1) + task_progress / 100
+            ) / self.active_queue_total
         self._progress_value = max(self._progress_value, min(99.0, aggregate))
         self.progress.configure(value=self._progress_value)
         prefix = (
-            f"任务 {self.active_queue_index}/{self.active_queue_total} · "
+            f"任务 {queue_index or self.active_queue_index}/{self.active_queue_total} · "
             if self.active_queue_total > 1
             else ""
         )
@@ -2108,6 +2181,8 @@ class LocalizerWindow:
         self.start_button.configure(state="normal")
         self.stop_button.configure(state="disabled")
         self.process = None
+        self._parallel_queue = False
+        self._task_progress = {}
         if self.stop_requested:
             self.stop_requested = False
             self.progress.configure(value=0)
@@ -2221,7 +2296,7 @@ class LocalizerWindow:
         )
 
     def _on_close(self) -> None:
-        process_running = self.process is not None and self.process.poll() is None
+        process_running = self._has_active_processes()
         worker_running = self.worker is not None and self.worker.is_alive()
         if process_running or worker_running:
             if not messagebox.askyesno(
@@ -2231,8 +2306,10 @@ class LocalizerWindow:
             ):
                 return
             self.stop_requested = True
-            if self.process is not None:
-                terminate_process_tree(self.process)
+            with self._process_lock:
+                processes = list(self._active_processes)
+            for process in processes:
+                terminate_process_tree(process)
         self.root.destroy()
 
 

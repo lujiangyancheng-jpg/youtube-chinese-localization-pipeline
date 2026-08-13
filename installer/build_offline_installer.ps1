@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.7",
+    [string]$Version = "0.6.8",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",
@@ -23,6 +23,7 @@ param(
     [string]$ArgosZhEnModelSha256 = "EDD8C8A6863D36959613FF291074627A1635FAB2F51B872EF437E924D238921A",
     [string]$OllamaModelRoot = "$env:USERPROFILE\.ollama\models",
     [string]$QwenModelBlobSha256 = "3E4CB14174460404E7A233E531675303B2FBF7749C02F91864FE311AB6344E4F",
+    [string]$CertificateThumbprint = "",
     [switch]$SkipInstaller,
     [switch]$SkipSmokeTest
 )
@@ -106,12 +107,17 @@ Get-ChildItem -LiteralPath $AppRoot -Directory -Recurse -Filter "__pycache__" |
         Assert-ChildPath $_.FullName $StageRoot
         Remove-Item -LiteralPath $_.FullName -Recurse -Force
     }
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot "Launch Localizer.cmd") -Destination $StageRoot
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "YouTube Localizer CLI.cmd") -Destination $StageRoot
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "test_offline_install.ps1") `
     -Destination (Join-Path $StageRoot "Verify Offline Install.ps1")
 Copy-Item -LiteralPath $RuntimeRequirements -Destination (Join-Path $StageRoot "runtime-dependencies.lock")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "THIRD_PARTY_MODELS.md") -Destination $LicenseRoot
+& (Join-Path $PSScriptRoot "build_launcher.ps1") -OutputPath (Join-Path $StageRoot "Localize Studio.exe")
+if ($CertificateThumbprint) {
+    & (Join-Path $PSScriptRoot "sign_release.ps1") `
+        -CertificateThumbprint $CertificateThumbprint `
+        -ArtifactPath (Join-Path $StageRoot "Localize Studio.exe")
+}
 
 Write-Host "[2/9] Installing the embedded Python/Tk runtime and application dependencies..."
 $PythonArchive = Join-Path $CacheRoot "python-$PythonVersion-embed-amd64.zip"
@@ -350,6 +356,9 @@ if (-not $SkipSmokeTest) {
         if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }
         & $EmbeddedPython (Join-Path $AppRoot "main.py") --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Staged CLI smoke test failed." }
+        $Launcher = Join-Path $StageRoot "Localize Studio.exe"
+        $LauncherProcess = Start-Process -FilePath $Launcher -ArgumentList "--verify" -PassThru -Wait
+        if ($LauncherProcess.ExitCode -ne 0) { throw "Staged native GUI launcher smoke test failed." }
     } finally {
         $env:YOUTUBE_LOCALIZER_HOME = $previousHome
         $env:YOUTUBE_LOCALIZER_MODELS = $previousModels
@@ -379,6 +388,11 @@ if (-not $SkipInstaller) {
     $SetupFiles = Get-ChildItem -LiteralPath $DistRoot -File |
         Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-$PackageTier-Offline-Setup*" } |
         Sort-Object Name
+    if ($CertificateThumbprint) {
+        & (Join-Path $PSScriptRoot "sign_release.ps1") `
+            -CertificateThumbprint $CertificateThumbprint `
+            -ArtifactPath @($SetupFiles | Where-Object { $_.Extension -eq ".exe" } | ForEach-Object FullName)
+    }
     $Checksums = foreach ($file in $SetupFiles) {
         "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant(), $file.Name
     }

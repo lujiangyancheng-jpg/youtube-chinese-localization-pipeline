@@ -130,6 +130,8 @@ class DownloadConfig(StrictModel):
     download_thumbnail: bool = True
     download_metadata: bool = True
     concurrent_fragment_downloads: int = Field(default=4, ge=1, le=8)
+    retry_attempts: int = Field(default=2, ge=1, le=3)
+    retry_delay_seconds: int = Field(default=8, ge=1, le=60)
 
 
 class TranscriptionConfig(StrictModel):

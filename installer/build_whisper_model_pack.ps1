@@ -1,12 +1,13 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.7",
+    [string]$Version = "0.6.8",
     [ValidateSet("Small", "Medium")]
     [string]$Model = "Small",
     [string]$SmallRevision = "536b0662742c02347bc0e980a01041f333bce120",
     [string]$SmallSha256 = "3E305921506D8872816023E4C273E75D2419FB89B24DA97B4FE7BCE14170D671",
     [string]$MediumRevision = "08e178d48790749d25932bbc082711ddcfdfbc4f",
     [string]$MediumSha256 = "9B45E1009DCC4AB601EFF815B61D80E60CE3FD8C74C1A14F4A282258286B51AE",
+    [string]$CertificateThumbprint = "",
     [switch]$SkipInstaller,
     [switch]$SkipSmokeTest
 )
@@ -122,6 +123,11 @@ if (-not $SkipInstaller) {
     $SetupFiles = Get-ChildItem -LiteralPath $DistRoot -File |
         Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-Whisper-$Model-Model-Setup*" } |
         Sort-Object Name
+    if ($CertificateThumbprint) {
+        & (Join-Path $PSScriptRoot "sign_release.ps1") `
+            -CertificateThumbprint $CertificateThumbprint `
+            -ArtifactPath @($SetupFiles | Where-Object { $_.Extension -eq ".exe" } | ForEach-Object FullName)
+    }
     $Checksums = foreach ($file in $SetupFiles) {
         "{0}  {1}" -f (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant(), $file.Name
     }

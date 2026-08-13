@@ -56,8 +56,8 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.6.7-Standard-Offline-Setup.exe` 或
-`YouTube-Chinese-Localizer-0.6.7-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.6.8-Standard-Offline-Setup.exe` 或
+`YouTube-Chinese-Localizer-0.6.8-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
 Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
 Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
@@ -150,7 +150,8 @@ python main.py doctor
 
 新版桌面界面采用简洁的下载器式布局：“粘贴链接”是顶部最醒目的主操作，
 尚未添加视频时只显示两步提示；粘贴后才出现当前任务、授权确认和开始按钮。一次复制多行
-链接也可以：每行一个链接，程序会把它们加入安全队列，按顺序处理，并在每一项之间保留断点续跑。
+链接也可以：每行一个链接，程序会把它们加入安全队列。最多两个下载/预处理任务可并行，Whisper、
+本地 AI 与压制阶段会自动排队，并在每一项之间保留断点续跑。
 处理设置、API 参数与运行记录均按需展开，避免第一次使用时被大量选项干扰。
 
 安装和环境检查完成后，在项目目录中双击：
@@ -716,7 +717,7 @@ https://www.youtube.com/watch?v=VIDEO_ID
 python main.py --batch inputs.txt
 ```
 
-批处理按顺序执行。某个输入失败时会记录错误并继续处理其他输入。
+桌面端批处理最多同时执行两个项目；Whisper、本地 AI 和压制阶段会自动排队。某个输入失败时会记录错误并继续处理其他输入。
 
 ## 15. 清理临时文件
 
