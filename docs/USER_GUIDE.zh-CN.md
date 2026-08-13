@@ -56,8 +56,8 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.6.6-Standard-Offline-Setup.exe` 或
-`YouTube-Chinese-Localizer-0.6.6-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.6.7-Standard-Offline-Setup.exe` 或
+`YouTube-Chinese-Localizer-0.6.7-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
 Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
 Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
@@ -486,6 +486,15 @@ rendered\preview_60_15.mp4
 ```
 
 如果字体、字号或位置不合适，修改配置后重新预览。
+
+## 9.1 在桌面端审核并局部修改字幕
+
+项目完成后，打开 Localize Studio 顶部的“字幕审核”，选择包含 `pipeline_state.json` 的项目文件夹。
+左侧会显示目标语言字幕的所有段落；点击任意段落后可在右侧修改文字或换行，时间轴不会被改动。
+
+点击“保存修改”后，软件会同步重建目标 SRT、ASS；中英双语项目还会同步重建 `bilingual.srt` 和
+`bilingual.ass`。点击“从此处预览 12 秒”会以当前段落的起始时间生成独立的
+`rendered\review_preview_*.mp4`。该预览不会覆盖最终成片；确认无误后，再按正常流程完整压制最终视频。
 
 ## 10. 配置文件
 

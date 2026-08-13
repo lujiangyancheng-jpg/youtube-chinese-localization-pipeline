@@ -13,7 +13,13 @@ from collections.abc import Callable, Mapping
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
-from .config import default_output_directory, output_directory_advice, requires_local_ai_or_api
+from .config import (
+    AppConfig,
+    default_output_directory,
+    output_directory_advice,
+    requires_local_ai_or_api,
+)
+from .errors import LocalizerError
 from .models import ProjectPaths
 from .onboarding import (
     mark_onboarding_completed,
@@ -22,8 +28,15 @@ from .onboarding import (
     setup_status_message,
 )
 from .resources import installed_whisper_models, ollama_executable, package_tier
+from .review import (
+    SubtitleReviewSession,
+    load_subtitle_review_session,
+    render_subtitle_review_preview,
+    save_reviewed_subtitles,
+)
 from .support import create_support_bundle
 from .updates import ReleaseCheck, check_for_update
+from .utils.text import ms_to_srt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -715,6 +728,214 @@ class SetupGuideDialog:
             self.window.destroy()
 
 
+class SubtitleReviewDialog:
+    """Edit an existing target subtitle track without changing its time axis."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        session: SubtitleReviewSession,
+        config: AppConfig,
+        *,
+        on_preview: Callable[
+            [SubtitleReviewSession, AppConfig, float, Callable[[Path | None, str | None], None]], None
+        ],
+    ) -> None:
+        self.session = session
+        self.config = config
+        self.on_preview = on_preview
+        self.cues = list(session.cues)
+        self.selected_index: int | None = None
+        self.dirty = False
+        self.window = tk.Toplevel(parent)
+        self.window.title("字幕审核与快速预览｜Localize Studio")
+        self.window.geometry("980x680")
+        self.window.minsize(820, 560)
+        self.window.configure(background=SURFACE)
+        self.window.transient(parent)
+        self.window.protocol("WM_DELETE_WINDOW", self._close)
+
+        body = ttk.Frame(self.window, style="Card.TFrame", padding=(22, 18))
+        body.pack(fill="both", expand=True)
+        body.columnconfigure(0, weight=3)
+        body.columnconfigure(1, weight=2)
+        body.rowconfigure(2, weight=1)
+        ttk.Label(body, text="字幕审核", style="SectionTitle.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w"
+        )
+        ttk.Label(
+            body,
+            text="修改只会更新目标字幕与样式文件，不会重新下载或识别。保存后可从当前段落生成 12 秒预览；最终 MP4 需要你确认后再完整压制。",
+            style="Muted.TLabel",
+            wraplength=900,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(5, 12))
+
+        table_frame = ttk.Frame(body, style="Card.TFrame")
+        table_frame.grid(row=2, column=0, sticky="nsew", padx=(0, 14))
+        table_frame.rowconfigure(0, weight=1)
+        table_frame.columnconfigure(0, weight=1)
+        self.tree = ttk.Treeview(
+            table_frame,
+            columns=("cue", "time", "text"),
+            show="headings",
+            selectmode="browse",
+        )
+        self.tree.heading("cue", text="#")
+        self.tree.heading("time", text="时间")
+        self.tree.heading("text", text="字幕内容")
+        self.tree.column("cue", width=46, stretch=False, anchor="center")
+        self.tree.column("time", width=180, stretch=False)
+        self.tree.column("text", width=430, stretch=True)
+        scrollbar = ttk.Scrollbar(table_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+        self.tree.bind("<<TreeviewSelect>>", self._select_cue)
+
+        editor = ttk.Frame(body, style="Card.TFrame")
+        editor.grid(row=2, column=1, sticky="nsew")
+        editor.rowconfigure(2, weight=1)
+        editor.columnconfigure(0, weight=1)
+        self.cue_label = ttk.Label(editor, text="选择左侧字幕段落", style="Field.TLabel")
+        self.cue_label.grid(row=0, column=0, sticky="w")
+        ttk.Label(editor, text="可以编辑文字和换行；时间轴保持不变。", style="Muted.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(4, 8)
+        )
+        self.editor = scrolledtext.ScrolledText(
+            editor,
+            height=10,
+            wrap="word",
+            font=(UI_FONT, 11),
+            background="#FAFAFB",
+            foreground=TEXT,
+            insertbackground=TEXT,
+            borderwidth=1,
+            relief="solid",
+            padx=10,
+            pady=8,
+        )
+        self.editor.grid(row=2, column=0, sticky="nsew")
+        self.status = tk.StringVar(value=f"已载入 {len(self.cues)} 条目标字幕")
+        ttk.Label(editor, textvariable=self.status, style="Muted.TLabel", wraplength=330).grid(
+            row=3, column=0, sticky="w", pady=(10, 0)
+        )
+
+        footer = ttk.Frame(body, style="Card.TFrame")
+        footer.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+        ttk.Button(footer, text="关闭", style="Secondary.TButton", command=self._close).pack(side="left")
+        self.preview_button = ttk.Button(
+            footer, text="从此处预览 12 秒", style="Secondary.TButton", command=self._preview
+        )
+        self.preview_button.pack(side="right")
+        ttk.Button(footer, text="保存修改", style="Primary.TButton", command=self._save).pack(
+            side="right", padx=(0, 8)
+        )
+        self._populate()
+
+    def _populate(self) -> None:
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+        for index, cue in enumerate(self.cues):
+            timing = f"{ms_to_srt(cue.start_ms)} → {ms_to_srt(cue.end_ms)}"
+            self.tree.insert("", "end", iid=str(index), values=(cue.id, timing, cue.text.replace("\n", " / ")))
+        if self.cues:
+            self.tree.selection_set("0")
+            self.tree.focus("0")
+            self._load_selected(0)
+
+    def _commit_editor(self) -> bool:
+        if self.selected_index is None:
+            return True
+        text = self.editor.get("1.0", "end-1c").strip()
+        if not text:
+            messagebox.showwarning("字幕不能为空", "请保留当前段落的文字，或取消编辑。", parent=self.window)
+            return False
+        current = self.cues[self.selected_index]
+        if text != current.text:
+            self.cues[self.selected_index] = current.model_copy(update={"text": text})
+            self.tree.set(str(self.selected_index), "text", text.replace("\n", " / "))
+            self.dirty = True
+        return True
+
+    def _load_selected(self, index: int) -> None:
+        cue = self.cues[index]
+        self.selected_index = index
+        self.cue_label.configure(text=f"第 {cue.id} 条　{ms_to_srt(cue.start_ms)} → {ms_to_srt(cue.end_ms)}")
+        self.editor.delete("1.0", "end")
+        self.editor.insert("1.0", cue.text)
+
+    def _select_cue(self, _event: object) -> None:
+        selection = self.tree.selection()
+        if not selection:
+            return
+        next_index = int(selection[0])
+        if next_index == self.selected_index:
+            return
+        if not self._commit_editor():
+            if self.selected_index is not None:
+                self.tree.selection_set(str(self.selected_index))
+            return
+        self._load_selected(next_index)
+
+    def _save(self, *, quiet: bool = False) -> bool:
+        if not self._commit_editor():
+            return False
+        styled_subtitle = (
+            self.session.ass_path
+            if self.config.subtitle_mode == "chinese"
+            else self.session.project.bilingual_ass
+        )
+        if not self.dirty and styled_subtitle.is_file():
+            return True
+        try:
+            outputs = save_reviewed_subtitles(self.session, self.config, self.cues)
+        except (OSError, ValueError, LocalizerError) as exc:
+            messagebox.showerror("无法保存字幕", str(exc), parent=self.window)
+            return False
+        self.session = SubtitleReviewSession(
+            self.session.project, self.session.subtitle_path, self.session.ass_path, list(self.cues)
+        )
+        self.dirty = False
+        self.status.set("已保存字幕与样式文件；最终 MP4 尚未重新压制。")
+        if not quiet:
+            messagebox.showinfo(
+                "字幕已保存",
+                "已更新：\n" + "\n".join(str(path.name) for path in outputs) + "\n\n可先生成短预览，确认后再完整压制最终视频。",
+                parent=self.window,
+            )
+        return True
+
+    def _preview(self) -> None:
+        if not self._save(quiet=True):
+            return
+        if self.selected_index is None:
+            return
+        start = self.cues[self.selected_index].start_ms / 1000
+        self.preview_button.configure(state="disabled", text="正在生成预览…")
+        self.status.set("正在压制所选位置附近的 12 秒预览…")
+        self.on_preview(self.session, self.config, start, self._preview_finished)
+
+    def _preview_finished(self, output: Path | None, error: str | None) -> None:
+        if not self.window.winfo_exists():
+            return
+        self.preview_button.configure(state="normal", text="从此处预览 12 秒")
+        if error:
+            self.status.set("预览生成失败。")
+            messagebox.showerror("预览失败", error, parent=self.window)
+            return
+        assert output is not None
+        self.status.set(f"预览已生成：{output.name}")
+        messagebox.showinfo("预览已生成", f"短预览已保存到：\n{output}", parent=self.window)
+
+    def _close(self) -> None:
+        if self.dirty and not messagebox.askyesno(
+            "未保存的字幕修改", "有尚未保存的字幕修改，确定关闭吗？", parent=self.window
+        ):
+            return
+        self.window.destroy()
+
+
 class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -929,25 +1150,31 @@ class LocalizerWindow:
             command=self._begin_update_check,
         )
         self.update_button.grid(row=0, column=4, sticky="e")
+        ttk.Button(
+            hero,
+            text="字幕审核",
+            style="Toolbar.TButton",
+            command=self._open_subtitle_review,
+        ).grid(row=0, column=5, padx=(4, 0))
         self.settings_button = ttk.Button(
             hero,
             text="处理设置",
             style="Toolbar.TButton",
             command=self._toggle_settings,
         )
-        self.settings_button.grid(row=0, column=5, padx=(8, 0))
+        self.settings_button.grid(row=0, column=6, padx=(8, 0))
         ttk.Button(
             hero,
             text="输出文件夹",
             style="Toolbar.TButton",
             command=self._open_output,
-        ).grid(row=0, column=6, padx=(4, 0))
+        ).grid(row=0, column=7, padx=(4, 0))
         ttk.Button(
             hero,
             text="导出诊断包",
             style="Toolbar.TButton",
             command=self._export_support_bundle,
-        ).grid(row=0, column=7, padx=(4, 0))
+        ).grid(row=0, column=8, padx=(4, 0))
         ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
 
         self.empty_state = ttk.Frame(outer, style="App.TFrame")
@@ -1357,6 +1584,52 @@ class LocalizerWindow:
             mark_onboarding_completed()
         except OSError:
             self._append_log("无法保存首次设置状态；下次启动时会再次显示设置引导。")
+
+    def _open_subtitle_review(self) -> None:
+        from tkinter import filedialog
+
+        from .pipeline import load_project_config
+
+        selected = filedialog.askdirectory(
+            parent=self.root,
+            title="选择要审核字幕的项目文件夹",
+            initialdir=self.output_directory.get().strip() or str(default_output_directory()),
+            mustexist=True,
+        )
+        if not selected:
+            return
+        project = ProjectPaths(Path(selected).resolve())
+        if not project.state_file.is_file():
+            messagebox.showwarning(
+                "不是项目文件夹",
+                "请选择包含 pipeline_state.json 的项目文件夹。",
+                parent=self.root,
+            )
+            return
+        try:
+            config = load_project_config(project)
+            session = load_subtitle_review_session(project, config)
+        except (OSError, ValueError, LocalizerError) as exc:
+            messagebox.showerror("无法打开字幕审核", str(exc), parent=self.root)
+            return
+        SubtitleReviewDialog(self.root, session, config, on_preview=self._request_review_preview)
+
+    def _request_review_preview(
+        self,
+        session: SubtitleReviewSession,
+        config: AppConfig,
+        start_seconds: float,
+        callback: Callable[[Path | None, str | None], None],
+    ) -> None:
+        def worker() -> None:
+            try:
+                output = render_subtitle_review_preview(session, config, start_seconds=start_seconds)
+            except (OSError, ValueError, LocalizerError) as exc:
+                self.events.put(("review_preview", (callback, None, str(exc))))
+            else:
+                self.events.put(("review_preview", (callback, output, None)))
+
+        threading.Thread(target=worker, daemon=True, name="localizer-review-preview").start()
 
     def _begin_update_check(self) -> None:
         self.update_button.configure(state="disabled", text="正在检查…")
@@ -1794,6 +2067,9 @@ class LocalizerWindow:
                     )
                 elif event == "update":
                     self._show_update_result(payload)  # type: ignore[arg-type]
+                elif event == "review_preview":
+                    callback, output, error = payload  # type: ignore[misc]
+                    callback(output, error)
         except queue.Empty:
             pass
         self.root.after(100, self._poll_events)

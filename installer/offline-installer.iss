@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.6"
+  #define AppVersion "0.6.7"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
