@@ -8,14 +8,22 @@ import sys
 import threading
 import time
 import tkinter as tk
+import webbrowser
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 from .config import default_output_directory, output_directory_advice, requires_local_ai_or_api
 from .models import ProjectPaths
+from .onboarding import (
+    mark_onboarding_completed,
+    onboarding_completed,
+    release_page_url,
+    setup_status_message,
+)
 from .resources import installed_whisper_models, ollama_executable, package_tier
 from .support import create_support_bundle
+from .updates import ReleaseCheck, check_for_update
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -173,7 +181,13 @@ def whisper_model_installation_message() -> str | None:
     return (
         "尚未安装 Whisper 语音识别模型。请安装 Whisper Small（大多数电脑推荐）或 "
         "Whisper Medium（更高质量、需要更多内存/显存）模型包后再开始字幕任务。"
+        "可点击主界面的“首次设置”打开官方下载页。"
     )
+
+
+def packaged_app_needs_onboarding() -> bool:
+    """Show the guided setup only for a packaged application that has not seen it."""
+    return package_tier() is not None and not onboarding_completed()
 
 
 def mode_description(subtitle_mode: str, translation_provider: str) -> str:
@@ -553,6 +567,154 @@ class SubtitlePreviewDialog:
         self.window.destroy()
 
 
+class SetupGuideDialog:
+    """A concise first-run guide that keeps model downloads explicit and user-controlled."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        on_select_workflow: Callable[[str], None],
+        on_complete: Callable[[], None],
+    ) -> None:
+        self.on_select_workflow = on_select_workflow
+        self.on_complete = on_complete
+        self.window = tk.Toplevel(parent)
+        self.window.title("首次使用设置｜Localize Studio")
+        self.window.geometry("650x470")
+        self.window.minsize(580, 420)
+        self.window.configure(background=SURFACE)
+        self.window.transient(parent)
+        self.window.protocol("WM_DELETE_WINDOW", self._defer)
+
+        body = ttk.Frame(self.window, style="Card.TFrame", padding=(30, 28, 30, 24))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="欢迎使用 Localize Studio", style="SectionTitle.TLabel").pack(anchor="w")
+        ttk.Label(
+            body,
+            text="三步完成首次设置。你可以随时重新打开这个向导。",
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(6, 18))
+
+        self.step_label = ttk.Label(body, style="Field.TLabel")
+        self.step_label.pack(anchor="w")
+        self.content = ttk.Frame(body, style="Card.TFrame")
+        self.content.pack(fill="both", expand=True, pady=(10, 12))
+        footer = ttk.Frame(body, style="Card.TFrame")
+        footer.pack(fill="x")
+        self.back_button = ttk.Button(footer, text="上一步", style="Secondary.TButton", command=self._back)
+        self.back_button.pack(side="left")
+        self.next_button = ttk.Button(footer, text="下一步", style="Primary.TButton", command=self._next)
+        self.next_button.pack(side="right")
+        ttk.Button(footer, text="稍后再说", style="Toolbar.TButton", command=self._defer).pack(
+            side="right", padx=(0, 8)
+        )
+        self.step = 0
+        self._render()
+
+    def _clear_content(self) -> None:
+        for child in self.content.winfo_children():
+            child.destroy()
+
+    def _render(self) -> None:
+        self._clear_content()
+        self.back_button.configure(state="normal" if self.step else "disabled")
+        self.next_button.configure(text="完成" if self.step == 2 else "下一步")
+        if self.step == 0:
+            self.step_label.configure(text="第 1 步 / 3　选择这次要做什么")
+            ttk.Label(self.content, text="先选目标，软件会自动安排其余步骤。", style="Card.TLabel").pack(
+                anchor="w", pady=(4, 14)
+            )
+            ttk.Button(
+                self.content,
+                text="只下载最高画质视频（不生成字幕）",
+                style="Secondary.TButton",
+                command=lambda: self._select_workflow("download"),
+            ).pack(anchor="w", fill="x", pady=5)
+            ttk.Button(
+                self.content,
+                text="识别、翻译并压制字幕",
+                style="Primary.TButton",
+                command=lambda: self._select_workflow("subtitles"),
+            ).pack(anchor="w", fill="x", pady=5)
+            ttk.Label(
+                self.content,
+                text="只下载不需要 Whisper 模型；制作字幕需要先安装一个模型包。",
+                style="Muted.TLabel",
+            ).pack(anchor="w", pady=(14, 0))
+        elif self.step == 1:
+            self.step_label.configure(text="第 2 步 / 3　检查本机是否准备就绪")
+            package = package_tier()
+            models = installed_whisper_models()
+            ttk.Label(
+                self.content,
+                text=setup_status_message(package, models),
+                style="Card.TLabel",
+                wraplength=560,
+                justify="left",
+            ).pack(anchor="w", pady=(4, 12))
+            if models:
+                ttk.Label(self.content, text="✓ 已可生成字幕", foreground=SUCCESS, style="Card.TLabel").pack(
+                    anchor="w", pady=(3, 12)
+                )
+            else:
+                ttk.Label(
+                    self.content,
+                    text="请在发布页面下载一个 Whisper 模型包。模型包的 Setup.exe 与 Setup-1.bin 必须放在同一文件夹后再运行。",
+                    style="Muted.TLabel",
+                    wraplength=560,
+                    justify="left",
+                ).pack(anchor="w", pady=(3, 10))
+                ttk.Button(
+                    self.content,
+                    text="打开 Whisper Small / Medium 下载页（Small 推荐）",
+                    style="Primary.TButton",
+                    command=lambda: webbrowser.open(release_page_url()),
+                ).pack(anchor="w")
+        else:
+            self.step_label.configure(text="第 3 步 / 3　开始处理第一个视频")
+            ttk.Label(
+                self.content,
+                text="在主界面点击“粘贴链接”，输入一个你有权处理的 YouTube、媒体直链或本地视频。\n\n"
+                "选择翻译方向与字幕方式后，点击“开始本地化”。软件会显示下载、识别、翻译和压制的真实进度；中途停止后可继续处理。",
+                style="Card.TLabel",
+                wraplength=560,
+                justify="left",
+            ).pack(anchor="w", pady=(4, 14))
+            ttk.Label(
+                self.content,
+                text="提示：所有下载、识别和本地 AI 翻译仅在你的电脑上运行。",
+                style="Muted.TLabel",
+                wraplength=560,
+                justify="left",
+            ).pack(anchor="w")
+
+    def _select_workflow(self, workflow: str) -> None:
+        self.on_select_workflow(workflow)
+        self.step = 1
+        self._render()
+
+    def _back(self) -> None:
+        self.step = max(0, self.step - 1)
+        self._render()
+
+    def _next(self) -> None:
+        if self.step == 2:
+            self._finish()
+            return
+        self.step += 1
+        self._render()
+
+    def _finish(self) -> None:
+        if self.window.winfo_exists():
+            self.window.destroy()
+        self.on_complete()
+
+    def _defer(self) -> None:
+        if self.window.winfo_exists():
+            self.window.destroy()
+
+
 class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -612,6 +774,7 @@ class LocalizerWindow:
         self.output_directory.trace_add("write", self._update_output_directory_hint)
         self._update_input_state()
         self.root.after(100, self._poll_events)
+        self.root.after(350, self._show_first_run_onboarding)
 
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
@@ -753,6 +916,19 @@ class LocalizerWindow:
             style="Secondary.TButton",
             command=self._choose_local_file,
         ).grid(row=0, column=2)
+        ttk.Button(
+            hero,
+            text="首次设置",
+            style="Toolbar.TButton",
+            command=self._open_setup_guide,
+        ).grid(row=0, column=3, padx=(8, 0))
+        self.update_button = ttk.Button(
+            hero,
+            text="检查更新",
+            style="Toolbar.TButton",
+            command=self._begin_update_check,
+        )
+        self.update_button.grid(row=0, column=4, sticky="e")
         self.settings_button = ttk.Button(
             hero,
             text="处理设置",
@@ -803,6 +979,12 @@ class LocalizerWindow:
             text="最高画质下载 · 本地语音识别 · 离线翻译 · 字幕压制",
             style="AppMuted.TLabel",
         ).pack()
+        ttk.Button(
+            empty_content,
+            text="首次使用？查看 3 步设置",
+            style="Secondary.TButton",
+            command=self._open_setup_guide,
+        ).pack(pady=(18, 0))
 
         self.input_frame = ttk.Frame(outer, style="Card.TFrame", padding=(22, 16, 22, 18))
         self.input_frame.grid(row=1, column=0, sticky="ew", padx=24, pady=(20, 0))
@@ -1150,6 +1332,65 @@ class LocalizerWindow:
     def _show_settings(self) -> None:
         if not self.settings_visible:
             self._toggle_settings()
+
+    def _show_first_run_onboarding(self) -> None:
+        if packaged_app_needs_onboarding():
+            self._open_setup_guide()
+
+    def _open_setup_guide(self) -> None:
+        SetupGuideDialog(
+            self.root,
+            on_select_workflow=self._apply_setup_workflow,
+            on_complete=self._complete_setup_guide,
+        )
+
+    def _apply_setup_workflow(self, workflow: str) -> None:
+        if workflow == "download":
+            self.subtitle_label.set("仅下载原视频（无字幕）")
+        else:
+            self.subtitle_label.set("仅目标语言字幕")
+            self._show_settings()
+        self._update_translation_fields()
+
+    def _complete_setup_guide(self) -> None:
+        try:
+            mark_onboarding_completed()
+        except OSError:
+            self._append_log("无法保存首次设置状态；下次启动时会再次显示设置引导。")
+
+    def _begin_update_check(self) -> None:
+        self.update_button.configure(state="disabled", text="正在检查…")
+
+        def worker() -> None:
+            self.events.put(("update", check_for_update()))
+
+        threading.Thread(target=worker, daemon=True, name="localizer-update-check").start()
+
+    def _show_update_result(self, result: ReleaseCheck) -> None:
+        self.update_button.configure(state="normal", text="检查更新")
+        if result.status == "available":
+            should_open = messagebox.askyesno(
+                "发现新版本",
+                f"当前版本：v{result.current_version}\n最新版本：v{result.latest_version}\n\n"
+                "是否打开官方下载页？安装程序与 .bin 数据包需要下载到同一文件夹。",
+                parent=self.root,
+            )
+            if should_open and result.release_url:
+                webbrowser.open(result.release_url)
+            return
+        if result.status == "current":
+            messagebox.showinfo(
+                "已经是最新版本",
+                f"当前版本 v{result.current_version} 已是公开发布的最新版本。",
+                parent=self.root,
+            )
+            return
+        messagebox.showwarning(
+            "暂时无法检查更新",
+            "无法连接公开发布页。请稍后重试，或通过 GitHub Releases 手动查看版本。\n\n"
+            f"技术信息：{result.detail}",
+            parent=self.root,
+        )
 
     def _toggle_log(self) -> None:
         self.log_visible = not self.log_visible
@@ -1551,6 +1792,8 @@ class LocalizerWindow:
                     self._append_log(
                         f"\n{'=' * 10} 任务 {self.active_queue_index}/{self.active_queue_total}：{source} {'=' * 10}\n"
                     )
+                elif event == "update":
+                    self._show_update_result(payload)  # type: ignore[arg-type]
         except queue.Empty:
             pass
         self.root.after(100, self._poll_events)

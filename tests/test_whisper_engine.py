@@ -102,6 +102,10 @@ def test_transcription_retries_on_cpu_after_lazy_cuda_failure(tmp_path, caplog) 
             "youtube_localizer.transcription.whisper_engine.cuda_runtime_status",
             return_value=(True, "1 CUDA device ready"),
         ),
+        patch(
+            "youtube_localizer.transcription.whisper_engine.resolve_cpu_threads",
+            return_value=6,
+        ),
         caplog.at_level(logging.WARNING),
     ):
         result = transcribe_audio(

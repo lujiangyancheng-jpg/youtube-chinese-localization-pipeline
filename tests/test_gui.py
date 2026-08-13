@@ -15,6 +15,7 @@ from youtube_localizer.gui import (
     gui_process_creationflags,
     local_ai_available,
     mode_description,
+    packaged_app_needs_onboarding,
     progress_update_from_output,
     queue_input_values,
     whisper_model_installation_message,
@@ -257,3 +258,13 @@ def test_gui_explains_when_a_packaged_install_has_no_whisper_model(monkeypatch) 
 
     assert message is not None
     assert "Whisper Small" in message
+    assert "首次设置" in message
+
+
+def test_packaged_app_only_shows_first_run_guide_once(monkeypatch) -> None:
+    monkeypatch.setattr("youtube_localizer.gui.package_tier", lambda: "standard")
+    monkeypatch.setattr("youtube_localizer.gui.onboarding_completed", lambda: False)
+    assert packaged_app_needs_onboarding()
+
+    monkeypatch.setattr("youtube_localizer.gui.onboarding_completed", lambda: True)
+    assert not packaged_app_needs_onboarding()
