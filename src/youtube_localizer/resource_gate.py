@@ -33,6 +33,7 @@ def heavy_workload_slot(label: str) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
     started = monotonic()
     lock = FileLock(str(path))
+    LOGGER.info("Waiting for the shared performance slot for %s when another heavy task is active.", label)
     with lock:
         waited = monotonic() - started
         if waited >= 0.2:

@@ -3,12 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from youtube_localizer.config import DownloadConfig
 from youtube_localizer.download.youtube import (
     discover_javascript_runtimes,
     download_youtube,
     inspect_youtube,
 )
+from youtube_localizer.errors import LocalizerError
 
 
 class FakeYDL:
@@ -108,6 +111,37 @@ class FakeSubtitleLimitedYDL:
         return str(Path(self.options["outtmpl"]).parent / "download.mp4")
 
 
+class FakeTemporaryRateLimitedYDL:
+    attempts = 0
+
+    def __init__(self, options):
+        self.options = options
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return None
+
+    def extract_info(self, _url, download=True):
+        assert download
+        FakeTemporaryRateLimitedYDL.attempts += 1
+        if FakeTemporaryRateLimitedYDL.attempts == 1:
+            raise RuntimeError("HTTP Error 429: Too Many Requests")
+        destination = Path(self.options["outtmpl"]).parent
+        (destination / "download.mp4").write_bytes(b"video")
+        return {"id": "dQw4w9WgXcQ", "ext": "mp4"}
+
+    def prepare_filename(self, _info):
+        return str(Path(self.options["outtmpl"]).parent / "download.mp4")
+
+
+class FakePermanentRateLimitedYDL(FakeTemporaryRateLimitedYDL):
+    def extract_info(self, _url, download=True):
+        assert download
+        raise RuntimeError("HTTP Error 429: Too Many Requests")
+
+
 def test_download_never_requests_youtube_subtitles(tmp_path) -> None:
     info = {
         "subtitles": {"en": [{}]},
@@ -165,3 +199,41 @@ def test_video_download_runs_once_when_caption_catalog_exists(tmp_path) -> None:
     assert options["writesubtitles"] is False
     assert options["writeautomaticsub"] is False
     assert options["subtitleslangs"] == []
+
+
+def test_temporary_youtube_rate_limit_retries_without_requesting_cookies(tmp_path) -> None:
+    FakeTemporaryRateLimitedYDL.attempts = 0
+    with (
+        patch(
+            "youtube_localizer.download.youtube._youtube_dl",
+            side_effect=FakeTemporaryRateLimitedYDL,
+        ),
+        patch("youtube_localizer.download.youtube.time.sleep") as sleep,
+    ):
+        result = download_youtube(
+            "https://youtu.be/dQw4w9WgXcQ",
+            {},
+            tmp_path,
+            DownloadConfig(retry_attempts=2, retry_delay_seconds=3),
+        )
+
+    assert result.video == tmp_path / "source_video.mp4"
+    assert FakeTemporaryRateLimitedYDL.attempts == 2
+    sleep.assert_called_once_with(3)
+
+
+def test_persistent_youtube_rate_limit_has_an_actionable_resume_message(tmp_path) -> None:
+    with (
+        patch(
+            "youtube_localizer.download.youtube._youtube_dl",
+            side_effect=FakePermanentRateLimitedYDL,
+        ),
+        patch("youtube_localizer.download.youtube.time.sleep"),
+        pytest.raises(LocalizerError, match="wait a few minutes and resume"),
+    ):
+        download_youtube(
+            "https://youtu.be/dQw4w9WgXcQ",
+            {},
+            tmp_path,
+            DownloadConfig(retry_attempts=2, retry_delay_seconds=1),
+        )

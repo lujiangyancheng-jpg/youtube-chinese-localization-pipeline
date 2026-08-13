@@ -5,6 +5,11 @@ Python/Tk, FFmpeg (including the NVENC compatibility build), both Argos translat
 one curated Noto Sans CJK SC font for subtitle rendering. A newly installed copy does not require
 a system font or separate system Python/Tk installation.
 
+The package also contains **Localize Studio.exe**, a small Unicode-safe Windows GUI launcher. It
+sets the packaged environment and starts `pythonw.exe`, so the normal Start menu entry does not
+open a command-prompt window. `Localize Studio.exe --verify` performs a non-interactive launcher
+integrity check for release testing.
+
 - **Standard** is the smaller, broadly compatible package. It supports fast offline sentence
   translation once a user-selected Whisper model pack is installed.
 - **Complete** adds the standalone Ollama runtime and Qwen3:4b for local paragraph-aware
@@ -52,6 +57,12 @@ generated `.exe` and its adjacent `.bin` files together when copying or installi
 
 Each build writes `SHA256SUMS-<version>-<tier>.txt`; `SHA256SUMS.txt` is a combined list for
 all package tiers present in `dist`.
+
+For a signed public release, pass a real certificate thumbprint from `Cert:\CurrentUser\My` to
+either builder with `-CertificateThumbprint <thumbprint>`. This signs the native launcher before
+it is packaged and signs each generated installer before its SHA-256 manifest is written. Use
+`sign_release.ps1` only with a certificate you control; without it, treat the artifacts as unsigned
+development builds.
 
 Validate an installed base copy. Complete additionally runs one real Qwen inference on an
 isolated local port:

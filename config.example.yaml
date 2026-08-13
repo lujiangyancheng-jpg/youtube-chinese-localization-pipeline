@@ -10,6 +10,9 @@ download:
   format_sort: [res, fps, br, size]
   # Download multiple DASH/HLS fragments at once when the provider supports it.
   concurrent_fragment_downloads: 4
+  # Retry a short, bounded number of public-source 429/5xx failures; partial downloads are kept.
+  retry_attempts: 2
+  retry_delay_seconds: 8
   prefer_mp4: true
   download_thumbnail: true
   download_metadata: true

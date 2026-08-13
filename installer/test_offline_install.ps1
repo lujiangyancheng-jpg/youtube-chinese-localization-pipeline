@@ -26,6 +26,7 @@ $Models = Join-Path $Root "models"
 $Fonts = Join-Path $Root "fonts"
 $RequiredFiles = @(
     $Python
+    (Join-Path $Root "Localize Studio.exe")
     $ManifestPath
     (Join-Path $Root "runtime-dependencies.lock")
     (Join-Path $Root "app\main.py")
@@ -108,6 +109,11 @@ if ($LASTEXITCODE -ne 0) { throw "Installed model loading failed." }
 
 & $Python (Join-Path $Root "app\main.py") --help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Installed command-line interface loading failed." }
+
+$Launcher = Join-Path $Root "Localize Studio.exe"
+$LauncherProcess = Start-Process -FilePath $Launcher -ArgumentList "--verify" -PassThru -Wait
+if ($LauncherProcess.ExitCode -ne 0) { throw "Installed native GUI launcher verification failed." }
+Write-Host "installed native GUI launcher: ok"
 
 if (-not $IsCompletePackage) {
     Write-Host "Standard package verification complete; install a Whisper model pack before creating subtitles."

@@ -7,6 +7,7 @@ import re
 import shutil
 import sys
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -180,6 +181,22 @@ def _run_youtube_download(url: str, options: dict[str, Any]) -> Path:
         return Path(ydl.prepare_filename(downloaded_info))
 
 
+def _is_temporary_source_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "http error 429",
+            "too many requests",
+            "http error 500",
+            "http error 502",
+            "http error 503",
+            "http error 504",
+            "temporarily unavailable",
+        )
+    )
+
+
 def download_media(
     url: str,
     destination_dir: Path,
@@ -209,15 +226,40 @@ def download_media(
     _enable_javascript_runtime(options)
     if config.prefer_mp4:
         options["merge_output_format"] = "mp4"
-    try:
-        prepared = _run_youtube_download(url, options)
-    except Exception as exc:
-        if isinstance(exc, LocalizerError):
-            raise
+    prepared: Path | None = None
+    last_error: Exception | None = None
+    for attempt in range(1, config.retry_attempts + 1):
+        try:
+            prepared = _run_youtube_download(url, options)
+            break
+        except Exception as exc:
+            if isinstance(exc, LocalizerError):
+                raise
+            last_error = exc
+            if not _is_temporary_source_error(exc) or attempt >= config.retry_attempts:
+                break
+            delay = config.retry_delay_seconds * attempt
+            LOGGER.warning(
+                "%s temporarily rejected the download (attempt %s/%s). "
+                "Keeping the partial file and retrying in %s seconds.",
+                source_description,
+                attempt,
+                config.retry_attempts,
+                delay,
+            )
+            time.sleep(delay)
+    if prepared is None:
+        assert last_error is not None
+        if _is_temporary_source_error(last_error):
+            raise LocalizerError(
+                f"{source_description} temporarily limited or rejected the request. The partial "
+                "download is retained; wait a few minutes and resume the project. The application "
+                f"does not use cookies or bypass access controls. Details: {last_error}"
+            ) from last_error
         raise LocalizerError(
             f"yt-dlp failed to download the {source_description}. The partial download is "
-            f"retained so a later --resume can continue it. Details: {exc}"
-        ) from exc
+            f"retained so a later --resume can continue it. Details: {last_error}"
+        ) from last_error
 
     candidates = [
         path

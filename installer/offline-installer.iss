@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.7"
+  #define AppVersion "0.6.8"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
@@ -39,7 +39,7 @@ SolidCompression=no
 DiskSpanning=yes
 DiskSliceSize=1900000000
 WizardStyle=modern
-UninstallDisplayIcon={app}\runtime\python\pythonw.exe
+UninstallDisplayIcon={app}\Localize Studio.exe
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName=YouTube Chinese Localizer Offline
 VersionInfoDescription=Offline English-Chinese video localization application
@@ -56,6 +56,16 @@ Name: "{userdocs}\YouTube Localizer Projects"
 
 [Files]
 Source: "{#StageDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Keep the visible shortcut target outside a custom Unicode install directory. The relay launcher
+; resolves the true installation root through the per-user uninstall record using Unicode APIs.
+Source: "{#StageDir}\Localize Studio.exe"; DestDir: "{userappdata}\YouTube Chinese Localizer"; DestName: "Localize Studio Launcher.exe"; Flags: ignoreversion
+
+[Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Localize Studio Launcher.exe"; ValueType: string; ValueName: ""; ValueData: "{userappdata}\YouTube Chinese Localizer\Localize Studio Launcher.exe"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Localize Studio Launcher.exe"; ValueType: string; ValueName: "Path"; ValueData: "{userappdata}\YouTube Chinese Localizer"; Flags: uninsdeletevalue
+
+[UninstallDelete]
+Type: files; Name: "{userappdata}\YouTube Chinese Localizer\Localize Studio Launcher.exe"
 
 #if PackageTier == "Standard"
 [InstallDelete]
@@ -65,13 +75,13 @@ Type: filesandordirs; Name: "{app}\runtime\ollama"
 #endif
 
 [Icons]
-Name: "{autoprograms}\YouTube Chinese Localizer"; Filename: "{app}\Launch Localizer.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
+Name: "{autoprograms}\YouTube Chinese Localizer"; Filename: "{userappdata}\YouTube Chinese Localizer\Localize Studio Launcher.exe"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
 Name: "{autoprograms}\YouTube Localizer CLI"; Filename: "{app}\YouTube Localizer CLI.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
 Name: "{autoprograms}\Verify YouTube Localizer Installation"; Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Verify Offline Install.ps1"" -InstallRoot ""{app}"" -SkipInference"; WorkingDir: "{app}"
-Name: "{userdesktop}\YouTube Chinese Localizer"; Filename: "{app}\Launch Localizer.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"; Tasks: desktopicon
+Name: "{userdesktop}\YouTube Chinese Localizer"; Filename: "{userappdata}\YouTube Chinese Localizer\Localize Studio Launcher.exe"; WorkingDir: "{userdocs}\YouTube Localizer Projects"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 
 [Run]
-Filename: "{app}\Launch Localizer.cmd"; Description: "Launch YouTube Chinese Localizer"; WorkingDir: "{userdocs}\YouTube Localizer Projects"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\Localize Studio.exe"; Description: "Launch YouTube Chinese Localizer"; WorkingDir: "{userdocs}\YouTube Localizer Projects"; Flags: postinstall nowait skipifsilent

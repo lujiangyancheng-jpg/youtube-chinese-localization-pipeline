@@ -31,6 +31,13 @@ jobs:
         shell: pwsh
         run: python -m ruff check src tests
 
+      - name: Compile native desktop launcher
+        shell: pwsh
+        run: >-
+          powershell -NoProfile -ExecutionPolicy Bypass -File
+          .\installer\build_launcher.ps1
+          -OutputPath .\build\ci-launcher\Localize-Studio.exe
+
       - name: Test
         shell: pwsh
         run: python -m pytest -q
