@@ -1,0 +1,36 @@
+name: Windows quality gate
+
+on:
+  push:
+    branches: [main, "feature/**", "codex/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on Windows / Python 3.12
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install application and quality tools
+        shell: pwsh
+        run: python -m pip install --upgrade pip ; python -m pip install -e ".[dev]"
+
+      - name: Lint
+        shell: pwsh
+        run: python -m ruff check src tests
+
+      - name: Test
+        shell: pwsh
+        run: python -m pytest -q
