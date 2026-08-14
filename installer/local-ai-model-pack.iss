@@ -5,13 +5,14 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.9"
+  #define AppVersion "0.7.0"
 #endif
 #ifndef ModelPackAppId
   #define ModelPackAppId "98E9F02E-2C63-4B29-A62A-23CBBEEFB562"
 #endif
 
 [Setup]
+SetupIconFile={#SourcePath}\..\assets\branding\app-icon.ico
 AppId={#ModelPackAppId}
 AppName=YouTube Chinese Localizer Local AI Model Pack
 AppVersion={#AppVersion}

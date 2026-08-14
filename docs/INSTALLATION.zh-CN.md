@@ -15,7 +15,7 @@
 ## 安装顺序
 
 1. 在 `dist` 中选择同一版本的 Standard 或 Complete 基础安装包。
-2. 把该 `.exe` 与其全部同名 `.bin` 分卷放在同一个文件夹，不要重命名或遗漏分卷。
+2. Standard 只需下载一个 `.exe`。Complete 和独立模型包仍需把 `.exe` 与其全部同名 `.bin` 分卷放在同一个文件夹，不要重命名或遗漏分卷。
 3. 双击 Standard 时，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 或 Local AI；安装器会从同版本 Release 下载选择的组件并校验 SHA-256。离线安装或使用 Complete 时，继续下一步手动安装模型包。
 4. 若还没有 Whisper，选择一个模型安装包：`Whisper-Small-Model-Setup.exe` 或 `Whisper-Medium-Model-Setup.exe`。
 5. 把模型包安装到与基础程序相同的文件夹；默认位置通常正确。需要本地 AI 而未使用 Complete 时，安装同版本 `Local-AI-Model-Setup.exe` 与全部分卷。
@@ -23,7 +23,7 @@
 
 Small 与 Medium 可以同时安装，软件会优先按你选择的处理方式和当前硬件使用合适的模型。只下载无字幕视频时不需要 Whisper 模型。
 
-不要把不同安装包的 `.bin` 分卷混在一起。安装包未做代码签名时，Windows 可能显示来源提示；请只运行来自项目官方发布页并已核对哈希的文件。
+不要把 Complete 或不同模型包的 `.bin` 分卷混在一起。安装包未做代码签名时，Windows 可能显示来源提示；请只运行来自项目官方发布页并已核对哈希的文件。
 
 ## 本地 AI 大模型提示
 

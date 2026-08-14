@@ -28,7 +28,12 @@ from .onboarding import (
     release_page_url,
     setup_status_message,
 )
-from .resources import installed_whisper_models, ollama_executable, package_tier
+from .resources import (
+    application_icon_path,
+    installed_whisper_models,
+    ollama_executable,
+    package_tier,
+)
 from .review import (
     SubtitleReviewSession,
     load_subtitle_review_session,
@@ -985,6 +990,14 @@ class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
         self.root.title("Localize Studio｜视频本地化")
+        self._application_icon: tk.PhotoImage | None = None
+        if icon := application_icon_path():
+            try:
+                self._application_icon = tk.PhotoImage(file=str(icon))
+                self.root.iconphoto(True, self._application_icon)
+            except tk.TclError:
+                # A missing/unsupported icon must never prevent the application from starting.
+                self._application_icon = None
         self.root.geometry("980x720")
         self.root.minsize(820, 620)
         self.root.configure(background=APP_BACKGROUND)

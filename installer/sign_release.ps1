@@ -44,7 +44,7 @@ foreach ($rawPath in $ArtifactPath) {
     }
     $signature = Get-AuthenticodeSignature -FilePath $artifact
     if ($signature.Status -ne "Valid") {
-        throw "Authenticode verification failed for $artifact: $($signature.Status) $($signature.StatusMessage)"
+        throw "Authenticode verification failed for ${artifact}: $($signature.Status) $($signature.StatusMessage)"
     }
     Write-Host "Authenticode signature verified: $artifact"
 }

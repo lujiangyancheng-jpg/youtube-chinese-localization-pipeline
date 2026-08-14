@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.9",
+    [string]$Version = "0.7.0",
     [string]$OllamaVersion = "v0.32.5",
     [string]$OllamaModelRoot = "$env:USERPROFILE\.ollama\models",
     [string]$QwenModelBlobSha256 = "3E4CB14174460404E7A233E531675303B2FBF7749C02F91864FE311AB6344E4F",

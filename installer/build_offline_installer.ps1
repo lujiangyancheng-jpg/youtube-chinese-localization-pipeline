@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.9",
+    [string]$Version = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",
@@ -15,6 +15,8 @@ param(
     [string]$WhisperSmallRevision = "536b0662742c02347bc0e980a01041f333bce120",
     [string]$WhisperSmallModelSha256 = "3E305921506D8872816023E4C273E75D2419FB89B24DA97B4FE7BCE14170D671",
     [string]$OllamaVersion = "v0.32.5",
+    [string]$FfmpegStandardVersion = "8.0",
+    [string]$FfmpegStandardArchiveSha256 = "647E467CAF82B9FA200A562769B5FF4D736AAF725804ED2C64EA9752106FA569",
     [string]$FfmpegCompatibilityVersion = "8.0",
     [string]$FfmpegCompatibilityArchiveSha256 = "48CA5E824D2660A94F89FD55287B7C35129B55BBE680C4330EFEED5269C4820F",
     [string]$NotoCjkRevision = "f8d157532fbfaeda587e826d4cd5b21a49186f7c",
@@ -131,7 +133,8 @@ $RuntimeRoot = Join-Path $StageRoot "runtime"
 $ModelsRoot = Join-Path $StageRoot "models"
 $FontsRoot = Join-Path $StageRoot "fonts"
 $LicenseRoot = Join-Path $StageRoot "licenses"
-New-Item -ItemType Directory -Path $AppRoot, $RuntimeRoot, $ModelsRoot, $FontsRoot, $LicenseRoot -Force | Out-Null
+$AssetsRoot = Join-Path $StageRoot "assets"
+New-Item -ItemType Directory -Path $AppRoot, $RuntimeRoot, $ModelsRoot, $FontsRoot, $LicenseRoot, $AssetsRoot -Force | Out-Null
 $PackageTierNormalized | Set-Content -LiteralPath (Join-Path $StageRoot "package-tier.txt") -Encoding ascii
 
 Write-Host "[1/9] Staging application source..."
@@ -151,6 +154,10 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot "test_offline_install.ps1") `
     -Destination (Join-Path $StageRoot "Verify Offline Install.ps1")
 Copy-Item -LiteralPath $RuntimeRequirements -Destination (Join-Path $StageRoot "runtime-dependencies.lock")
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "THIRD_PARTY_MODELS.md") -Destination $LicenseRoot
+Copy-RequiredFile (Join-Path $ProjectRoot "assets\branding\app-icon.png") `
+    (Join-Path $AssetsRoot "app-icon.png")
+Copy-RequiredFile (Join-Path $ProjectRoot "assets\branding\app-icon.ico") `
+    (Join-Path $AssetsRoot "app-icon.ico")
 & (Join-Path $PSScriptRoot "build_launcher.ps1") -OutputPath (Join-Path $StageRoot "Localize Studio.exe")
 if ($CertificateThumbprint) {
     & (Join-Path $PSScriptRoot "sign_release.ps1") `
@@ -240,6 +247,43 @@ try {
     Pop-Location
 }
 
+# pip and the wheel-build helpers are needed only while assembling the portable runtime.
+# Console wrappers other than Deno are also unused because the shipped CLI invokes Python
+# directly. Removing them keeps Standard small without removing any application feature.
+$BuildOnlyPatterns = @(
+    "pip", "pip-*.dist-info",
+    "setuptools", "setuptools-*.dist-info", "_distutils_hack", "distutils-precedence.pth",
+    "hatchling", "hatchling-*.dist-info",
+    "pathspec", "pathspec-*.dist-info",
+    "pluggy", "pluggy-*.dist-info",
+    "trove_classifiers", "trove_classifiers-*.dist-info"
+)
+$SitePackages = Join-Path $PythonRoot "Lib\site-packages"
+foreach ($pattern in $BuildOnlyPatterns) {
+    Get-ChildItem -LiteralPath $SitePackages -Force -Filter $pattern -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Assert-ChildPath $_.FullName $PythonRoot
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force
+        }
+}
+$ScriptsRoot = Join-Path $PythonRoot "Scripts"
+$DenoExecutable = Join-Path $ScriptsRoot "deno.exe"
+if (-not (Test-Path -LiteralPath $DenoExecutable -PathType Leaf)) {
+    throw "The embedded YouTube JavaScript runtime is missing: $DenoExecutable"
+}
+Get-ChildItem -LiteralPath $ScriptsRoot -Force |
+    Where-Object { $_.Name -ne "deno.exe" } |
+    ForEach-Object {
+        Assert-ChildPath $_.FullName $PythonRoot
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
+Get-ChildItem -LiteralPath $PythonRoot -Directory -Recurse -Force -Filter "__pycache__" |
+    Sort-Object FullName -Descending |
+    ForEach-Object {
+        Assert-ChildPath $_.FullName $PythonRoot
+        Remove-Item -LiteralPath $_.FullName -Recurse -Force
+    }
+
 Write-Host "[3/9] Whisper recognition models are supplied as optional Small and Medium model packs..."
 
 Write-Host "[4/9] Copying both Argos translation models..."
@@ -307,39 +351,67 @@ if ($IsCompletePackage) {
     Write-Host "[6/9] Standard package: Omitting Qwen3:4b and Ollama; fast offline translation remains included."
 }
 
-Write-Host "[7/9] Copying FFmpeg and its NVENC compatibility build..."
-$FfmpegExe = (Get-Command ffmpeg -ErrorAction Stop).Source
-$FfprobeExe = (Get-Command ffprobe -ErrorAction Stop).Source
+Write-Host "[7/9] Staging the hardware-accelerated FFmpeg runtime..."
 $FfmpegBin = Join-Path $RuntimeRoot "ffmpeg\bin"
 New-Item -ItemType Directory -Path $FfmpegBin -Force | Out-Null
-Copy-Item -LiteralPath $FfmpegExe, $FfprobeExe -Destination $FfmpegBin -Force
-$FfmpegDistributionRoot = Split-Path (Split-Path $FfmpegExe)
-Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "LICENSE") -Destination (Join-Path $LicenseRoot "FFmpeg-GPLv3.txt") -Force
-Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "README.txt") -Destination (Join-Path $LicenseRoot "FFmpeg-build-README.txt") -Force
-if (Test-Path -LiteralPath (Join-Path $FfmpegDistributionRoot "doc")) {
-    Copy-RequiredDirectory (Join-Path $FfmpegDistributionRoot "doc") (Join-Path $LicenseRoot "FFmpeg-doc")
+if ($IsStandardPackage) {
+    # Standard uses one pinned essentials build. It contains libass, common codecs, NVENC,
+    # Intel QSV and AMD AMF while using the older NVENC API that was previously bundled as
+    # a second compatibility copy.
+    $FfmpegStandardArchive = Join-Path $CacheRoot "ffmpeg-$FfmpegStandardVersion-essentials_build.zip"
+    Download-VerifiedFile `
+        "https://github.com/GyanD/codexffmpeg/releases/download/$FfmpegStandardVersion/ffmpeg-$FfmpegStandardVersion-essentials_build.zip" `
+        $FfmpegStandardArchive `
+        $FfmpegStandardArchiveSha256
+    $FfmpegStandardExtract = Join-Path $BuildRoot "ffmpeg-standard-extract"
+    Reset-GeneratedDirectory $FfmpegStandardExtract
+    Expand-Archive -LiteralPath $FfmpegStandardArchive -DestinationPath $FfmpegStandardExtract -Force
+    $FfmpegExe = (Get-ChildItem -LiteralPath $FfmpegStandardExtract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1).FullName
+    $FfprobeExe = (Get-ChildItem -LiteralPath $FfmpegStandardExtract -Recurse -Filter "ffprobe.exe" | Select-Object -First 1).FullName
+    if (-not $FfmpegExe -or -not $FfprobeExe) {
+        throw "The Standard FFmpeg archive is missing ffmpeg.exe or ffprobe.exe."
+    }
+    $FfmpegDistributionRoot = Split-Path (Split-Path $FfmpegExe)
+    Copy-Item -LiteralPath $FfmpegExe, $FfprobeExe -Destination $FfmpegBin -Force
+    Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "LICENSE") -Destination (Join-Path $LicenseRoot "FFmpeg-GPLv3.txt") -Force
+    Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "README.txt") -Destination (Join-Path $LicenseRoot "FFmpeg-build-README.txt") -Force
+} else {
+    $FfmpegExe = (Get-Command ffmpeg -ErrorAction Stop).Source
+    $FfprobeExe = (Get-Command ffprobe -ErrorAction Stop).Source
+    Copy-Item -LiteralPath $FfmpegExe, $FfprobeExe -Destination $FfmpegBin -Force
+    $FfmpegDistributionRoot = Split-Path (Split-Path $FfmpegExe)
+    Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "LICENSE") -Destination (Join-Path $LicenseRoot "FFmpeg-GPLv3.txt") -Force
+    Copy-Item -LiteralPath (Join-Path $FfmpegDistributionRoot "README.txt") -Destination (Join-Path $LicenseRoot "FFmpeg-build-README.txt") -Force
+
+    $FfmpegCompatibilityArchive = Join-Path $CacheRoot "ffmpeg-$FfmpegCompatibilityVersion-full_build.zip"
+    Download-VerifiedFile `
+        "https://github.com/GyanD/codexffmpeg/releases/download/$FfmpegCompatibilityVersion/ffmpeg-$FfmpegCompatibilityVersion-full_build.zip" `
+        $FfmpegCompatibilityArchive `
+        $FfmpegCompatibilityArchiveSha256
+    $FfmpegCompatibilityExtract = Join-Path $BuildRoot "ffmpeg-nvenc-compat-extract"
+    Reset-GeneratedDirectory $FfmpegCompatibilityExtract
+    Expand-Archive -LiteralPath $FfmpegCompatibilityArchive -DestinationPath $FfmpegCompatibilityExtract -Force
+    $FfmpegCompatibilityExe = Get-ChildItem -LiteralPath $FfmpegCompatibilityExtract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+    $FfprobeCompatibilityExe = Get-ChildItem -LiteralPath $FfmpegCompatibilityExtract -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+    if (-not $FfmpegCompatibilityExe -or -not $FfprobeCompatibilityExe) {
+        throw "The NVENC compatibility FFmpeg archive is missing ffmpeg.exe or ffprobe.exe."
+    }
+    $FfmpegCompatibilityBin = Join-Path $RuntimeRoot "ffmpeg-nvenc-compat\bin"
+    New-Item -ItemType Directory -Path $FfmpegCompatibilityBin -Force | Out-Null
+    Copy-Item -LiteralPath $FfmpegCompatibilityExe.FullName, $FfprobeCompatibilityExe.FullName -Destination $FfmpegCompatibilityBin -Force
+    $FfmpegCompatibilityRoot = Split-Path (Split-Path $FfmpegCompatibilityExe.FullName)
+    Copy-Item -LiteralPath (Join-Path $FfmpegCompatibilityRoot "README.txt") `
+        -Destination (Join-Path $LicenseRoot "FFmpeg-NVENC-Compatibility-README.txt") -Force
 }
-$FfmpegCompatibilityArchive = Join-Path $CacheRoot "ffmpeg-$FfmpegCompatibilityVersion-full_build.zip"
-Download-VerifiedFile `
-    "https://github.com/GyanD/codexffmpeg/releases/download/$FfmpegCompatibilityVersion/ffmpeg-$FfmpegCompatibilityVersion-full_build.zip" `
-    $FfmpegCompatibilityArchive `
-    $FfmpegCompatibilityArchiveSha256
-$FfmpegCompatibilityExtract = Join-Path $BuildRoot "ffmpeg-nvenc-compat-extract"
-Reset-GeneratedDirectory $FfmpegCompatibilityExtract
-Expand-Archive -LiteralPath $FfmpegCompatibilityArchive -DestinationPath $FfmpegCompatibilityExtract -Force
-$FfmpegCompatibilityExe = Get-ChildItem -LiteralPath $FfmpegCompatibilityExtract -Recurse -Filter "ffmpeg.exe" |
-    Select-Object -First 1
-$FfprobeCompatibilityExe = Get-ChildItem -LiteralPath $FfmpegCompatibilityExtract -Recurse -Filter "ffprobe.exe" |
-    Select-Object -First 1
-if (-not $FfmpegCompatibilityExe -or -not $FfprobeCompatibilityExe) {
-    throw "The NVENC compatibility FFmpeg archive is missing ffmpeg.exe or ffprobe.exe."
+
+$FfmpegFilters = (& (Join-Path $FfmpegBin "ffmpeg.exe") -hide_banner -filters 2>&1 | Out-String)
+$FfmpegEncoders = (& (Join-Path $FfmpegBin "ffmpeg.exe") -hide_banner -encoders 2>&1 | Out-String)
+foreach ($filter in @("subtitles", "ass", "scale", "fps")) {
+    if ($FfmpegFilters -notmatch "\b$filter\b") { throw "Bundled FFmpeg is missing filter: $filter" }
 }
-$FfmpegCompatibilityBin = Join-Path $RuntimeRoot "ffmpeg-nvenc-compat\bin"
-New-Item -ItemType Directory -Path $FfmpegCompatibilityBin -Force | Out-Null
-Copy-Item -LiteralPath $FfmpegCompatibilityExe.FullName, $FfprobeCompatibilityExe.FullName -Destination $FfmpegCompatibilityBin -Force
-$FfmpegCompatibilityRoot = Split-Path (Split-Path $FfmpegCompatibilityExe.FullName)
-Copy-Item -LiteralPath (Join-Path $FfmpegCompatibilityRoot "README.txt") `
-    -Destination (Join-Path $LicenseRoot "FFmpeg-NVENC-Compatibility-README.txt") -Force
+foreach ($encoder in @("libx264", "libx265", "h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv", "h264_amf", "aac")) {
+    if ($FfmpegEncoders -notmatch "\b$encoder\b") { throw "Bundled FFmpeg is missing encoder: $encoder" }
+}
 
 Write-Host "[8/9] Writing a checksummed offline asset manifest..."
 $ManifestAssets = @(
@@ -347,6 +419,8 @@ $ManifestAssets = @(
     @{ name = "argos-zh-en-1.9"; path = "models/translate-zh_en-1_9/model/model.bin"; license = "CC-BY-4.0" },
     @{ name = "runtime-dependencies-lock"; path = "runtime-dependencies.lock"; license = "N/A" }
     @{ name = "noto-sans-cjk-sc-regular"; path = "fonts/NotoSansCJKsc-Regular.otf"; license = "OFL-1.1" }
+    @{ name = "ffmpeg-runtime"; path = "runtime/ffmpeg/bin/ffmpeg.exe"; license = "GPL-3.0" }
+    @{ name = "application-icon"; path = "assets/app-icon.png"; license = "Project artwork" }
 )
 if ($IsCompletePackage) {
     $ManifestAssets = @(
@@ -389,7 +463,7 @@ if (-not $SkipSmokeTest) {
         if ($IsCompletePackage) {
             & $EmbeddedPython -c "from youtube_localizer.resources import bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); print('complete offline runtime smoke test: ok')"
         } else {
-            & $EmbeddedPython -c "from youtube_localizer.resources import bundled_fonts_directory, nvenc_compatibility_ffmpeg; assert bundled_fonts_directory(); assert nvenc_compatibility_ffmpeg(); print('standard offline runtime smoke test: ok')"
+            & $EmbeddedPython -c "from youtube_localizer.resources import application_icon_path, bundled_fonts_directory, nvenc_compatibility_ffmpeg; assert application_icon_path(); assert bundled_fonts_directory(); assert not nvenc_compatibility_ffmpeg(); print('standard offline runtime smoke test: ok')"
         }
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
         & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"

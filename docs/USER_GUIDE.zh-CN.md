@@ -56,8 +56,8 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup.exe` 和同目录下所有 `.bin`
-分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
+下载 `YouTube-Chinese-Localizer-0.7.0-Standard-Offline-Setup.exe` 后直接双击安装即可。Standard 已是单文件安装包，
+不再需要额外的 `.bin`。它包含 Python、精简 FFmpeg、字幕字体和两套快速翻译模型；
 安装过程会出现“选择本地模型”页，可按需勾选 Whisper Small（多数电脑推荐）、Whisper Medium（更高识别质量）
 和本地 AI 段落翻译所需的 Qwen3:4b 与 Ollama。安装器只会下载所勾选的组件并逐个校验 SHA-256；未勾选的
 模型不会下载或占用磁盘。若电脑暂时不联网，可不勾选模型，之后从同版本 Release 下载安装独立模型包。
@@ -794,7 +794,7 @@ python main.py doctor
 ```
 
 离线安装包已包含 `translate-en_zh-1_9` 和 `translate-zh_en-1_9`。如果这两个
-目录缺失，请重新安装并确保所有 `.bin` 分卷与 Setup.exe 在同一目录。
+目录缺失，请重新安装。Standard 只需一个 Setup.exe；Complete 和模型包请确保所有 `.bin` 分卷与 Setup.exe 在同一目录。
 `offline_device: auto` 会稳定使用 CPU `int8`；只有明确设置 `cuda` 才使用显卡翻译。
 
 ### YouTube 视频下载出现 HTTP 429
@@ -935,7 +935,7 @@ python main.py support-bundle "PROJECT_PATH"
 - 发布标题和许可文字必须由用户最终确认
 - 当前版本不自动上传视频到发布平台
 - 当前版本不自动进行高级字幕重定时
-- Standard 基础包约 463 MiB；Whisper 与 Local AI 均按勾选下载。Complete 离线包约 6–7 GB，安装和运行需要足够磁盘空间
+- Standard 是约 289 MiB 的单文件精简基础包；Whisper 与 Local AI 均按勾选下载。Complete 离线包约 6–7 GB，安装和运行需要足够磁盘空间
 
 ## 18.1 智能加速、输出质量与可开关字幕
 
@@ -998,7 +998,7 @@ logs\report.md
 
 ## 19. 推荐的首次测试顺序
 
-1. 运行离线 Setup.exe，并保持所有 `.bin` 分卷在同一目录
+1. 运行 Standard 单文件 Setup.exe（Complete/模型包需保持所有 `.bin` 分卷在同一目录）
 2. 运行 `python main.py doctor`
 3. 用 30 秒到 2 分钟的自有本地视频测试
 4. 完成人工翻译导入

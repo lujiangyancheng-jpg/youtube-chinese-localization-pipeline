@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.9"
+  #define AppVersion "0.7.0"
 #endif
 #ifndef WhisperModel
   #define WhisperModel "Small"
@@ -18,6 +18,7 @@
 #endif
 
 [Setup]
+SetupIconFile={#SourcePath}\..\assets\branding\app-icon.ico
 AppId={#ModelPackAppId}
 AppName=YouTube Chinese Localizer Whisper {#WhisperModel} Model Pack
 AppVersion={#AppVersion}

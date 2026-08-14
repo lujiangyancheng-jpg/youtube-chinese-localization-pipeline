@@ -15,6 +15,18 @@ def test_native_launcher_source_has_a_noninteractive_verification_mode() -> None
     assert "Environment.SpecialFolder.MyDocuments" in source
 
 
+def test_installers_and_launcher_use_the_branded_application_icon() -> None:
+    launcher_builder = (INSTALLER / "build_launcher.ps1").read_text(encoding="utf-8")
+    for filename in ("offline-installer.iss", "whisper-model-pack.iss", "local-ai-model-pack.iss"):
+        script = (INSTALLER / filename).read_text(encoding="utf-8")
+        assert "SetupIconFile=" in script
+        assert "app-icon.ico" in script
+
+    assert "/win32icon:$IconPath" in launcher_builder
+    assert (PROJECT_ROOT / "assets" / "branding" / "app-icon.ico").is_file()
+    assert (PROJECT_ROOT / "assets" / "branding" / "app-icon.png").is_file()
+
+
 def test_base_installer_uses_the_native_launcher_not_a_cmd_wrapper() -> None:
     script = (INSTALLER / "offline-installer.iss").read_text(encoding="utf-8")
     builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")
@@ -42,6 +54,28 @@ def test_standard_installer_downloads_only_selected_hash_verified_model_packs() 
     assert "InstallModelPack" in script
     assert "Get-RequiredReleaseAssetHash" in builder
     assert "Local-AI-Model-Setup" in builder
+
+
+def test_standard_uses_one_pinned_compact_ffmpeg_runtime() -> None:
+    installer = (INSTALLER / "offline-installer.iss").read_text(encoding="utf-8")
+    builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")
+    verifier = (INSTALLER / "test_offline_install.ps1").read_text(encoding="utf-8")
+
+    assert "DiskSpanning=no" in installer
+    assert 'PackageTier == "Standard"' in installer
+    assert "ffmpeg-$FfmpegStandardVersion-essentials_build.zip" in builder
+    assert "FfmpegStandardArchiveSha256" in builder
+    assert 'if ($IsStandardPackage)' in builder
+    assert 'if ($IsCompletePackage)' in verifier
+    assert 'runtime\\ffmpeg-nvenc-compat\\bin\\ffmpeg.exe' in verifier
+    assert "assert not nvenc_compatibility_ffmpeg()" in builder
+
+
+def test_builder_prunes_build_only_python_tools_but_keeps_deno() -> None:
+    builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")
+
+    assert "$BuildOnlyPatterns" in builder
+    assert 'Where-Object { $_.Name -ne "deno.exe" }' in builder
 
 
 def test_model_pack_refuses_missing_or_mismatched_base_installations() -> None:

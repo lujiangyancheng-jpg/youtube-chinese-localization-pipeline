@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from youtube_localizer.resources import (
+    application_icon_path,
     bundled_fonts_directory,
     cuda_runtime_directories,
     find_bundled_model,
@@ -12,6 +13,15 @@ from youtube_localizer.resources import (
     package_tier,
     resolve_whisper_model,
 )
+
+
+def test_application_icon_uses_installed_bundle(tmp_path, monkeypatch) -> None:
+    icon = tmp_path / "assets" / "app-icon.png"
+    icon.parent.mkdir(parents=True)
+    icon.write_bytes(b"png")
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_HOME", str(tmp_path))
+
+    assert application_icon_path() == icon.resolve()
 
 
 def test_bundled_model_resolution_uses_configured_model_root(tmp_path, monkeypatch) -> None:

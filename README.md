@@ -2,6 +2,8 @@
 
 <div align="center">
 
+<img src="assets/branding/app-icon.png" alt="Localize Studio" width="112">
+
 把你有权处理的视频，转换为带自然字幕的本地化成品。支持 YouTube、授权的媒体直链和本地视频；下载、识别、翻译、字幕压制与断点续跑都在本机完成。
 
 [![Release](https://img.shields.io/github/v/release/lujiangyancheng-jpg/youtube-chinese-localization-pipeline?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
@@ -9,7 +11,7 @@
 [![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 
-[立即下载 v0.6.9 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.9/YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup.exe)
+[立即下载 v0.7.0 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0/YouTube-Chinese-Localizer-0.7.0-Standard-Offline-Setup.exe)
 · [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 · [中文完整说明](docs/USER_GUIDE.zh-CN.md)
 
@@ -19,10 +21,7 @@
 
 ## 🚀 三步开始使用
 
-1. 下载并放在同一文件夹：
-   [Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.9/YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup.exe)
-   和
-   [Setup-1.bin](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.9/YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup-1.bin)。
+1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0/YouTube-Chinese-Localizer-0.7.0-Standard-Offline-Setup.exe)。
 2. 双击 `Setup.exe` 安装，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 和本地 AI 段落翻译。只会下载你勾选的模型；Small 适合多数电脑，Medium 识别质量更高。
 3. 打开 Localize Studio，粘贴视频链接，选择翻译方向和字幕方式，然后点击“开始本地化”。
 
@@ -33,7 +32,7 @@
 | 更自然的中英字幕 | “本地 AI 段落翻译” | Standard + Local AI + 一个 Whisper 包，或 Complete + Whisper |
 | 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Standard + Local AI + Whisper，或 Complete + Whisper，或 API |
 
-**Standard v0.6.9 开发版：基础包约 463 MiB。** 它包含主程序、Python、FFmpeg、字幕字体、GPU/CPU 编码回退和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。安装后仍可从同版本 Release 单独补装模型包。
+**Standard v0.7.0 开发版：约 289 MiB 的单文件安装包，比 v0.6.9 减少约 37%。** 它包含主程序、Python、单套精简 FFmpeg、字幕字体、GPU/CPU 编码和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。
 
 ## ✨ 你能得到什么
 
@@ -127,9 +126,9 @@ with material that you are not authorized to translate or publish.
 
 ## Windows quick start
 
-For a normal Windows installation, use the split offline setup set from `dist`: keep the setup
-`.exe` and all adjacent `.bin` files together, then run the `.exe`. Choose the package that fits
-the computer and workflow:
+For a normal Windows installation, download and run the single Standard setup `.exe`. Complete
+and optional model packs are split sets, so keep their setup `.exe` and all adjacent `.bin` files
+together. Choose the package that fits the computer and workflow:
 
 - **Standard** includes its own Python, FFmpeg, both fast offline translation models, and
   subtitle fonts. Its installer can optionally download Small/Medium Whisper and Local AI
@@ -614,7 +613,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.9 adds selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
+Version 0.7.0 makes Standard a compact single-file installer and adds complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
 safe two-job GUI scheduling, and bounded retry handling for temporary public-source limits. It also preserves the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,
