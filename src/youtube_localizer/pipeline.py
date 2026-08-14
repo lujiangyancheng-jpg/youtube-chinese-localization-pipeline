@@ -684,6 +684,7 @@ def process_pipeline(
         )
     project, metadata, raw_info = prepare_project(value, config, resume=resume, overwrite=overwrite)
     configure_logging(project.logs / "pipeline.log", verbose=verbose)
+    LOGGER.info("Project workspace: %s", project.root)
     state = PipelineState(project.state_file, source_input=value)
     preflight = build_job_preflight(metadata, config)
     atomic_write_json(project.logs / "preflight.json", preflight.as_dict())

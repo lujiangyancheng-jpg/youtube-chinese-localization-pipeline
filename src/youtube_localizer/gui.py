@@ -137,6 +137,7 @@ _DOWNLOAD_PROGRESS_RE = re.compile(r"\[download\]\s+(\d+(?:\.\d+)?)%")
 _LOCAL_AI_PROGRESS_RE = re.compile(r"Local AI translating paragraph\s+(\d+)/(\d+)")
 _OFFLINE_PROGRESS_RE = re.compile(r"Offline translating contextual subtitle batch\s+(\d+)/(\d+)")
 _RENDER_PROGRESS_RE = re.compile(r"Rendering subtitles:\s+(\d+(?:\.\d+)?)%")
+_PROJECT_WORKSPACE_PREFIX = "Project workspace: "
 
 
 def queue_input_values(value: str) -> list[str]:
@@ -152,6 +153,42 @@ def gui_parallel_job_limit(input_count: int) -> int:
     if input_count < 1:
         return 1
     return min(2, input_count)
+
+
+def retry_queue_commands(
+    commands: list[list[str]], retry_indices: tuple[int, ...]
+) -> list[list[str]]:
+    """Return just the unfinished commands, always using safe stage resume.
+
+    Queue indexes are one-based because they are shown that way in the desktop log.  Ignore a
+    stale index rather than allowing an old UI event to restart an unrelated command.
+    """
+    retry_commands: list[list[str]] = []
+    for index in dict.fromkeys(retry_indices):
+        if not 1 <= index <= len(commands):
+            continue
+        command = list(commands[index - 1])
+        if "--resume" not in command:
+            command.append("--resume")
+        retry_commands.append(command)
+    return retry_commands
+
+
+def project_workspace_from_output(line: str, output_directory: str | Path) -> Path | None:
+    """Read the pipeline workspace line without accepting paths outside the chosen output root."""
+    text = line.strip()
+    if _PROJECT_WORKSPACE_PREFIX not in text:
+        return None
+    raw_path = text.split(_PROJECT_WORKSPACE_PREFIX, maxsplit=1)[1].strip()
+    if not raw_path:
+        return None
+    try:
+        root = Path(output_directory).expanduser().resolve()
+        project = Path(raw_path).expanduser().resolve()
+        project.relative_to(root)
+    except (OSError, ValueError):
+        return None
+    return project
 
 
 def progress_update_from_output(line: str, *, provider: str) -> tuple[float, str] | None:
@@ -966,6 +1003,12 @@ class LocalizerWindow:
         self.active_queue_total = 1
         self._task_progress: dict[int, float] = {}
         self._parallel_queue = False
+        self._current_queue_commands: list[list[str]] = []
+        self._current_queue_environment: dict[str, str] = {}
+        self._current_output_directory = default_output_directory()
+        self._retry_commands: list[list[str]] = []
+        self._project_paths_by_queue_index: dict[int, Path] = {}
+        self._diagnostic_projects: set[Path] = set()
 
         endpoint, model, api_key = api_configuration(os.environ)
         default_translation = (
@@ -1453,6 +1496,14 @@ class LocalizerWindow:
             state="disabled",
         )
         self.stop_button.pack(side="left", padx=(8, 0))
+        self.retry_failed_button = ttk.Button(
+            actions,
+            text="重试未完成任务",
+            style="Secondary.TButton",
+            command=self._retry_unfinished,
+            state="disabled",
+        )
+        self.retry_failed_button.pack(side="left", padx=(8, 0))
         ttk.Button(
             actions,
             text="调整处理设置",
@@ -1914,23 +1965,54 @@ class LocalizerWindow:
             messagebox.showwarning("还不能开始", str(exc), parent=self.root)
             return
 
+        self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
+        self._begin_queue(commands, environment, provider)
+
+    def _begin_queue(
+        self,
+        commands: list[list[str]],
+        environment: dict[str, str],
+        provider: str,
+        *,
+        retrying: bool = False,
+    ) -> None:
+        """Start a queue attempt and retain only its commands for safe retry."""
+        if not commands:
+            return
+
         self._clear_log()
         self._show_log()
-        self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self.active_queue_index = 1
         self.active_queue_total = len(commands)
         self._task_progress = {}
         self._parallel_queue = self.active_queue_total > 1
-        self._append_log(
-            "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"
-        )
+        self._current_queue_commands = [list(command) for command in commands]
+        self._current_queue_environment = dict(environment)
+        self._current_output_directory = Path(
+            self.output_directory.get().strip() or default_output_directory()
+        ).expanduser()
+        self._retry_commands = []
+        self._project_paths_by_queue_index = {}
+        self._diagnostic_projects = set()
+        self.retry_failed_button.configure(state="disabled")
+        if retrying:
+            self._append_log(
+                f"正在恢复 {self.active_queue_total} 个未完成任务：已完成阶段会复用，"
+                "不会重新下载或压制已有输出。\n\n"
+            )
+        else:
+            self._append_log(
+                "正在启动视频下载……\n" if provider == "download_only" else "正在启动本地化处理……\n"
+            )
         if self.active_queue_total > 1:
             self._append_log(
                 f"已加入 {self.active_queue_total} 个视频：最多两个下载/预处理任务并行，"
                 "Whisper、本地 AI 与压制阶段会自动排队以保护显存、CPU 和磁盘。\n\n"
             )
         self._append_log(f"项目输出位置：{self.output_directory.get().strip()}\n")
-        if provider == "download_only":
+        if retrying:
+            pass
+        elif provider == "download_only":
             self._append_log(
                 "当前为无字幕直接下载：只下载并合并最高画质视频和最高质量音频，"
                 "不会运行语音识别、翻译或字幕压制。\n\n"
@@ -1958,7 +2040,7 @@ class LocalizerWindow:
         else:
             target_name = language_name(self.active_direction, target=True)
             self._append_log(f"当前为自动模式：完成翻译后会继续压制{target_name}字幕。\n\n")
-        self._set_status("正在处理，请保持窗口打开", "active")
+        self._set_status("正在恢复未完成任务，请保持窗口打开" if retrying else "正在处理，请保持窗口打开", "active")
         self.progress.configure(mode="indeterminate", value=0)
         self.progress.start(10)
         self.stop_requested = False
@@ -1973,6 +2055,20 @@ class LocalizerWindow:
         )
         self.worker.start()
 
+    def _retry_unfinished(self) -> None:
+        """Retry only the projects that failed or were interrupted in the last queue attempt."""
+        if self._has_active_processes() or (self.worker and self.worker.is_alive()):
+            return
+        if not self._retry_commands:
+            messagebox.showinfo("没有可重试任务", "上一批任务没有未完成项目。", parent=self.root)
+            return
+        self._begin_queue(
+            self._retry_commands,
+            self._current_queue_environment,
+            self.active_provider,
+            retrying=True,
+        )
+
     def _run_queue(
         self,
         commands: list[list[str]],
@@ -1982,6 +2078,8 @@ class LocalizerWindow:
         failures = 0
         completed = 0
         total = len(commands)
+        successful_indices: set[int] = set()
+        failed_indices: set[int] = set()
         parallel_jobs = gui_parallel_job_limit(total)
         pending = iter(enumerate(commands, start=1))
         futures: dict[Future[int], int] = {}
@@ -2017,10 +2115,20 @@ class LocalizerWindow:
                         self.events.put(("line", (index, total, f"\n任务内部失败：{exc}\n")))
                     if return_code != 0:
                         failures += 1
+                        failed_indices.add(index)
+                    else:
+                        successful_indices.add(index)
                     self.events.put(("task_finished", (index, total, return_code)))
                     if not self.stop_requested:
                         submit_next(executor)
-        self.events.put(("done", (1 if failures else 0, provider, completed, total, failures)))
+        retry_indices = (
+            tuple(index for index in range(1, total + 1) if index not in successful_indices)
+            if self.stop_requested
+            else tuple(sorted(failed_indices))
+        )
+        self.events.put(
+            ("done", (1 if failures else 0, provider, completed, total, failures, retry_indices))
+        )
 
     def _run_process(
         self,
@@ -2053,6 +2161,10 @@ class LocalizerWindow:
             last_download_update = 0.0
             assert process.stdout is not None
             for line in process.stdout:
+                if workspace := project_workspace_from_output(
+                    line, self._current_output_directory
+                ):
+                    self.events.put(("project_workspace", (queue_index, workspace)))
                 if download := _DOWNLOAD_PROGRESS_RE.search(line):
                     percent = float(download.group(1))
                     now = time.monotonic()
@@ -2075,6 +2187,26 @@ class LocalizerWindow:
                     self._active_processes.discard(process)
                     if self.process is process:
                         self.process = next(iter(self._active_processes), None)
+
+    def _create_failure_support_bundle_async(self, queue_index: int, root: Path) -> None:
+        """Capture redacted evidence for an unexpected failure without blocking the UI."""
+        if root in self._diagnostic_projects or not (root / "pipeline_state.json").is_file():
+            return
+        self._diagnostic_projects.add(root)
+
+        def create_bundle() -> None:
+            try:
+                bundle = create_support_bundle(ProjectPaths(root))
+            except (OSError, ValueError) as exc:
+                self.events.put(("failure_bundle", (queue_index, root, None, str(exc))))
+            else:
+                self.events.put(("failure_bundle", (queue_index, root, bundle, None)))
+
+        threading.Thread(
+            target=create_bundle,
+            name=f"localizer-diagnostics-{queue_index}",
+            daemon=True,
+        ).start()
 
     def _stop(self) -> None:
         with self._process_lock:
@@ -2102,14 +2234,18 @@ class LocalizerWindow:
                     self._append_log(prefix + str(line))
                     self._update_progress_from_output(str(line), queue_index=int(index))
                 elif event == "done":
-                    return_code, provider, completed, total, failures = payload  # type: ignore[misc]
+                    return_code, provider, completed, total, failures, retry_indices = payload  # type: ignore[misc]
                     self._finish(
                         int(return_code),
                         str(provider),
                         completed=int(completed),
                         total=int(total),
                         failures=int(failures),
+                        retry_indices=tuple(int(index) for index in retry_indices),
                     )
+                elif event == "project_workspace":
+                    index, root = payload  # type: ignore[misc]
+                    self._project_paths_by_queue_index[int(index)] = Path(root)
                 elif event == "queue_item":
                     index, total, source = payload  # type: ignore[misc]
                     self.active_queue_index = int(index)
@@ -2134,6 +2270,20 @@ class LocalizerWindow:
                         self.progress.configure(mode="determinate", value=self._progress_value)
                     if int(return_code) == 0:
                         self._set_status(f"任务 {index}/{total} 已完成，继续处理队列…", "active")
+                    elif not self.stop_requested:
+                        root = self._project_paths_by_queue_index.get(int(index))
+                        if root is not None:
+                            self._create_failure_support_bundle_async(int(index), root)
+                elif event == "failure_bundle":
+                    index, _root, bundle, error = payload  # type: ignore[misc]
+                    if bundle is not None:
+                        self._append_log(
+                            f"[任务 {index}] 已自动导出脱敏诊断包：{bundle}\n"
+                        )
+                    else:
+                        self._append_log(
+                            f"[任务 {index}] 无法自动导出诊断包：{error}\n"
+                        )
                 elif event == "update":
                     self._show_update_result(payload)  # type: ignore[arg-type]
                 elif event == "review_preview":
@@ -2175,6 +2325,7 @@ class LocalizerWindow:
         completed: int = 1,
         total: int = 1,
         failures: int = 0,
+        retry_indices: tuple[int, ...] = (),
     ) -> None:
         self.progress.stop()
         self.progress.configure(mode="determinate")
@@ -2183,11 +2334,21 @@ class LocalizerWindow:
         self.process = None
         self._parallel_queue = False
         self._task_progress = {}
+        self._retry_commands = retry_queue_commands(self._current_queue_commands, retry_indices)
+        self.retry_failed_button.configure(
+            state="normal" if self._retry_commands else "disabled"
+        )
         if self.stop_requested:
             self.stop_requested = False
             self.progress.configure(value=0)
-            self._set_status("任务已停止，下次可以继续处理")
-            self._append_log("\n任务已停止；已完成的阶段会保留。\n")
+            remaining = len(self._retry_commands)
+            self._set_status(
+                f"任务已停止；可恢复 {remaining} 个未完成任务" if remaining else "任务已停止"
+            )
+            self._append_log(
+                f"\n任务已停止；已完成阶段会保留。"
+                f"可点击“重试未完成任务”恢复 {remaining} 个项目。\n"
+            )
             return
         if return_code != 0:
             self.progress.configure(value=0)
@@ -2198,7 +2359,8 @@ class LocalizerWindow:
             messagebox.showerror(
                 "部分任务未完成",
                 f"已完成 {completed - failures}/{total} 个任务。窗口日志和所选输出文件夹内项目的 logs "
-                "文件夹包含详细原因；下次启动时勾选继续处理即可续跑未完成的阶段。",
+                "文件夹包含详细原因；程序会为可识别的失败项目自动创建脱敏诊断包。"
+                "点击“重试未完成任务”即可仅续跑失败项目，已完成阶段会复用。",
                 parent=self.root,
             )
             return
