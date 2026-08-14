@@ -16,6 +16,8 @@ def test_release_version_is_consistent_across_package_metadata() -> None:
         PROJECT_ROOT / "installer" / "offline-installer.iss": rf'#define AppVersion "{re.escape(expected)}"',
         PROJECT_ROOT / "installer" / "build_whisper_model_pack.ps1": rf'\$Version = "{re.escape(expected)}"',
         PROJECT_ROOT / "installer" / "whisper-model-pack.iss": rf'#define AppVersion "{re.escape(expected)}"',
+        PROJECT_ROOT / "installer" / "build_local_ai_model_pack.ps1": rf'\$Version = "{re.escape(expected)}"',
+        PROJECT_ROOT / "installer" / "local-ai-model-pack.iss": rf'#define AppVersion "{re.escape(expected)}"',
     }
 
     for path, pattern in files.items():

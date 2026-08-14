@@ -56,11 +56,11 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-把 `YouTube-Chinese-Localizer-0.6.8-Standard-Offline-Setup.exe` 或
-`YouTube-Chinese-Localizer-0.6.8-Complete-Offline-Setup.exe` 和同目录下所有 `.bin`
+把 `YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup.exe` 和同目录下所有 `.bin`
 分卷放在一起，双击 `.exe` 安装即可。Standard 包含 Python、FFmpeg、字幕字体和两套快速翻译模型；
-Complete 额外包含本地 AI 段落翻译所需的 Ollama 与 Qwen3:4b。安装任一基础包后，再安装一个独立
-Whisper Small（多数电脑推荐）或 Whisper Medium（更高识别质量）模型包。这样首次使用不会下载模型，也可按电脑配置控制安装体积。
+安装过程会出现“选择本地模型”页，可按需勾选 Whisper Small（多数电脑推荐）、Whisper Medium（更高识别质量）
+和本地 AI 段落翻译所需的 Qwen3:4b 与 Ollama。安装器只会下载所勾选的组件并逐个校验 SHA-256；未勾选的
+模型不会下载或占用磁盘。若电脑暂时不联网，可不勾选模型，之后从同版本 Release 下载安装独立模型包。
 
 正式版安装后，可在开始菜单运行“Verify YouTube Localizer Installation”。它会核验随安装包提供的
 模型和字体大小及 SHA-256 哈希，再检查图形界面与本地模型能否加载；此快速核验不会运行较慢的 Qwen
@@ -183,14 +183,14 @@ output\项目名称\rendered\english_hardsub.mp4
 - “仅下载原视频（无字幕）”始终使用最高画质视频和最高质量音频并自动合并，完成后直接停下，不运行 Whisper、翻译或字幕压制；文件位于项目的 `source` 文件夹。
 - “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
 - “本地快速翻译并压制”不需要 API，会使用约 85 MB 的轻量模型在本机完成翻译。它现在会先合并完整段落再翻译，适合速度优先或配置较低的电脑。
-- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。离线安装包自带 Ollama 和 `qwen3:4b`，先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
+- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。Standard 安装时勾选本地 AI，或安装同版本 Local AI 模型包后，即可获得 Ollama 和 `qwen3:4b`；Complete 离线包也已内置。它会先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
 - 两种本地翻译都会应用 `glossary.yaml` 中的术语。
 - “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
 ### 3.3 其他语种（本地 AI 或 API）
 
-现在可把英文或简体中文字幕翻译为日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语或阿拉伯语。选择这些方向后，窗口只保留“本地 AI 段落翻译并压制”和“自动翻译并压制字幕”两项：前者需要安装 Complete 包中的本地 Ollama/Qwen 模型（或自行安装能力足够的本地 Ollama 模型），后者需要填写 OpenAI-compatible API。
+现在可把英文或简体中文字幕翻译为日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语或阿拉伯语。选择这些方向后，窗口只保留“本地 AI 段落翻译并压制”和“自动翻译并压制字幕”两项：前者需要在 Standard 安装时勾选本地 AI、安装同版本 Local AI 模型包，或使用 Complete 包中的本地 Ollama/Qwen 模型；后者需要填写 OpenAI-compatible API。
 
 快速离线模型、人工翻译流程和中英双语字幕排版仅用于中英互译，因此不会在这些语种方向中出现。其他语种使用“仅目标语言字幕”，例如西班牙语会生成 `subtitles/es.srt`、`subtitles/es.ass` 和 `rendered/es_hardsub.mp4`。
 
@@ -577,8 +577,8 @@ render:
 - CPU 默认计算类型：`int8`
 - CUDA 默认计算类型：`float16`
 
-Whisper 的设备选择与离线翻译相互独立。当前离线基础安装包已经包含 CUDA 12 运行库，并会在
-启动 Whisper 前自动注册这套运行库和进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU，
+Whisper 的设备选择与离线翻译相互独立。Complete 或已安装 Local AI 模型包的环境包含 CUDA 12 运行库，并会在
+启动 Whisper 前自动注册这套运行库和进行 DLL 预检。因此有可用 NVIDIA 显卡时会使用 GPU；只安装 Standard 时也会探测系统现有 CUDA，
 运行库不完整时不会先进行不安全的 GPU 尝试，而是直接用 CPU `int8`。CPU 兜底会根据核心数与
 内存自动保留桌面响应；需要固定行为时可把 `cpu_threads` 设为 1 到 32。离线字幕翻译的
 `offline_device: auto` 则始终稳定使用 CPU `int8`。
@@ -935,13 +935,13 @@ python main.py support-bundle "PROJECT_PATH"
 - 发布标题和许可文字必须由用户最终确认
 - 当前版本不自动上传视频到发布平台
 - 当前版本不自动进行高级字幕重定时
-- 离线安装包约 7–8 GB，安装和运行需要足够磁盘空间
+- Standard 基础包约 463 MiB；Whisper 与 Local AI 均按勾选下载。Complete 离线包约 6–7 GB，安装和运行需要足够磁盘空间
 
 ## 18.1 智能加速、输出质量与可开关字幕
 
 桌面界面不再要求选择“性能预设”。默认方案始终是 **最高质量输出 + 自动硬件加速**：程序会先检测
 NVIDIA CUDA/NVENC；可用时使用显卡进行语音识别和视频编码，不可用或运行失败时自动回退至 CPU 与
-libx264，不需要手动切换。默认使用安装包自带的 Medium Whisper 和最高质量成片参数。
+libx264，不需要手动切换。默认会在已安装的 Whisper 模型中按当前硬件选择合适的识别路径，并保持最高质量成片参数。
 
 桌面界面不会再弹出或依赖可关闭的系统命令窗口。进度条会显示真实的下载百分比、本地 AI 段落进度和
 字幕压制百分比；高画质 DASH/HLS 下载最多同时下载 4 个分片。本地 AI 会在不超出模型安全上下文的

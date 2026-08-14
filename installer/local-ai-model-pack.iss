@@ -1,5 +1,5 @@
 #ifndef StageDir
-  #define StageDir "..\build\whisper-model-pack\stage"
+  #define StageDir "..\build\local-ai-model-pack\stage"
 #endif
 #ifndef OutputDir
   #define OutputDir "..\dist"
@@ -7,19 +7,13 @@
 #ifndef AppVersion
   #define AppVersion "0.6.9"
 #endif
-#ifndef WhisperModel
-  #define WhisperModel "Small"
-#endif
-#ifndef ModelDirectory
-  #define ModelDirectory "faster-whisper-small"
-#endif
 #ifndef ModelPackAppId
-  #define ModelPackAppId "1D590E67-81C8-4D04-9AFE-167A52D8D8B4"
+  #define ModelPackAppId "98E9F02E-2C63-4B29-A62A-23CBBEEFB562"
 #endif
 
 [Setup]
 AppId={#ModelPackAppId}
-AppName=YouTube Chinese Localizer Whisper {#WhisperModel} Model Pack
+AppName=YouTube Chinese Localizer Local AI Model Pack
 AppVersion={#AppVersion}
 AppPublisher=YouTube Chinese Localization Pipeline contributors
 AppPublisherURL=https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline
@@ -29,19 +23,20 @@ PrivilegesRequired=lowest
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir={#OutputDir}
-OutputBaseFilename=YouTube-Chinese-Localizer-{#AppVersion}-Whisper-{#WhisperModel}-Model-Setup
+OutputBaseFilename=YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup
 Compression=none
 SolidCompression=no
 DiskSpanning=yes
 DiskSliceSize=1900000000
 WizardStyle=modern
-UninstallDisplayName=YouTube Localizer Whisper {#WhisperModel} Model Pack
-UninstallFilesDir={app}\model-pack-uninstall\{#WhisperModel}
-InfoBeforeFile={#SourcePath}\whisper-model-pack-notice.txt
+UninstallDisplayName=YouTube Localizer Local AI Model Pack
+UninstallFilesDir={app}\model-pack-uninstall\local-ai
+InfoBeforeFile={#SourcePath}\local-ai-model-pack-notice.txt
 
 [Files]
-Source: "{#StageDir}\models\{#ModelDirectory}\*"; DestDir: "{app}\models\{#ModelDirectory}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#StageDir}\model-pack-{#WhisperModel}.json"; DestDir: "{app}\models"; Flags: ignoreversion
+Source: "{#StageDir}\models\ollama\*"; DestDir: "{app}\models\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\runtime\ollama\*"; DestDir: "{app}\runtime\ollama"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#StageDir}\model-pack-local-ai.json"; DestDir: "{app}\models"; Flags: ignoreversion
 Source: "{#StageDir}\licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Code]
@@ -57,7 +52,7 @@ begin
   if not FileExists(AddBackslash(InstallDir) + 'runtime\python\python.exe') then begin
     Result :=
       'Select the folder where YouTube Chinese Localizer is already installed. ' +
-      'Install the matching base application before installing this Whisper model pack.';
+      'Install the matching base application before installing this Local AI model pack.';
     exit;
   end;
   if not FileExists(ManifestPath) or not LoadStringsFromFile(ManifestPath, ManifestLines) then begin
@@ -84,7 +79,7 @@ begin
   end;
   if not VersionMatches then begin
     Result :=
-      'This Whisper {#WhisperModel} model pack requires YouTube Chinese Localizer v{#AppVersion}. ' +
+      'This Local AI model pack requires YouTube Chinese Localizer v{#AppVersion}. ' +
       'Install the matching base package and model pack from the same Release.';
     exit;
   end;

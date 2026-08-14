@@ -2,8 +2,8 @@
 
 ## 选择基础安装包
 
-- **标准版（Standard）**：适合大多数电脑。内置 Python、FFmpeg、英译中/中译英快速离线翻译模型和字幕字体；体积更小。
-- **完整版（Complete）**：在标准版基础上增加本地 Ollama 与 Qwen3:4b，用于更自然的本地段落翻译；需要更多磁盘空间和内存。
+- **标准版（Standard）**：适合大多数电脑。内置 Python、FFmpeg、英译中/中译英快速离线翻译模型和字幕字体；体积更小。安装时可勾选需要的 Whisper 与本地 AI 模型，未勾选的组件不会下载或安装。
+- **完整版（Complete）**：在标准版基础上增加本地 Ollama 与 Qwen3:4b，用于更自然的本地段落翻译；适合无网络安装，需要更多磁盘空间和内存。
 
 两个基础安装包都不再强制携带 Whisper 语音识别模型。安装基础程序后，请按电脑配置安装一个模型包：
 
@@ -16,9 +16,9 @@
 
 1. 在 `dist` 中选择同一版本的 Standard 或 Complete 基础安装包。
 2. 把该 `.exe` 与其全部同名 `.bin` 分卷放在同一个文件夹，不要重命名或遗漏分卷。
-3. 双击基础安装包并完成安装。
-4. 选择一个 Whisper 模型安装包：`Whisper-Small-Model-Setup.exe` 或 `Whisper-Medium-Model-Setup.exe`。
-5. 把模型包安装到与基础程序相同的文件夹；默认位置通常正确。
+3. 双击 Standard 时，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 或 Local AI；安装器会从同版本 Release 下载选择的组件并校验 SHA-256。离线安装或使用 Complete 时，继续下一步手动安装模型包。
+4. 若还没有 Whisper，选择一个模型安装包：`Whisper-Small-Model-Setup.exe` 或 `Whisper-Medium-Model-Setup.exe`。
+5. 把模型包安装到与基础程序相同的文件夹；默认位置通常正确。需要本地 AI 而未使用 Complete 时，安装同版本 `Local-AI-Model-Setup.exe` 与全部分卷。
 6. 从开始菜单或桌面打开 **YouTube Chinese Localizer**。
 
 Small 与 Medium 可以同时安装，软件会优先按你选择的处理方式和当前硬件使用合适的模型。只下载无字幕视频时不需要 Whisper 模型。
@@ -30,7 +30,7 @@ Small 与 Medium 可以同时安装，软件会优先按你选择的处理方式
 “本地 AI 段落翻译”除 Whisper 外还需要 Qwen3:4b 大语言模型：
 
 - 安装 **完整版**：Qwen3:4b 已内置，不需要 API Key，也不需要另行下载大语言模型。
-- 安装 **标准版**：可直接使用快速离线翻译；如需段落 AI 翻译，请改装同一版本的完整版。
+- 安装 **标准版**：安装时勾选“本地 AI 段落翻译”，或之后安装同版本 `Local-AI-Model-Setup.exe`，即可使用 Qwen3:4b；未安装时仍可直接使用快速离线翻译。
 
 ## 校验完整性
 
@@ -60,6 +60,6 @@ python main.py preflight "D:\Videos\已授权的视频.mp4"
 ## 建议
 
 - 追求最小下载量：安装标准版 + Whisper Small。
-- 追求无 API 的自然段落翻译：安装完整版 + Whisper Small 或 Medium。
+- 追求无 API 的自然段落翻译：安装 Standard 时勾选 Local AI + Whisper Small 或 Medium；无网络时使用 Complete + Whisper。
 - 长视频尽量输出到本机 SSD，而不是 OneDrive 同步目录或移动硬盘。
 - 仅下载无字幕最高质量视频时，选择“无字幕直接下载”；这不需要识别、翻译或重新编码。
