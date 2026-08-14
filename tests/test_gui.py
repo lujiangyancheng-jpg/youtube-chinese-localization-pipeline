@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from queue import Queue
 
 import pytest
 
@@ -9,6 +10,7 @@ from youtube_localizer.gui import (
     DEFAULT_SUBTITLE_FONT,
     SUBTITLE_FONT_SIZES,
     SUBTITLE_FONTS,
+    LocalizerWindow,
     api_configuration,
     build_process_command,
     clamp_subtitle_preview_values,
@@ -18,7 +20,9 @@ from youtube_localizer.gui import (
     mode_description,
     packaged_app_needs_onboarding,
     progress_update_from_output,
+    project_workspace_from_output,
     queue_input_values,
+    retry_queue_commands,
     whisper_model_installation_message,
 )
 
@@ -76,6 +80,61 @@ def test_gui_parallel_queue_is_bounded_to_two_safe_workers() -> None:
     assert gui_parallel_job_limit(1) == 1
     assert gui_parallel_job_limit(2) == 2
     assert gui_parallel_job_limit(20) == 2
+
+
+def test_retry_queue_commands_only_restarts_incomplete_items_with_resume() -> None:
+    commands = [
+        ["python", "main.py", "process", "one"],
+        ["python", "main.py", "process", "two", "--resume"],
+        ["python", "main.py", "process", "three"],
+    ]
+
+    assert retry_queue_commands(commands, (3, 2, 3, 99)) == [
+        ["python", "main.py", "process", "three", "--resume"],
+        ["python", "main.py", "process", "two", "--resume"],
+    ]
+    assert commands[0] == ["python", "main.py", "process", "one"]
+
+
+def test_project_workspace_from_output_accepts_only_selected_output_root(tmp_path) -> None:
+    output_root = tmp_path / "output"
+    workspace = output_root / "example"
+    workspace.mkdir(parents=True)
+
+    assert project_workspace_from_output(
+        f"Project workspace: {workspace}", output_root
+    ) == workspace.resolve()
+    assert project_workspace_from_output(
+        f"INFO Project workspace: {workspace}", output_root
+    ) == workspace.resolve()
+    assert project_workspace_from_output(
+        f"Project workspace: {tmp_path / 'outside'}", output_root
+    ) is None
+    assert project_workspace_from_output("unrelated logging", output_root) is None
+
+
+def test_gui_queue_tracks_only_failed_items_for_retry() -> None:
+    window = object.__new__(LocalizerWindow)
+    window.stop_requested = False
+    window.events = Queue()
+
+    def run_process(_command: list[str], _environment: dict[str, str], index: int, _total: int) -> int:
+        return 1 if index == 2 else 0
+
+    window._run_process = run_process  # type: ignore[method-assign]
+    window._run_queue(
+        [
+            ["python", "main.py", "process", "one"],
+            ["python", "main.py", "process", "two"],
+            ["python", "main.py", "process", "three"],
+        ],
+        {},
+        "offline",
+    )
+
+    events = list(window.events.queue)
+    done_payload = next(payload for event, payload in events if event == "done")
+    assert done_payload[-1] == (2,)
 
 
 def test_api_configuration_does_not_require_or_mutate_environment() -> None:
