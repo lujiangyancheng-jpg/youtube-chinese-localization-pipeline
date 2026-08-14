@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.6.8",
+    [string]$Version = "0.6.9",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",
@@ -40,6 +40,7 @@ $CacheRoot = Join-Path $BuildRoot "download-cache"
 $DistRoot = Join-Path $ProjectRoot "dist"
 $PackageTierNormalized = $PackageTier.ToLowerInvariant()
 $IsCompletePackage = $PackageTier -eq "Complete"
+$IsStandardPackage = $PackageTier -eq "Standard"
 
 function Assert-ChildPath([string]$Path, [string]$Parent) {
     $resolvedPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -82,6 +83,44 @@ function Copy-RequiredDirectory([string]$Source, [string]$Destination) {
         throw "Required directory is missing: $Source"
     }
     Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+}
+
+function Copy-RequiredFile([string]$Source, [string]$Destination) {
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "Required file is missing: $Source"
+    }
+    New-Item -ItemType Directory -Path (Split-Path $Destination) -Force | Out-Null
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+
+function Copy-RequiredOllamaQwenModel([string]$SourceRoot, [string]$DestinationRoot) {
+    $manifestRelativePath = "manifests\registry.ollama.ai\library\qwen3\4b"
+    $manifestSource = Join-Path $SourceRoot $manifestRelativePath
+    if (-not (Test-Path -LiteralPath $manifestSource -PathType Leaf)) {
+        throw "The local Qwen3:4b manifest is missing: $manifestSource. Run 'ollama pull qwen3:4b' first."
+    }
+    $manifestText = Get-Content -LiteralPath $manifestSource -Raw
+    $digests = [regex]::Matches($manifestText, '"digest"\s*:\s*"sha256:([a-f0-9]{64})"') |
+        ForEach-Object { $_.Groups[1].Value.ToLowerInvariant() } |
+        Select-Object -Unique
+    $requiredModelDigest = $QwenModelBlobSha256.ToLowerInvariant()
+    if ($digests -notcontains $requiredModelDigest) {
+        throw "The local qwen3:4b manifest does not reference the pinned Qwen model blob."
+    }
+    foreach ($digest in $digests) {
+        Copy-RequiredFile (Join-Path $SourceRoot "blobs\sha256-$digest") `
+            (Join-Path $DestinationRoot "blobs\sha256-$digest")
+    }
+    Copy-RequiredFile $manifestSource (Join-Path $DestinationRoot $manifestRelativePath)
+    return $digests
+}
+
+function Get-RequiredReleaseAssetHash([string]$AssetName) {
+    $asset = Join-Path $DistRoot $AssetName
+    if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
+        throw "The Standard installer needs the matching optional model-pack asset first: $asset. Build Whisper Small, Whisper Medium, and Local AI model packs for v$Version before building Standard."
+    }
+    return (Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant()
 }
 
 New-Item -ItemType Directory -Path $CacheRoot, $DistRoot -Force | Out-Null
@@ -236,15 +275,16 @@ Download-File "https://raw.githubusercontent.com/notofonts/noto-cjk/$NotoCjkRevi
 
 if ($IsCompletePackage) {
     Write-Host "[6/9] Copying Qwen3:4b and downloading the standalone Ollama runtime..."
-    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $OllamaModelRoot "blobs\sha256-$($QwenModelBlobSha256.ToLowerInvariant())")).Hash -ne $QwenModelBlobSha256) {
+    $qwenModelDigests = Copy-RequiredOllamaQwenModel $OllamaModelRoot (Join-Path $ModelsRoot "ollama")
+    if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $ModelsRoot "ollama\blobs\sha256-$($QwenModelBlobSha256.ToLowerInvariant())")).Hash -ne $QwenModelBlobSha256) {
         throw "Qwen3:4b model checksum mismatch."
     }
-    Copy-RequiredDirectory $OllamaModelRoot (Join-Path $ModelsRoot "ollama")
-    $QwenLicenseBlob = Get-ChildItem -LiteralPath (Join-Path $OllamaModelRoot "blobs") -File |
-        Where-Object { $_.Length -gt 10000 -and $_.Length -lt 13000 } |
+    $QwenLicenseDigest = $qwenModelDigests |
+        Where-Object { $_ -eq "d18a5cc71b84bc4af394a31116bd3932b42241de70c77d2b76d69a314ec8aa12" } |
         Select-Object -First 1
-    if (-not $QwenLicenseBlob) { throw "Could not locate the Qwen Apache-2.0 license blob." }
-    Copy-Item -LiteralPath $QwenLicenseBlob.FullName -Destination (Join-Path $LicenseRoot "Qwen3-Apache-2.0.txt") -Force
+    if (-not $QwenLicenseDigest) { throw "Could not locate the Qwen Apache-2.0 license blob." }
+    Copy-RequiredFile (Join-Path $ModelsRoot "ollama\blobs\sha256-$QwenLicenseDigest") `
+        (Join-Path $LicenseRoot "Qwen3-Apache-2.0.txt")
 
     $OllamaRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/ollama/ollama/releases/tags/$OllamaVersion"
     $OllamaAsset = $OllamaRelease.assets | Where-Object { $_.name -eq "ollama-windows-amd64.zip" } | Select-Object -First 1
@@ -383,7 +423,28 @@ if (-not $SkipInstaller) {
     if (-not $Iscc) {
         throw "Inno Setup 6 is required. Install it with: winget install JRSoftware.InnoSetup"
     }
-    & $Iscc "/DStageDir=$StageRoot" "/DOutputDir=$DistRoot" "/DAppVersion=$Version" "/DPackageTier=$PackageTier" (Join-Path $PSScriptRoot "offline-installer.iss")
+    $isccArguments = @(
+        "/DStageDir=$StageRoot",
+        "/DOutputDir=$DistRoot",
+        "/DAppVersion=$Version",
+        "/DPackageTier=$PackageTier"
+    )
+    if ($IsStandardPackage) {
+        $optionalAssets = @(
+            @{ Define = "WhisperSmallSetupSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Small-Model-Setup.exe" },
+            @{ Define = "WhisperSmallBinSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Small-Model-Setup-1.bin" },
+            @{ Define = "WhisperMediumSetupSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Medium-Model-Setup.exe" },
+            @{ Define = "WhisperMediumBinSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Medium-Model-Setup-1.bin" },
+            @{ Define = "LocalAISetupSha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup.exe" },
+            @{ Define = "LocalAIBin1Sha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup-1.bin" },
+            @{ Define = "LocalAIBin2Sha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup-2.bin" },
+            @{ Define = "LocalAIBin3Sha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup-3.bin" }
+        )
+        foreach ($asset in $optionalAssets) {
+            $isccArguments += "/D$($asset.Define)=$(Get-RequiredReleaseAssetHash $asset.Name)"
+        }
+    }
+    & $Iscc @isccArguments (Join-Path $PSScriptRoot "offline-installer.iss")
     if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed to build the installer." }
     $SetupFiles = Get-ChildItem -LiteralPath $DistRoot -File |
         Where-Object { $_.Name -like "YouTube-Chinese-Localizer-$Version-$PackageTier-Offline-Setup*" } |

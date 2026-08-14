@@ -1,0 +1,5 @@
+重要提示：这是可选的“本地 AI 段落翻译”模型包。
+
+它包含 Qwen3:4b 和 Ollama 本地运行时，可用于更自然的段落翻译，以及日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语和阿拉伯语等目标语种。它不包含 Whisper；要制作字幕，仍需安装 Whisper Small 或 Whisper Medium。
+
+此模型包只可安装到同一版本的 YouTube Chinese Localizer 基础程序。请保留 Setup.exe 和所有 .bin 分卷在同一文件夹，并确保安装磁盘有足够空间。

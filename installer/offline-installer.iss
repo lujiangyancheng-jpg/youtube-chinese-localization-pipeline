@@ -5,10 +5,40 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.8"
+  #define AppVersion "0.6.9"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
+#endif
+
+; The Standard installer is also the lightweight online installer.  Its optional
+; packages are separate, version-pinned release assets so users download only the
+; models they select.  The build script supplies every SHA-256 at compile time.
+#if PackageTier == "Standard"
+  #ifndef WhisperSmallSetupSha256
+    #error Missing WhisperSmallSetupSha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef WhisperSmallBinSha256
+    #error Missing WhisperSmallBinSha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef WhisperMediumSetupSha256
+    #error Missing WhisperMediumSetupSha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef WhisperMediumBinSha256
+    #error Missing WhisperMediumBinSha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef LocalAISetupSha256
+    #error Missing LocalAISetupSha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef LocalAIBin1Sha256
+    #error Missing LocalAIBin1Sha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef LocalAIBin2Sha256
+    #error Missing LocalAIBin2Sha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef LocalAIBin3Sha256
+    #error Missing LocalAIBin3Sha256. Build Standard with build_offline_installer.ps1.
+  #endif
 #endif
 
 [Setup]
@@ -67,13 +97,6 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\App Paths\Localiz
 [UninstallDelete]
 Type: files; Name: "{userappdata}\YouTube Chinese Localizer\Localize Studio Launcher.exe"
 
-#if PackageTier == "Standard"
-[InstallDelete]
-Type: filesandordirs; Name: "{app}\models\faster-whisper-medium"
-Type: filesandordirs; Name: "{app}\models\ollama"
-Type: filesandordirs; Name: "{app}\runtime\ollama"
-#endif
-
 [Icons]
 Name: "{autoprograms}\YouTube Chinese Localizer"; Filename: "{userappdata}\YouTube Chinese Localizer\Localize Studio Launcher.exe"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
 Name: "{autoprograms}\YouTube Localizer CLI"; Filename: "{app}\YouTube Localizer CLI.cmd"; WorkingDir: "{userdocs}\YouTube Localizer Projects"
@@ -85,3 +108,129 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Run]
 Filename: "{app}\Localize Studio.exe"; Description: "Launch YouTube Chinese Localizer"; WorkingDir: "{userdocs}\YouTube Localizer Projects"; Flags: postinstall nowait skipifsilent
+
+#if PackageTier == "Standard"
+[Code]
+const
+  ReleaseAssetBaseUrl =
+    'https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v{#AppVersion}/';
+  WhisperSmallSetup = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Small-Model-Setup.exe';
+  WhisperSmallBin = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Small-Model-Setup-1.bin';
+  WhisperMediumSetup = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Medium-Model-Setup.exe';
+  WhisperMediumBin = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Medium-Model-Setup-1.bin';
+  LocalAISetup = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup.exe';
+  LocalAIBin1 = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup-1.bin';
+  LocalAIBin2 = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup-2.bin';
+  LocalAIBin3 = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup-3.bin';
+
+var
+  OptionalModelsPage: TInputOptionWizardPage;
+  DownloadPage: TDownloadWizardPage;
+  InstallWhisperSmall: Boolean;
+  InstallWhisperMedium: Boolean;
+  InstallLocalAI: Boolean;
+
+procedure InitializeWizard;
+begin
+  OptionalModelsPage := CreateInputOptionPage(wpSelectTasks,
+    '选择本地模型', '按需下载，随时可补装',
+    '基础程序已经包含下载、视频处理和快速中英离线翻译。勾选的模型会在安装时从本项目的同版本 GitHub Release 下载，并逐个校验 SHA-256。' + #13#10 + #13#10 +
+    'Whisper 是制作字幕必需的语音识别模型；本地 AI 模型可带来更自然的段落翻译和更多目标语种。',
+    False, False);
+  OptionalModelsPage.Add('Whisper Small（推荐多数电脑；字幕识别）');
+  OptionalModelsPage.Add('Whisper Medium（更高识别质量；占用更多磁盘和内存/显存）');
+  OptionalModelsPage.Add('本地 AI 段落翻译：Qwen3:4b + Ollama（多语种与更自然翻译；体积较大）');
+
+  DownloadPage := CreateDownloadPage('下载已选模型',
+    '正在下载并校验所选的本地模型。请保持网络连接；你可在此步骤取消并稍后重新运行安装器。', nil);
+  DownloadPage.ShowBaseNameInsteadOfUrl := True;
+end;
+
+function AnyOptionalModelSelected: Boolean;
+begin
+  Result := InstallWhisperSmall or InstallWhisperMedium or InstallLocalAI;
+end;
+
+procedure QueueDownload(const FileName, ExpectedSha256: String);
+begin
+  DownloadPage.Add(ReleaseAssetBaseUrl + FileName, FileName, ExpectedSha256);
+end;
+
+function DownloadSelectedModelPacks: Boolean;
+var
+  Error: String;
+begin
+  Result := True;
+  if not AnyOptionalModelSelected then
+    exit;
+
+  DownloadPage.Clear;
+  if InstallWhisperSmall then begin
+    QueueDownload(WhisperSmallSetup, '{#WhisperSmallSetupSha256}');
+    QueueDownload(WhisperSmallBin, '{#WhisperSmallBinSha256}');
+  end;
+  if InstallWhisperMedium then begin
+    QueueDownload(WhisperMediumSetup, '{#WhisperMediumSetupSha256}');
+    QueueDownload(WhisperMediumBin, '{#WhisperMediumBinSha256}');
+  end;
+  if InstallLocalAI then begin
+    QueueDownload(LocalAISetup, '{#LocalAISetupSha256}');
+    QueueDownload(LocalAIBin1, '{#LocalAIBin1Sha256}');
+    QueueDownload(LocalAIBin2, '{#LocalAIBin2Sha256}');
+    QueueDownload(LocalAIBin3, '{#LocalAIBin3Sha256}');
+  end;
+
+  DownloadPage.Show;
+  try
+    try
+      DownloadPage.Download;
+    except
+      if DownloadPage.AbortedByUser then
+        Log('Optional model download was cancelled by the user.')
+      else begin
+        Error := Format('%s: %s', [DownloadPage.LastBaseNameOrUrl, GetExceptionMessage]);
+        SuppressibleMsgBox(AddPeriod(Error), mbCriticalError, MB_OK, IDOK);
+      end;
+      Result := False;
+    end;
+  finally
+    DownloadPage.Hide;
+  end;
+end;
+
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = OptionalModelsPage.ID then begin
+    InstallWhisperSmall := OptionalModelsPage.Values[0];
+    InstallWhisperMedium := OptionalModelsPage.Values[1];
+    InstallLocalAI := OptionalModelsPage.Values[2];
+  end else if CurPageID = wpReady then
+    Result := DownloadSelectedModelPacks;
+end;
+
+function InstallModelPack(const SetupName, DisplayName: String): Boolean;
+var
+  ResultCode: Integer;
+  Parameters: String;
+begin
+  Parameters := '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="' + WizardDirValue + '"';
+  Result := Exec(ExpandConstant('{tmp}\' + SetupName), Parameters, '', SW_HIDE,
+    ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+  if not Result then
+    MsgBox(DisplayName + ' 没有成功安装（退出代码：' + IntToStr(ResultCode) + '）。基础程序仍已安装；请从 Releases 重新下载安装该模型包。',
+      mbError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then begin
+    if InstallWhisperSmall and not InstallModelPack(WhisperSmallSetup, 'Whisper Small') then
+      RaiseException('Whisper Small model-pack installation failed.');
+    if InstallWhisperMedium and not InstallModelPack(WhisperMediumSetup, 'Whisper Medium') then
+      RaiseException('Whisper Medium model-pack installation failed.');
+    if InstallLocalAI and not InstallModelPack(LocalAISetup, '本地 AI 模型') then
+      RaiseException('Local AI model-pack installation failed.');
+  end;
+end;
+#endif

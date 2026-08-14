@@ -9,7 +9,7 @@
 [![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 
-[立即下载 v0.6.8 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.8/YouTube-Chinese-Localizer-0.6.8-Standard-Offline-Setup.exe)
+[立即下载 v0.6.9 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.9/YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup.exe)
 · [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 · [中文完整说明](docs/USER_GUIDE.zh-CN.md)
 
@@ -20,20 +20,20 @@
 ## 🚀 三步开始使用
 
 1. 下载并放在同一文件夹：
-   [Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.8/YouTube-Chinese-Localizer-0.6.8-Standard-Offline-Setup.exe)
+   [Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.9/YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup.exe)
    和
-   [Setup-1.bin](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.8/YouTube-Chinese-Localizer-0.6.8-Standard-Offline-Setup-1.bin)。
-2. 双击 `Setup.exe` 安装；需要生成字幕时，再安装一个 Whisper 模型包（Small 适合多数电脑，Medium 识别质量更高）。
+   [Setup-1.bin](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.6.9/YouTube-Chinese-Localizer-0.6.9-Standard-Offline-Setup-1.bin)。
+2. 双击 `Setup.exe` 安装，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 和本地 AI 段落翻译。只会下载你勾选的模型；Small 适合多数电脑，Medium 识别质量更高。
 3. 打开 Localize Studio，粘贴视频链接，选择翻译方向和字幕方式，然后点击“开始本地化”。
 
 | 你想做什么 | 选择方式 | 需要什么 |
 | --- | --- | --- |
 | 最高画质无字幕下载 | “仅下载原视频（无字幕）” | 只需 Standard |
 | 英文 ↔ 简体中文 | “本地快速翻译” | Standard + 一个 Whisper 包 |
-| 更自然的中英字幕 | “本地 AI 段落翻译” | Complete + 一个 Whisper 包 |
-| 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Complete + Whisper，或 API |
+| 更自然的中英字幕 | “本地 AI 段落翻译” | Standard + Local AI + 一个 Whisper 包，或 Complete + Whisper |
+| 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Standard + Local AI + Whisper，或 Complete + Whisper，或 API |
 
-**Standard v0.6.8 开发版：约 463 MiB 下载体积。** 它包含主程序、Python、FFmpeg、字幕字体、GPU/CPU 编码回退和两套中英快速离线翻译模型。安装完成后不必联网；字幕任务需要单独安装一个 Whisper 模型包。首次启动会用三步说明你下一步需要什么。
+**Standard v0.6.9 开发版：基础包约 463 MiB。** 它包含主程序、Python、FFmpeg、字幕字体、GPU/CPU 编码回退和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。安装后仍可从同版本 Release 单独补装模型包。
 
 ## ✨ 你能得到什么
 
@@ -132,15 +132,17 @@ For a normal Windows installation, use the split offline setup set from `dist`: 
 the computer and workflow:
 
 - **Standard** includes its own Python, FFmpeg, both fast offline translation models, and
-  subtitle fonts. It is the smaller choice for everyday work.
+  subtitle fonts. Its installer can optionally download Small/Medium Whisper and Local AI
+  model packs; unchecked models are not downloaded or installed.
 - **Complete** additionally includes the Ollama runtime and Qwen3:4b for local paragraph-aware
-  translation. It is the recommended no-API quality package for computers with sufficient disk
-  space and memory.
+  translation. It remains the fully offline choice for computers with sufficient disk space and
+  memory.
 
-Install one external Whisper model pack after installing either base package: **Small** is the
-recommended balanced choice for most computers; **Medium** needs more RAM/VRAM but improves
-recognition quality. The app detects installed model packs before a subtitle job and never
-silently downloads a model.
+The Standard installer can download one or more selected model packs automatically. For offline
+installation, install the matching external Whisper pack afterward: **Small** is the recommended
+balanced choice for most computers; **Medium** needs more RAM/VRAM but improves recognition
+quality. The app detects installed model packs before a subtitle job and never silently downloads
+a model at runtime.
 
 Both packages stay offline on first use. Before every job, the app checks available storage,
 installed package tier, GPU memory, and model availability, then selects a safe installed fallback
@@ -612,7 +614,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.6.8 adds a native Windows desktop launcher, matching-version model-pack validation,
+Version 0.6.9 adds selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
 safe two-job GUI scheduling, and bounded retry handling for temporary public-source limits. It also preserves the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,
