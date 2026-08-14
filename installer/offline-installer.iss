@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.6.9"
+  #define AppVersion "0.7.0"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
@@ -66,9 +66,16 @@ SolidCompression=yes
 Compression=none
 SolidCompression=no
 #endif
+#if PackageTier == "Standard"
+; Standard is intentionally a single-file installer so users do not need to manually keep an
+; adjacent .bin payload beside Setup.exe. Optional model packs remain separate downloads.
+DiskSpanning=no
+#else
 DiskSpanning=yes
 DiskSliceSize=1900000000
+#endif
 WizardStyle=modern
+SetupIconFile={#SourcePath}\..\assets\branding\app-icon.ico
 UninstallDisplayIcon={app}\Localize Studio.exe
 VersionInfoVersion={#AppVersion}
 VersionInfoProductName=YouTube Chinese Localizer Offline

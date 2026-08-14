@@ -30,8 +30,8 @@ $RequiredFiles = @(
     $ManifestPath
     (Join-Path $Root "runtime-dependencies.lock")
     (Join-Path $Root "app\main.py")
+    (Join-Path $Root "assets\app-icon.png")
     (Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe")
-    (Join-Path $Root "runtime\ffmpeg-nvenc-compat\bin\ffmpeg.exe")
     (Join-Path $Root "runtime\python\_tkinter.pyd")
     (Join-Path $Root "runtime\python\tcl86t.dll")
     (Join-Path $Root "runtime\python\tk86t.dll")
@@ -43,6 +43,7 @@ $RequiredFiles = @(
 if ($IsCompletePackage) {
     $RequiredFiles += @(
         $Ollama
+        (Join-Path $Root "runtime\ffmpeg-nvenc-compat\bin\ffmpeg.exe")
     )
 }
 foreach ($required in $RequiredFiles) {
@@ -61,7 +62,7 @@ function Test-OfflineAssetManifest([string]$RootPath, [string]$Path) {
         throw "Offline asset manifest has an unexpected application identity."
     }
     $assets = @($manifest.assets)
-    $minimumAssetCount = if ($IsCompletePackage) { 5 } else { 4 }
+    $minimumAssetCount = if ($IsCompletePackage) { 7 } else { 6 }
     if ($assets.Count -lt $minimumAssetCount) {
         throw "Offline asset manifest is incomplete."
     }
@@ -104,7 +105,7 @@ $env:YOUTUBE_LOCALIZER_EXPECTED_VERSION = [string]$Manifest.version
 & $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('installed desktop interface: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }
 
-& $Python -c "import os; from pathlib import Path; from youtube_localizer import __version__; from youtube_localizer.resources import bundled_fonts_directory; from youtube_localizer.translation.offline import validate_offline_model; models=Path(os.environ['YOUTUBE_LOCALIZER_MODELS']); fonts=Path(os.environ['YOUTUBE_LOCALIZER_FONTS']).resolve(); assert __version__ == os.environ['YOUTUBE_LOCALIZER_EXPECTED_VERSION']; assert bundled_fonts_directory() == fonts; assert validate_offline_model(models/'translate-en_zh-1_9'); assert validate_offline_model(models/'translate-zh_en-1_9', source_code='zh', target_code='en'); print('installed base offline models and fonts: ok')"
+& $Python -c "import os; from pathlib import Path; from youtube_localizer import __version__; from youtube_localizer.resources import application_icon_path, bundled_fonts_directory; from youtube_localizer.translation.offline import validate_offline_model; models=Path(os.environ['YOUTUBE_LOCALIZER_MODELS']); fonts=Path(os.environ['YOUTUBE_LOCALIZER_FONTS']).resolve(); assert __version__ == os.environ['YOUTUBE_LOCALIZER_EXPECTED_VERSION']; assert application_icon_path(); assert bundled_fonts_directory() == fonts; assert validate_offline_model(models/'translate-en_zh-1_9'); assert validate_offline_model(models/'translate-zh_en-1_9', source_code='zh', target_code='en'); print('installed base offline models, font, and icon: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed model loading failed." }
 
 & $Python (Join-Path $Root "app\main.py") --help | Out-Null

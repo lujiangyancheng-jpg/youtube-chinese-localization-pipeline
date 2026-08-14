@@ -6,6 +6,23 @@ import sys
 from pathlib import Path
 
 
+def application_icon_path() -> Path | None:
+    """Return the branded PNG used by source checkouts and installed bundles."""
+    candidates: list[Path] = []
+    if home := os.getenv("YOUTUBE_LOCALIZER_HOME"):
+        candidates.append(Path(home).expanduser() / "assets" / "app-icon.png")
+
+    source_root = Path(__file__).resolve().parents[2]
+    candidates.append(source_root / "assets" / "branding" / "app-icon.png")
+    candidates.extend(
+        parent / "assets" / "app-icon.png" for parent in Path(sys.executable).resolve().parents[:4]
+    )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
+
+
 def package_tier() -> str | None:
     """Return the installed offline package tier, when this is a packaged app."""
     configured = os.getenv("YOUTUBE_LOCALIZER_PACKAGE_TIER", "").strip().casefold()

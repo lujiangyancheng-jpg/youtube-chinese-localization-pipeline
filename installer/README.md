@@ -1,17 +1,18 @@
 # Windows offline installer
 
 `build_offline_installer.ps1` creates self-contained Windows x64 base packages. Both tiers bundle
-Python/Tk, FFmpeg (including the NVENC compatibility build), both Argos translation models, and
-one curated Noto Sans CJK SC font for subtitle rendering. A newly installed copy does not require
-a system font or separate system Python/Tk installation.
+Python/Tk, hardware-accelerated FFmpeg, both Argos translation models, and one curated Noto Sans
+CJK SC font for subtitle rendering. A newly installed copy does not require a system font or
+separate system Python/Tk installation.
 
 The package also contains **Localize Studio.exe**, a small Unicode-safe Windows GUI launcher. It
 sets the packaged environment and starts `pythonw.exe`, so the normal Start menu entry does not
 open a command-prompt window. `Localize Studio.exe --verify` performs a non-interactive launcher
 integrity check for release testing.
 
-- **Standard** is the smaller, broadly compatible package. It supports fast offline sentence
-  translation once a user-selected Whisper model pack is installed.
+- **Standard** is a single-file installer with one pinned compact FFmpeg build. It retains
+  libass subtitle rendering plus NVIDIA NVENC, Intel QSV, AMD AMF, and CPU encoding. It supports
+  fast offline sentence translation once a user-selected Whisper model pack is installed.
 - **Complete** adds the standalone Ollama runtime and Qwen3:4b for local paragraph-aware
   translation. It is intended for higher-quality no-API localization on systems with ample
   storage and memory; it also requires a user-selected Whisper model pack for subtitle jobs.
@@ -50,10 +51,11 @@ powershell -ExecutionPolicy Bypass -File .\installer\build_whisper_model_pack.ps
 powershell -ExecutionPolicy Bypass -File .\installer\build_whisper_model_pack.ps1 -Model Medium
 ```
 
-The base builder pins Python 3.12.10, every Python runtime dependency, Ollama v0.32.5 for
-Complete, and the Noto Sans CJK SC font source revision. The model-pack builder pins each Whisper revision
-and validates its `model.bin` hash before it emits the selected model installer. Keep every
-generated `.exe` and its adjacent `.bin` files together when copying or installing it.
+The base builder pins Python 3.12.10, every Python runtime dependency, compact FFmpeg 8.0 for
+Standard, Ollama v0.32.5 for Complete, and the Noto Sans CJK SC font source revision. The
+model-pack builder pins each Whisper revision and validates its `model.bin` hash before it emits
+the selected model installer. Standard is one `.exe`; keep every Complete/model-pack `.exe` and
+its adjacent `.bin` files together when copying or installing it.
 
 Each build writes `SHA256SUMS-<version>-<tier>.txt`; `SHA256SUMS.txt` is a combined list for
 all package tiers present in `dist`.
