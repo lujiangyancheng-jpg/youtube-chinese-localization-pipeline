@@ -23,11 +23,14 @@ from .config import (
 from .errors import LocalizerError
 from .models import ProjectPaths
 from .onboarding import (
-    mark_onboarding_completed,
-    onboarding_completed,
+    model_release_page_url,
+    quick_readiness_message,
     release_page_url,
+    setup_readiness_items,
     setup_status_message,
+    user_guide_url,
 )
+from .resource_gate import detected_resource_schedule
 from .resources import (
     application_icon_path,
     installed_whisper_models,
@@ -257,13 +260,30 @@ def whisper_model_installation_message() -> str | None:
     return (
         "尚未安装 Whisper 语音识别模型。请安装 Whisper Small（大多数电脑推荐）或 "
         "Whisper Medium（更高质量、需要更多内存/显存）模型包后再开始字幕任务。"
-        "可点击主界面的“首次设置”打开官方下载页。"
+        "可点击主界面的“帮助中心”，在“环境与模型”中打开兼容模型下载页。"
     )
 
 
-def packaged_app_needs_onboarding() -> bool:
-    """Show the guided setup only for a packaged application that has not seen it."""
-    return package_tier() is not None and not onboarding_completed()
+def friendly_failure_summary(log_text: str) -> str:
+    """Translate common terminal failures into one short recovery action."""
+    normalized = log_text.casefold()
+    if "429" in normalized or "too many requests" in normalized:
+        return "YouTube 暂时限制了请求。请等待几分钟后点击“重试未完成任务”；已经完成的阶段不会重做。"
+    if any(
+        marker in normalized
+        for marker in ("out of memory", "cuda error", "cublas", "显存不足")
+    ):
+        return "显存或 CUDA 运行环境不足。请关闭占用显卡的软件后重试；仍失败时改用 Whisper Small。"
+    if any(
+        marker in normalized
+        for marker in ("no space left", "not enough space", "磁盘空间不足", "errno 28")
+    ):
+        return "输出磁盘空间不足。请至少预留 20 GiB，或在“处理设置”中更换输出位置。"
+    if any(marker in normalized for marker in ("private video", "sign in", "video unavailable")):
+        return "视频不可公开访问、需要登录或已失效。请确认链接权限，或改用你有权处理的本地文件。"
+    if "ffmpeg hard-subtitle rendering failed" in normalized or "字幕压制失败" in normalized:
+        return "字幕压制未完成，但视频和字幕中间文件会保留。请点击重试；程序会重新检测可用编码器。"
+    return "可先点击“重试未完成任务”。若仍失败，请导出诊断包；诊断包不会包含视频和字幕正文。"
 
 
 def mode_description(subtitle_mode: str, translation_provider: str) -> str:
@@ -643,152 +663,172 @@ class SubtitlePreviewDialog:
         self.window.destroy()
 
 
-class SetupGuideDialog:
-    """A concise first-run guide that keeps model downloads explicit and user-controlled."""
+class HelpCenterDialog:
+    """Persistent tutorial, readiness summary, and recovery guidance."""
 
     def __init__(
         self,
         parent: tk.Misc,
         *,
         on_select_workflow: Callable[[str], None],
-        on_complete: Callable[[], None],
+        output_directory: Path,
     ) -> None:
         self.on_select_workflow = on_select_workflow
-        self.on_complete = on_complete
         self.window = tk.Toplevel(parent)
-        self.window.title("首次使用设置｜Localize Studio")
-        self.window.geometry("650x470")
-        self.window.minsize(580, 420)
+        self.window.title("帮助中心｜Localize Studio")
+        self.window.geometry("760x590")
+        self.window.minsize(680, 520)
         self.window.configure(background=SURFACE)
         self.window.transient(parent)
-        self.window.protocol("WM_DELETE_WINDOW", self._defer)
 
-        body = ttk.Frame(self.window, style="Card.TFrame", padding=(30, 28, 30, 24))
+        body = ttk.Frame(self.window, style="Card.TFrame", padding=(28, 24, 28, 20))
         body.pack(fill="both", expand=True)
-        ttk.Label(body, text="欢迎使用 Localize Studio", style="SectionTitle.TLabel").pack(anchor="w")
+        ttk.Label(body, text="Localize Studio 帮助中心", style="SectionTitle.TLabel").pack(
+            anchor="w"
+        )
         ttk.Label(
             body,
-            text="三步完成首次设置。你可以随时重新打开这个向导。",
+            text="教程、模型检查和常见问题都集中在这里；启动软件时不会自动弹出。",
             style="Muted.TLabel",
-        ).pack(anchor="w", pady=(6, 18))
+        ).pack(anchor="w", pady=(6, 16))
 
-        self.step_label = ttk.Label(body, style="Field.TLabel")
-        self.step_label.pack(anchor="w")
-        self.content = ttk.Frame(body, style="Card.TFrame")
-        self.content.pack(fill="both", expand=True, pady=(10, 12))
+        notebook = ttk.Notebook(body)
+        notebook.pack(fill="both", expand=True)
+        quick_start = ttk.Frame(notebook, style="Card.TFrame", padding=(22, 20))
+        readiness = ttk.Frame(notebook, style="Card.TFrame", padding=(22, 20))
+        troubleshooting = ttk.Frame(notebook, style="Card.TFrame", padding=(22, 20))
+        notebook.add(quick_start, text="快速开始")
+        notebook.add(readiness, text="环境与模型")
+        notebook.add(troubleshooting, text="常见问题")
+        self._build_quick_start(quick_start)
+        self._build_readiness(readiness, output_directory)
+        self._build_troubleshooting(troubleshooting)
+
         footer = ttk.Frame(body, style="Card.TFrame")
-        footer.pack(fill="x")
-        self.back_button = ttk.Button(footer, text="上一步", style="Secondary.TButton", command=self._back)
-        self.back_button.pack(side="left")
-        self.next_button = ttk.Button(footer, text="下一步", style="Primary.TButton", command=self._next)
-        self.next_button.pack(side="right")
-        ttk.Button(footer, text="稍后再说", style="Toolbar.TButton", command=self._defer).pack(
-            side="right", padx=(0, 8)
+        footer.pack(fill="x", pady=(16, 0))
+        ttk.Button(
+            footer,
+            text="打开完整使用说明",
+            style="Secondary.TButton",
+            command=lambda: webbrowser.open(user_guide_url()),
+        ).pack(side="left")
+        ttk.Button(
+            footer,
+            text="关闭",
+            style="Primary.TButton",
+            command=self.window.destroy,
+        ).pack(side="right")
+
+    def _build_quick_start(self, frame: ttk.Frame) -> None:
+        ttk.Label(frame, text="三步拿到成片", style="Field.TLabel").pack(anchor="w")
+        instructions = (
+            "1. 复制视频链接，或从电脑选择本地视频。\n\n"
+            "2. 选择“只下载”或“识别、翻译并压制字幕”。默认会保留源画质、源帧率并自动选择最快的安全硬件方案。\n\n"
+            "3. 确认你拥有处理权限后开始。停止或失败的任务可以继续，不需要从头重做。"
         )
-        self.step = 0
-        self._render()
+        ttk.Label(
+            frame,
+            text=instructions,
+            style="Card.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(12, 20))
+        actions = ttk.Frame(frame, style="Card.TFrame")
+        actions.pack(fill="x")
+        ttk.Button(
+            actions,
+            text="使用“只下载最高画质”模式",
+            style="Secondary.TButton",
+            command=lambda: self._select_workflow("download"),
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="使用“翻译并压制字幕”模式",
+            style="Primary.TButton",
+            command=lambda: self._select_workflow("subtitles"),
+        ).pack(side="left", padx=(10, 0))
+        ttk.Label(
+            frame,
+            text="提示：YouTube、媒体直链和本地视频都从同一个入口处理；一次粘贴多行链接即可建立队列。",
+            style="Muted.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(22, 0))
 
-    def _clear_content(self) -> None:
-        for child in self.content.winfo_children():
-            child.destroy()
-
-    def _render(self) -> None:
-        self._clear_content()
-        self.back_button.configure(state="normal" if self.step else "disabled")
-        self.next_button.configure(text="完成" if self.step == 2 else "下一步")
-        if self.step == 0:
-            self.step_label.configure(text="第 1 步 / 3　选择这次要做什么")
-            ttk.Label(self.content, text="先选目标，软件会自动安排其余步骤。", style="Card.TLabel").pack(
-                anchor="w", pady=(4, 14)
+    def _build_readiness(self, frame: ttk.Frame, output_directory: Path) -> None:
+        package = package_tier()
+        models = installed_whisper_models()
+        schedule = detected_resource_schedule()
+        ttk.Label(
+            frame,
+            text=setup_status_message(package, models),
+            style="Card.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+        items = setup_readiness_items(
+            package,
+            models,
+            local_ai_ready=local_ai_available(),
+            resource_mode=schedule.mode,
+            output_advice=output_directory_advice(output_directory),
+        )
+        visuals = {
+            "ready": ("✓", SUCCESS),
+            "action": ("!", DANGER),
+            "optional": ("○", MUTED),
+        }
+        for item in items:
+            row = ttk.Frame(frame, style="Card.TFrame")
+            row.pack(fill="x", pady=5)
+            symbol, color = visuals[item.status]
+            ttk.Label(row, text=symbol, foreground=color, style="Card.TLabel", width=2).pack(
+                side="left", anchor="n"
             )
+            copy = ttk.Frame(row, style="Card.TFrame")
+            copy.pack(side="left", fill="x", expand=True)
+            ttk.Label(copy, text=item.title, style="Field.TLabel").pack(anchor="w")
+            ttk.Label(
+                copy,
+                text=item.detail,
+                style="Muted.TLabel",
+                wraplength=600,
+                justify="left",
+            ).pack(anchor="w", pady=(2, 0))
+        if not models:
             ttk.Button(
-                self.content,
-                text="只下载最高画质视频（不生成字幕）",
-                style="Secondary.TButton",
-                command=lambda: self._select_workflow("download"),
-            ).pack(anchor="w", fill="x", pady=5)
-            ttk.Button(
-                self.content,
-                text="识别、翻译并压制字幕",
+                frame,
+                text="打开兼容的 Whisper Small / Medium 下载页",
                 style="Primary.TButton",
-                command=lambda: self._select_workflow("subtitles"),
-            ).pack(anchor="w", fill="x", pady=5)
-            ttk.Label(
-                self.content,
-                text="只下载不需要 Whisper 模型；制作字幕需要先安装一个模型包。",
-                style="Muted.TLabel",
+                command=lambda: webbrowser.open(model_release_page_url()),
             ).pack(anchor="w", pady=(14, 0))
-        elif self.step == 1:
-            self.step_label.configure(text="第 2 步 / 3　检查本机是否准备就绪")
-            package = package_tier()
-            models = installed_whisper_models()
-            ttk.Label(
-                self.content,
-                text=setup_status_message(package, models),
-                style="Card.TLabel",
-                wraplength=560,
-                justify="left",
-            ).pack(anchor="w", pady=(4, 12))
-            if models:
-                ttk.Label(self.content, text="✓ 已可生成字幕", foreground=SUCCESS, style="Card.TLabel").pack(
-                    anchor="w", pady=(3, 12)
-                )
-            else:
-                ttk.Label(
-                    self.content,
-                    text="请在发布页面下载一个 Whisper 模型包。模型包的 Setup.exe 与 Setup-1.bin 必须放在同一文件夹后再运行。",
-                    style="Muted.TLabel",
-                    wraplength=560,
-                    justify="left",
-                ).pack(anchor="w", pady=(3, 10))
-                ttk.Button(
-                    self.content,
-                    text="打开 Whisper Small / Medium 下载页（Small 推荐）",
-                    style="Primary.TButton",
-                    command=lambda: webbrowser.open(release_page_url()),
-                ).pack(anchor="w")
-        else:
-            self.step_label.configure(text="第 3 步 / 3　开始处理第一个视频")
-            ttk.Label(
-                self.content,
-                text="在主界面点击“粘贴链接”，输入一个你有权处理的 YouTube、媒体直链或本地视频。\n\n"
-                "选择翻译方向与字幕方式后，点击“开始本地化”。软件会显示下载、识别、翻译和压制的真实进度；中途停止后可继续处理。",
-                style="Card.TLabel",
-                wraplength=560,
-                justify="left",
-            ).pack(anchor="w", pady=(4, 14))
-            ttk.Label(
-                self.content,
-                text="提示：所有下载、识别和本地 AI 翻译仅在你的电脑上运行。",
-                style="Muted.TLabel",
-                wraplength=560,
-                justify="left",
-            ).pack(anchor="w")
+
+    def _build_troubleshooting(self, frame: ttk.Frame) -> None:
+        questions = (
+            "下载提示 429：YouTube 暂时限流，等待几分钟后重试即可，已完成阶段会复用。\n\n"
+            "电脑变卡或显存不足：关闭占用显卡的软件后重试；低配置机器会自动串行处理，也可以改用 Whisper Small。\n\n"
+            "字幕压制失败：视频与字幕中间文件不会丢失，点击“重试未完成任务”会重新检测编码器。\n\n"
+            "找不到结果：点击主界面的“输出文件夹”；最终成片在项目的 rendered 文件夹中。\n\n"
+            "仍无法解决：点击“导出诊断包”。诊断包会隐藏链接和凭证，也不会包含视频或字幕正文。"
+        )
+        ttk.Label(frame, text="常见问题与恢复方法", style="Field.TLabel").pack(anchor="w")
+        ttk.Label(
+            frame,
+            text=questions,
+            style="Card.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(12, 16))
+        ttk.Button(
+            frame,
+            text="打开当前版本发布页",
+            style="Secondary.TButton",
+            command=lambda: webbrowser.open(release_page_url()),
+        ).pack(anchor="w")
 
     def _select_workflow(self, workflow: str) -> None:
         self.on_select_workflow(workflow)
-        self.step = 1
-        self._render()
-
-    def _back(self) -> None:
-        self.step = max(0, self.step - 1)
-        self._render()
-
-    def _next(self) -> None:
-        if self.step == 2:
-            self._finish()
-            return
-        self.step += 1
-        self._render()
-
-    def _finish(self) -> None:
-        if self.window.winfo_exists():
-            self.window.destroy()
-        self.on_complete()
-
-    def _defer(self) -> None:
-        if self.window.winfo_exists():
-            self.window.destroy()
+        self.window.destroy()
 
 
 class SubtitleReviewDialog:
@@ -1035,6 +1075,7 @@ class LocalizerWindow:
         self._retry_commands: list[list[str]] = []
         self._project_paths_by_queue_index: dict[int, Path] = {}
         self._diagnostic_projects: set[Path] = set()
+        self.help_center: HelpCenterDialog | None = None
 
         endpoint, model, api_key = api_configuration(os.environ)
         default_translation = (
@@ -1066,6 +1107,14 @@ class LocalizerWindow:
         self.output_hint = tk.StringVar()
         self.output_directory_hint = tk.StringVar()
         self.workflow_summary = tk.StringVar()
+        schedule = detected_resource_schedule()
+        self.readiness_hint = tk.StringVar(
+            value=quick_readiness_message(
+                installed_whisper_models(),
+                local_ai_ready=local_ai_available(),
+                resource_mode=schedule.mode,
+            )
+        )
         self.settings_visible = False
         self.log_visible = False
 
@@ -1077,7 +1126,6 @@ class LocalizerWindow:
         self.output_directory.trace_add("write", self._update_output_directory_hint)
         self._update_input_state()
         self.root.after(100, self._poll_events)
-        self.root.after(350, self._show_first_run_onboarding)
 
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
@@ -1221,9 +1269,9 @@ class LocalizerWindow:
         ).grid(row=0, column=2)
         ttk.Button(
             hero,
-            text="首次设置",
+            text="帮助中心",
             style="Toolbar.TButton",
-            command=self._open_setup_guide,
+            command=self._open_help_center,
         ).grid(row=0, column=3, padx=(8, 0))
         update_tools = tk.Frame(hero, background=HEADER)
         update_tools.grid(row=0, column=4, sticky="e")
@@ -1299,11 +1347,16 @@ class LocalizerWindow:
             text="最高画质下载 · 本地语音识别 · 离线翻译 · 字幕压制",
             style="AppMuted.TLabel",
         ).pack()
+        ttk.Label(
+            empty_content,
+            textvariable=self.readiness_hint,
+            style="AppMuted.TLabel",
+        ).pack(pady=(7, 0))
         ttk.Button(
             empty_content,
-            text="首次使用？查看 3 步设置",
+            text="打开使用教程与环境检查",
             style="Secondary.TButton",
-            command=self._open_setup_guide,
+            command=self._open_help_center,
         ).pack(pady=(18, 0))
 
         self.input_frame = ttk.Frame(outer, style="Card.TFrame", padding=(22, 16, 22, 18))
@@ -1661,15 +1714,17 @@ class LocalizerWindow:
         if not self.settings_visible:
             self._toggle_settings()
 
-    def _show_first_run_onboarding(self) -> None:
-        if packaged_app_needs_onboarding():
-            self._open_setup_guide()
-
-    def _open_setup_guide(self) -> None:
-        SetupGuideDialog(
+    def _open_help_center(self) -> None:
+        if self.help_center is not None and self.help_center.window.winfo_exists():
+            self.help_center.window.lift()
+            self.help_center.window.focus_force()
+            return
+        self.help_center = HelpCenterDialog(
             self.root,
             on_select_workflow=self._apply_setup_workflow,
-            on_complete=self._complete_setup_guide,
+            output_directory=Path(
+                self.output_directory.get().strip() or default_output_directory()
+            ).expanduser(),
         )
 
     def _apply_setup_workflow(self, workflow: str) -> None:
@@ -1679,12 +1734,6 @@ class LocalizerWindow:
             self.subtitle_label.set("仅目标语言字幕")
             self._show_settings()
         self._update_translation_fields()
-
-    def _complete_setup_guide(self) -> None:
-        try:
-            mark_onboarding_completed()
-        except OSError:
-            self._append_log("无法保存首次设置状态；下次启动时会再次显示设置引导。")
 
     def _open_subtitle_review(self) -> None:
         from tkinter import filedialog
@@ -2396,11 +2445,12 @@ class LocalizerWindow:
                 f"队列完成：{completed - failures}/{total} 个任务成功，请查看上方日志",
                 "error",
             )
+            recovery = friendly_failure_summary(self.log.get("1.0", "end"))
             messagebox.showerror(
                 "部分任务未完成",
                 f"已完成 {completed - failures}/{total} 个任务。窗口日志和所选输出文件夹内项目的 logs "
                 "文件夹包含详细原因；程序会为可识别的失败项目自动创建脱敏诊断包。"
-                "点击“重试未完成任务”即可仅续跑失败项目，已完成阶段会复用。",
+                f"\n\n建议：{recovery}",
                 parent=self.root,
             )
             return
