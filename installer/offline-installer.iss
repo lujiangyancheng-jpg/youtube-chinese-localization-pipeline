@@ -5,7 +5,10 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.7.0"
+  #define AppVersion "0.7.0.1"
+#endif
+#ifndef ModelPackVersion
+  #define ModelPackVersion "0.7.0"
 #endif
 #ifndef PackageTier
   #define PackageTier "Complete"
@@ -120,15 +123,15 @@ Filename: "{app}\Localize Studio.exe"; Description: "Launch YouTube Chinese Loca
 [Code]
 const
   ReleaseAssetBaseUrl =
-    'https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v{#AppVersion}/';
-  WhisperSmallSetup = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Small-Model-Setup.exe';
-  WhisperSmallBin = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Small-Model-Setup-1.bin';
-  WhisperMediumSetup = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Medium-Model-Setup.exe';
-  WhisperMediumBin = 'YouTube-Chinese-Localizer-{#AppVersion}-Whisper-Medium-Model-Setup-1.bin';
-  LocalAISetup = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup.exe';
-  LocalAIBin1 = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup-1.bin';
-  LocalAIBin2 = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup-2.bin';
-  LocalAIBin3 = 'YouTube-Chinese-Localizer-{#AppVersion}-Local-AI-Model-Setup-3.bin';
+    'https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v{#ModelPackVersion}/';
+  WhisperSmallSetup = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Small-Model-Setup.exe';
+  WhisperSmallBin = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Small-Model-Setup-1.bin';
+  WhisperMediumSetup = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Medium-Model-Setup.exe';
+  WhisperMediumBin = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Medium-Model-Setup-1.bin';
+  LocalAISetup = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup.exe';
+  LocalAIBin1 = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup-1.bin';
+  LocalAIBin2 = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup-2.bin';
+  LocalAIBin3 = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup-3.bin';
 
 var
   OptionalModelsPage: TInputOptionWizardPage;
@@ -141,7 +144,7 @@ procedure InitializeWizard;
 begin
   OptionalModelsPage := CreateInputOptionPage(wpSelectTasks,
     '选择本地模型', '按需下载，随时可补装',
-    '基础程序已经包含下载、视频处理和快速中英离线翻译。勾选的模型会在安装时从本项目的同版本 GitHub Release 下载，并逐个校验 SHA-256。' + #13#10 + #13#10 +
+    '基础程序已经包含下载、视频处理和快速中英离线翻译。勾选的模型会在安装时从本项目的兼容模型 GitHub Release 下载，并逐个校验 SHA-256。' + #13#10 + #13#10 +
     'Whisper 是制作字幕必需的语音识别模型；本地 AI 模型可带来更自然的段落翻译和更多目标语种。',
     False, False);
   OptionalModelsPage.Add('Whisper Small（推荐多数电脑；字幕识别）');

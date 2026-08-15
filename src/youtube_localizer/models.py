@@ -55,6 +55,15 @@ class SourceMetadata(BaseModel):
     chinese_subtitle_kind: str = ""
 
 
+class OutputArtifact(BaseModel):
+    """Compact integrity metadata for a completed pipeline output."""
+
+    path: str
+    size_bytes: int = Field(ge=0)
+    fingerprint: str
+    fingerprint_kind: str
+
+
 class StepRecord(BaseModel):
     name: str
     status: str
@@ -63,13 +72,14 @@ class StepRecord(BaseModel):
     input_hash: str
     config_hash: str
     output_files: list[str] = Field(default_factory=list)
+    output_artifacts: list[OutputArtifact] = Field(default_factory=list)
     error_message: str | None = None
     retry_count: int = 0
     elapsed_seconds: float | None = None
 
 
 class PipelineStateData(BaseModel):
-    version: int = 1
+    version: int = 2
     source_input: str = ""
     project_status: str = "incomplete"
     updated_at: str = ""

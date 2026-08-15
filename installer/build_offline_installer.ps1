@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.7.0",
+    [string]$Version = "0.7.0.1",
+    [string]$ModelPackVersion = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
     [string]$PythonVersion = "3.12.10",
@@ -43,6 +44,13 @@ $DistRoot = Join-Path $ProjectRoot "dist"
 $PackageTierNormalized = $PackageTier.ToLowerInvariant()
 $IsCompletePackage = $PackageTier -eq "Complete"
 $IsStandardPackage = $PackageTier -eq "Standard"
+$VersionParts = @($Version.Split('.'))
+if ($VersionParts.Count -ne 4 -or @($VersionParts | Where-Object { $_ -notmatch '^\d+$' }).Count) {
+    throw "Application versions must use four numeric parts, for example 0.7.0.1."
+}
+if ($ModelPackVersion -ne ($VersionParts[0..2] -join '.')) {
+    throw "ModelPackVersion must match the first three application version parts: $($VersionParts[0..2] -join '.')."
+}
 
 function Assert-ChildPath([string]$Path, [string]$Parent) {
     $resolvedPath = [IO.Path]::GetFullPath($Path).TrimEnd('\')
@@ -119,10 +127,22 @@ function Copy-RequiredOllamaQwenModel([string]$SourceRoot, [string]$DestinationR
 
 function Get-RequiredReleaseAssetHash([string]$AssetName) {
     $asset = Join-Path $DistRoot $AssetName
-    if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
-        throw "The Standard installer needs the matching optional model-pack asset first: $asset. Build Whisper Small, Whisper Medium, and Local AI model packs for v$Version before building Standard."
+    if (Test-Path -LiteralPath $asset -PathType Leaf) {
+        return (Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant()
     }
-    return (Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant()
+    if ($null -eq $script:ModelPackRelease) {
+        $releaseUri = "https://api.github.com/repos/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/tags/v$ModelPackVersion"
+        $script:ModelPackRelease = Invoke-RestMethod -Uri $releaseUri -Headers @{ Accept = "application/vnd.github+json" }
+    }
+    $releaseAsset = @($script:ModelPackRelease.assets | Where-Object name -eq $AssetName)
+    if ($releaseAsset.Count -ne 1 -or -not $releaseAsset[0].digest) {
+        throw "The Standard installer needs model-pack asset $AssetName from release v$ModelPackVersion, but its SHA-256 digest is unavailable."
+    }
+    $digest = [string]$releaseAsset[0].digest
+    if ($digest -notmatch '^sha256:([0-9a-fA-F]{64})$') {
+        throw "GitHub returned an invalid digest for model-pack asset $AssetName`: $digest"
+    }
+    return $Matches[1].ToLowerInvariant()
 }
 
 New-Item -ItemType Directory -Path $CacheRoot, $DistRoot -Force | Out-Null
@@ -441,7 +461,11 @@ $Manifest = foreach ($asset in $ManifestAssets) {
 }
 [ordered]@{
     application = "YouTube Chinese Localizer"
-    version = $Version
+    # The legacy version field is the three-part model ABI, so already published model-pack
+    # installers remain usable throughout a 0.7.0.x application iteration series.
+    version = $ModelPackVersion
+    application_version = $Version
+    model_compatibility_version = $ModelPackVersion
     package_tier = $PackageTierNormalized
     generated_utc = [DateTime]::UtcNow.ToString("o")
     assets = $Manifest
@@ -501,18 +525,19 @@ if (-not $SkipInstaller) {
         "/DStageDir=$StageRoot",
         "/DOutputDir=$DistRoot",
         "/DAppVersion=$Version",
+        "/DModelPackVersion=$ModelPackVersion",
         "/DPackageTier=$PackageTier"
     )
     if ($IsStandardPackage) {
         $optionalAssets = @(
-            @{ Define = "WhisperSmallSetupSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Small-Model-Setup.exe" },
-            @{ Define = "WhisperSmallBinSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Small-Model-Setup-1.bin" },
-            @{ Define = "WhisperMediumSetupSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Medium-Model-Setup.exe" },
-            @{ Define = "WhisperMediumBinSha256"; Name = "YouTube-Chinese-Localizer-$Version-Whisper-Medium-Model-Setup-1.bin" },
-            @{ Define = "LocalAISetupSha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup.exe" },
-            @{ Define = "LocalAIBin1Sha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup-1.bin" },
-            @{ Define = "LocalAIBin2Sha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup-2.bin" },
-            @{ Define = "LocalAIBin3Sha256"; Name = "YouTube-Chinese-Localizer-$Version-Local-AI-Model-Setup-3.bin" }
+            @{ Define = "WhisperSmallSetupSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Whisper-Small-Model-Setup.exe" },
+            @{ Define = "WhisperSmallBinSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Whisper-Small-Model-Setup-1.bin" },
+            @{ Define = "WhisperMediumSetupSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Whisper-Medium-Model-Setup.exe" },
+            @{ Define = "WhisperMediumBinSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Whisper-Medium-Model-Setup-1.bin" },
+            @{ Define = "LocalAISetupSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup.exe" },
+            @{ Define = "LocalAIBin1Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-1.bin" },
+            @{ Define = "LocalAIBin2Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-2.bin" },
+            @{ Define = "LocalAIBin3Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-3.bin" }
         )
         foreach ($asset in $optionalAssets) {
             $isccArguments += "/D$($asset.Define)=$(Get-RequiredReleaseAssetHash $asset.Name)"

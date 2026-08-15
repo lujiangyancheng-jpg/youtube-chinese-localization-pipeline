@@ -16,9 +16,9 @@
 
 1. 在 `dist` 中选择同一版本的 Standard 或 Complete 基础安装包。
 2. Standard 只需下载一个 `.exe`。Complete 和独立模型包仍需把 `.exe` 与其全部同名 `.bin` 分卷放在同一个文件夹，不要重命名或遗漏分卷。
-3. 双击 Standard 时，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 或 Local AI；安装器会从同版本 Release 下载选择的组件并校验 SHA-256。离线安装或使用 Complete 时，继续下一步手动安装模型包。
+3. 双击 Standard 时，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 或 Local AI；安装器会从前三段兼容的模型 Release 下载选择的组件并校验 SHA-256。例如程序 `0.7.0.1` 使用 `0.7.0` 模型包。离线安装或使用 Complete 时，继续下一步手动安装模型包。
 4. 若还没有 Whisper，选择一个模型安装包：`Whisper-Small-Model-Setup.exe` 或 `Whisper-Medium-Model-Setup.exe`。
-5. 把模型包安装到与基础程序相同的文件夹；默认位置通常正确。需要本地 AI 而未使用 Complete 时，安装同版本 `Local-AI-Model-Setup.exe` 与全部分卷。
+5. 把模型包安装到与基础程序相同的文件夹；默认位置通常正确。需要本地 AI 而未使用 Complete 时，安装前三段兼容版本的 `Local-AI-Model-Setup.exe` 与全部分卷。
 6. 从开始菜单或桌面打开 **YouTube Chinese Localizer**。
 
 Small 与 Medium 可以同时安装，软件会优先按你选择的处理方式和当前硬件使用合适的模型。只下载无字幕视频时不需要 Whisper 模型。
@@ -30,7 +30,7 @@ Small 与 Medium 可以同时安装，软件会优先按你选择的处理方式
 “本地 AI 段落翻译”除 Whisper 外还需要 Qwen3:4b 大语言模型：
 
 - 安装 **完整版**：Qwen3:4b 已内置，不需要 API Key，也不需要另行下载大语言模型。
-- 安装 **标准版**：安装时勾选“本地 AI 段落翻译”，或之后安装同版本 `Local-AI-Model-Setup.exe`，即可使用 Qwen3:4b；未安装时仍可直接使用快速离线翻译。
+- 安装 **标准版**：安装时勾选“本地 AI 段落翻译”，或之后安装前三段兼容的 `Local-AI-Model-Setup.exe`，即可使用 Qwen3:4b；未安装时仍可直接使用快速离线翻译。
 
 ## 校验完整性
 
