@@ -40,6 +40,7 @@ from .review import (
     render_subtitle_review_preview,
     save_reviewed_subtitles,
 )
+from .state import find_recoverable_projects
 from .support import create_support_bundle
 from .updates import ReleaseCheck, check_for_update
 from .utils.text import ms_to_srt
@@ -92,6 +93,18 @@ TRANSLATION_MODES = {
     "本地 AI 段落翻译并压制（高质量，无 API Key）": "ollama",
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
 }
+UPDATE_CHANNELS = {"稳定": "stable", "开发": "development"}
+
+
+def output_directory_status_hint(path: Path) -> str:
+    advice = output_directory_advice(path)
+    recoverable = find_recoverable_projects(path)
+    if not recoverable:
+        return advice
+    count = len(recoverable)
+    return (
+        f"{advice} 发现 {count} 个未完成项目；重新粘贴原链接并保留“继续上次处理”即可恢复。"
+    )
 LANGUAGE_DISPLAY_NAMES = {
     "zh": "简体中文",
     "en": "英文",
@@ -1045,6 +1058,7 @@ class LocalizerWindow:
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
+        self.update_channel_label = tk.StringVar(value="开发")
         self.authorized = tk.BooleanVar(value=False)
         self.resume = tk.BooleanVar(value=True)
         self.status = tk.StringVar(value="等待粘贴链接")
@@ -1211,13 +1225,24 @@ class LocalizerWindow:
             style="Toolbar.TButton",
             command=self._open_setup_guide,
         ).grid(row=0, column=3, padx=(8, 0))
+        update_tools = tk.Frame(hero, background=HEADER)
+        update_tools.grid(row=0, column=4, sticky="e")
+        self.update_channel_combo = ttk.Combobox(
+            update_tools,
+            textvariable=self.update_channel_label,
+            values=tuple(UPDATE_CHANNELS),
+            state="readonly",
+            width=4,
+            style="Modern.TCombobox",
+        )
+        self.update_channel_combo.pack(side="left", padx=(0, 4))
         self.update_button = ttk.Button(
-            hero,
+            update_tools,
             text="检查更新",
             style="Toolbar.TButton",
             command=self._begin_update_check,
         )
-        self.update_button.grid(row=0, column=4, sticky="e")
+        self.update_button.pack(side="left")
         ttk.Button(
             hero,
             text="字幕审核",
@@ -1709,19 +1734,21 @@ class LocalizerWindow:
 
     def _begin_update_check(self) -> None:
         self.update_button.configure(state="disabled", text="正在检查…")
+        channel = UPDATE_CHANNELS[self.update_channel_label.get()]
 
         def worker() -> None:
-            self.events.put(("update", check_for_update()))
+            self.events.put(("update", check_for_update(channel=channel)))
 
         threading.Thread(target=worker, daemon=True, name="localizer-update-check").start()
 
     def _show_update_result(self, result: ReleaseCheck) -> None:
         self.update_button.configure(state="normal", text="检查更新")
+        channel_name = "开发通道" if result.channel == "development" else "稳定通道"
         if result.status == "available":
             should_open = messagebox.askyesno(
                 "发现新版本",
-                f"当前版本：v{result.current_version}\n最新版本：v{result.latest_version}\n\n"
-                "是否打开官方下载页？安装程序与 .bin 数据包需要下载到同一文件夹。",
+                f"更新通道：{channel_name}\n当前版本：v{result.current_version}\n"
+                f"最新版本：v{result.latest_version}\n\n是否打开官方下载页？",
                 parent=self.root,
             )
             if should_open and result.release_url:
@@ -1730,7 +1757,7 @@ class LocalizerWindow:
         if result.status == "current":
             messagebox.showinfo(
                 "已经是最新版本",
-                f"当前版本 v{result.current_version} 已是公开发布的最新版本。",
+                f"当前版本 v{result.current_version} 已是{channel_name}的最新版本。",
                 parent=self.root,
             )
             return
@@ -1925,7 +1952,7 @@ class LocalizerWindow:
         if not raw_directory:
             self.output_directory_hint.set("请选择一个本地磁盘位置以保存项目和渲染文件。")
             return
-        self.output_directory_hint.set(output_directory_advice(Path(raw_directory)))
+        self.output_directory_hint.set(output_directory_status_hint(Path(raw_directory)))
 
     def _validate(self) -> tuple[list[list[str]], dict[str, str], str]:
         if not self.authorized.get():

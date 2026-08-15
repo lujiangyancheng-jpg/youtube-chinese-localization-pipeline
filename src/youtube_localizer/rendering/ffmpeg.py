@@ -135,7 +135,7 @@ def render_hardsub(
     expected_duration: float | None = None,
     source_frame_rate: float | None = None,
 ) -> Path:
-    with heavy_workload_slot("hard-subtitle rendering"):
+    with heavy_workload_slot("hard-subtitle rendering", kind="encoder"):
         return _render_hardsub(
             source_video,
             subtitle_file,

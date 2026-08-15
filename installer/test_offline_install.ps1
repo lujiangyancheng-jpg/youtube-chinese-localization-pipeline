@@ -100,7 +100,11 @@ $env:YOUTUBE_LOCALIZER_FONTS = $Fonts
 $env:FFMPEG_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe"
 $env:FFPROBE_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffprobe.exe"
 if ($IsCompletePackage) { $env:OLLAMA_PATH = $Ollama } else { Remove-Item Env:OLLAMA_PATH -ErrorAction SilentlyContinue }
-$env:YOUTUBE_LOCALIZER_EXPECTED_VERSION = [string]$Manifest.version
+$env:YOUTUBE_LOCALIZER_EXPECTED_VERSION = if ($Manifest.application_version) {
+    [string]$Manifest.application_version
+} else {
+    [string]$Manifest.version
+}
 
 & $Python -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('installed desktop interface: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }

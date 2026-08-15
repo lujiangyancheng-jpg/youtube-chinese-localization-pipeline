@@ -10,6 +10,11 @@ from youtube_localizer.subtitles.cleanup import CleanupResult
 from youtube_localizer.subtitles.parser import parse_subtitle, write_srt
 
 
+def _fake_extract_audio(_source, output, **_kwargs):
+    output.write_bytes(b"synthetic wav")
+    return output
+
+
 def test_pipeline_ignores_provided_chinese_and_transcribes_locally(tmp_path) -> None:
     project = ProjectPaths(tmp_path / "project")
     project.create()
@@ -35,9 +40,10 @@ def test_pipeline_ignores_provided_chinese_and_transcribes_locally(tmp_path) -> 
         )
         return YouTubeDownloadResult(video=video)
 
-    def fake_transcribe(_audio, _json, output_srt, _config, *, language):
+    def fake_transcribe(_audio, output_json, output_srt, _config, *, language):
         assert language == "zh"
         cues = [SubtitleCue(id=1, start_ms=100, end_ms=1900, text="本地识别字幕")]
+        output_json.write_text("{}", encoding="utf-8")
         write_srt(output_srt, cues)
         return CleanupResult(cues, [], [])
 
@@ -69,7 +75,7 @@ def test_pipeline_ignores_provided_chinese_and_transcribes_locally(tmp_path) -> 
         ),
         patch("youtube_localizer.pipeline.download_youtube", side_effect=fake_download),
         patch("youtube_localizer.pipeline.translate_with_offline", side_effect=fake_translate),
-        patch("youtube_localizer.pipeline.extract_transcription_audio"),
+        patch("youtube_localizer.pipeline.extract_transcription_audio", side_effect=_fake_extract_audio),
         patch("youtube_localizer.pipeline.transcribe_audio", side_effect=fake_transcribe) as transcribe,
         patch("youtube_localizer.pipeline.render_project", side_effect=fake_render),
     ):
@@ -103,7 +109,7 @@ def test_pipeline_transcribes_chinese_when_no_caption_track_exists(tmp_path) -> 
         video.write_bytes(b"synthetic video")
         return YouTubeDownloadResult(video=video)
 
-    def fake_transcribe(_audio, _json, output_srt, _config, *, language):
+    def fake_transcribe(_audio, output_json, output_srt, _config, *, language):
         assert language == "zh"
         cue = {
             "id": 1,
@@ -112,6 +118,7 @@ def test_pipeline_transcribes_chinese_when_no_caption_track_exists(tmp_path) -> 
             "text": "这是中文语音",
         }
         cues = [SubtitleCue.model_validate(cue)]
+        output_json.write_text("{}", encoding="utf-8")
         write_srt(output_srt, cues)
         return CleanupResult(cues, [], [])
 
@@ -138,7 +145,7 @@ def test_pipeline_transcribes_chinese_when_no_caption_track_exists(tmp_path) -> 
             return_value=(project, metadata, {"id": metadata.video_id}),
         ),
         patch("youtube_localizer.pipeline.download_youtube", side_effect=fake_download),
-        patch("youtube_localizer.pipeline.extract_transcription_audio"),
+        patch("youtube_localizer.pipeline.extract_transcription_audio", side_effect=_fake_extract_audio),
         patch("youtube_localizer.pipeline.transcribe_audio", side_effect=fake_transcribe),
         patch("youtube_localizer.pipeline.translate_with_offline", side_effect=fake_translate),
         patch("youtube_localizer.pipeline.render_project") as render,

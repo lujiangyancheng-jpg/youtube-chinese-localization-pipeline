@@ -43,6 +43,7 @@ def test_base_installer_uses_the_native_launcher_not_a_cmd_wrapper() -> None:
 def test_standard_installer_downloads_only_selected_hash_verified_model_packs() -> None:
     script = (INSTALLER / "offline-installer.iss").read_text(encoding="utf-8")
     builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")
+    verifier = (INSTALLER / "test_offline_install.ps1").read_text(encoding="utf-8")
 
     assert "CreateInputOptionPage" in script
     assert "CreateDownloadPage" in script
@@ -54,6 +55,11 @@ def test_standard_installer_downloads_only_selected_hash_verified_model_packs() 
     assert "InstallModelPack" in script
     assert "Get-RequiredReleaseAssetHash" in builder
     assert "Local-AI-Model-Setup" in builder
+    assert "ModelPackVersion" in builder
+    assert "ModelPackVersion" in script
+    assert "application_version" in builder
+    assert "model_compatibility_version" in builder
+    assert "$Manifest.application_version" in verifier
 
 
 def test_standard_uses_one_pinned_compact_ffmpeg_runtime() -> None:

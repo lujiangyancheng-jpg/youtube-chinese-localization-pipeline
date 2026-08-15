@@ -18,6 +18,7 @@ from youtube_localizer.gui import (
     gui_process_creationflags,
     local_ai_available,
     mode_description,
+    output_directory_status_hint,
     packaged_app_needs_onboarding,
     progress_update_from_output,
     project_workspace_from_output,
@@ -111,6 +112,21 @@ def test_project_workspace_from_output_accepts_only_selected_output_root(tmp_pat
         f"Project workspace: {tmp_path / 'outside'}", output_root
     ) is None
     assert project_workspace_from_output("unrelated logging", output_root) is None
+
+
+def test_output_directory_hint_reports_recoverable_projects(tmp_path) -> None:
+    project = tmp_path / "unfinished"
+    project.mkdir()
+    (project / "pipeline_state.json").write_text(
+        '{"project_status":"incomplete","steps":{"download":{"name":"download",'
+        '"status":"failed","started_at":"now","input_hash":"i","config_hash":"c"}}}',
+        encoding="utf-8",
+    )
+
+    hint = output_directory_status_hint(tmp_path)
+
+    assert "1 个未完成项目" in hint
+    assert "继续上次处理" in hint
 
 
 def test_gui_queue_tracks_only_failed_items_for_retry() -> None:

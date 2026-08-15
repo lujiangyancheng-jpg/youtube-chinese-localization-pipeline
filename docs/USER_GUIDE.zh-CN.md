@@ -56,11 +56,11 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-下载 `YouTube-Chinese-Localizer-0.7.0-Standard-Offline-Setup.exe` 后直接双击安装即可。Standard 已是单文件安装包，
+下载 `YouTube-Chinese-Localizer-0.7.0.1-Standard-Offline-Setup.exe` 后直接双击安装即可。Standard 已是单文件安装包，
 不再需要额外的 `.bin`。它包含 Python、精简 FFmpeg、字幕字体和两套快速翻译模型；
 安装过程会出现“选择本地模型”页，可按需勾选 Whisper Small（多数电脑推荐）、Whisper Medium（更高识别质量）
 和本地 AI 段落翻译所需的 Qwen3:4b 与 Ollama。安装器只会下载所勾选的组件并逐个校验 SHA-256；未勾选的
-模型不会下载或占用磁盘。若电脑暂时不联网，可不勾选模型，之后从同版本 Release 下载安装独立模型包。
+模型不会下载或占用磁盘。若电脑暂时不联网，可不勾选模型，之后从兼容模型 Release 下载安装独立模型包。四段版本号的最后一段是程序迭代号，例如 `0.7.0.1` 继续使用 `0.7.0` 模型包。
 
 正式版安装后，可在开始菜单运行“Verify YouTube Localizer Installation”。它会核验随安装包提供的
 模型和字体大小及 SHA-256 哈希，再检查图形界面与本地模型能否加载；此快速核验不会运行较慢的 Qwen
@@ -183,14 +183,14 @@ output\项目名称\rendered\english_hardsub.mp4
 - “仅下载原视频（无字幕）”始终使用最高画质视频和最高质量音频并自动合并，完成后直接停下，不运行 Whisper、翻译或字幕压制；文件位于项目的 `source` 文件夹。
 - “免费模式”不需要 API，会自动完成视频下载和原语言字幕，然后停在人工翻译步骤。
 - “本地快速翻译并压制”不需要 API，会使用约 85 MB 的轻量模型在本机完成翻译。它现在会先合并完整段落再翻译，适合速度优先或配置较低的电脑。
-- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。Standard 安装时勾选本地 AI，或安装同版本 Local AI 模型包后，即可获得 Ollama 和 `qwen3:4b`；Complete 离线包也已内置。它会先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
+- “本地 AI 段落翻译并压制”是推荐的高质量无 API Key 模式。Standard 安装时勾选本地 AI，或安装前三段兼容的 Local AI 模型包后，即可获得 Ollama 和 `qwen3:4b`；Complete 离线包也已内置。它会先理解并翻译完整段落，再由程序按目标语言标点重新切成自然字幕；字幕文本只发送到本机 `localhost`。
 - 两种本地翻译都会应用 `glossary.yaml` 中的术语。
 - “自动翻译并压制字幕”会继续生成目标语言字幕并压制最终视频，但必须填写 OpenAI-compatible 接口地址、模型名称和 API Key。
 - 在窗口中输入的 API Key 只传给处理进程，不会保存到项目或上传到 GitHub。接口地址和模型名称可能写入本地项目的已解析配置，以便中断后继续处理。
 
 ### 3.3 其他语种（本地 AI 或 API）
 
-现在可把英文或简体中文字幕翻译为日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语或阿拉伯语。选择这些方向后，窗口只保留“本地 AI 段落翻译并压制”和“自动翻译并压制字幕”两项：前者需要在 Standard 安装时勾选本地 AI、安装同版本 Local AI 模型包，或使用 Complete 包中的本地 Ollama/Qwen 模型；后者需要填写 OpenAI-compatible API。
+现在可把英文或简体中文字幕翻译为日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语或阿拉伯语。选择这些方向后，窗口只保留“本地 AI 段落翻译并压制”和“自动翻译并压制字幕”两项：前者需要在 Standard 安装时勾选本地 AI、安装前三段兼容的 Local AI 模型包，或使用 Complete 包中的本地 Ollama/Qwen 模型；后者需要填写 OpenAI-compatible API。
 
 快速离线模型、人工翻译流程和中英双语字幕排版仅用于中英互译，因此不会在这些语种方向中出现。其他语种使用“仅目标语言字幕”，例如西班牙语会生成 `subtitles/es.srt`、`subtitles/es.ass` 和 `rendered/es_hardsub.mp4`。
 
