@@ -14,12 +14,12 @@ from youtube_localizer.gui import (
     api_configuration,
     build_process_command,
     clamp_subtitle_preview_values,
+    friendly_failure_summary,
     gui_parallel_job_limit,
     gui_process_creationflags,
     local_ai_available,
     mode_description,
     output_directory_status_hint,
-    packaged_app_needs_onboarding,
     progress_update_from_output,
     project_workspace_from_output,
     queue_input_values,
@@ -341,13 +341,20 @@ def test_gui_explains_when_a_packaged_install_has_no_whisper_model(monkeypatch) 
 
     assert message is not None
     assert "Whisper Small" in message
-    assert "首次设置" in message
+    assert "帮助中心" in message
 
 
-def test_packaged_app_only_shows_first_run_guide_once(monkeypatch) -> None:
-    monkeypatch.setattr("youtube_localizer.gui.package_tier", lambda: "standard")
-    monkeypatch.setattr("youtube_localizer.gui.onboarding_completed", lambda: False)
-    assert packaged_app_needs_onboarding()
-
-    monkeypatch.setattr("youtube_localizer.gui.onboarding_completed", lambda: True)
-    assert not packaged_app_needs_onboarding()
+@pytest.mark.parametrize(
+    ("log_text", "expected"),
+    [
+        ("HTTP Error 429: Too Many Requests", "暂时限制"),
+        ("CUDA error: out of memory", "显存"),
+        ("OSError: [Errno 28] No space left on device", "20 GiB"),
+        ("FFmpeg hard-subtitle rendering failed", "字幕压制"),
+        ("unexpected failure", "导出诊断包"),
+    ],
+)
+def test_friendly_failure_summary_recommends_a_recovery_action(
+    log_text: str, expected: str
+) -> None:
+    assert expected in friendly_failure_summary(log_text)
