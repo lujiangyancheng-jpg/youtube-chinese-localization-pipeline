@@ -17,6 +17,7 @@ from youtube_localizer.gui import (
     friendly_failure_summary,
     gui_parallel_job_limit,
     gui_process_creationflags,
+    label_for_value,
     local_ai_available,
     mode_description,
     output_directory_status_hint,
@@ -74,6 +75,11 @@ def test_queue_input_values_keeps_local_paths_and_deduplicates_lines() -> None:
         "https://youtu.be/one",
         "C:/Videos/My clip.mp4",
     ]
+
+
+def test_stored_internal_values_are_mapped_back_to_display_labels() -> None:
+    assert label_for_value({"推荐": "best", "标准": "standard"}, "best", "回退") == "推荐"
+    assert label_for_value({"推荐": "best"}, "unknown", "回退") == "回退"
 
 
 def test_gui_parallel_queue_is_bounded_to_two_safe_workers() -> None:
