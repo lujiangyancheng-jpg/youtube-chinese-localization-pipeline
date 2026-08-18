@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.7.0.2",
+    [string]$Version = "0.7.0.3",
     [string]$ModelPackVersion = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
@@ -490,7 +490,7 @@ if (-not $SkipSmokeTest) {
             & $EmbeddedPython -c "from youtube_localizer.resources import application_icon_path, bundled_fonts_directory, nvenc_compatibility_ffmpeg; assert application_icon_path(); assert bundled_fonts_directory(); assert not nvenc_compatibility_ffmpeg(); print('standard offline runtime smoke test: ok')"
         }
         if ($LASTEXITCODE -ne 0) { throw "Staged offline runtime smoke test failed." }
-        & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (980, 720); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); root.destroy(); print('staged desktop interface: ok')"
+        & $EmbeddedPython -c "import tkinter as tk; from youtube_localizer.gui import LocalizerWindow; root=tk.Tk(); root.attributes('-alpha', 0.0); window=LocalizerWindow(root); root.update(); assert root.title().startswith('Localize Studio'); assert (root.winfo_width(), root.winfo_height()) == (1060, 780); assert window.empty_state.winfo_ismapped(); assert not window.settings_panel.winfo_ismapped(); assert window.task_tree; root.destroy(); print('staged desktop interface and task centre: ok')"
         if ($LASTEXITCODE -ne 0) { throw "Staged desktop interface smoke test failed." }
         & $EmbeddedPython (Join-Path $AppRoot "main.py") --help | Out-Null
         if ($LASTEXITCODE -ne 0) { throw "Staged CLI smoke test failed." }
