@@ -24,6 +24,7 @@ from .download.youtube import (
     youtube_video_id,
 )
 from .errors import InputValidationError, LocalizerError, ProjectExistsError
+from .inspection_cache import cached_raw_metadata, load_cached_inspection
 from .logging_config import configure_logging
 from .models import ProjectPaths, SourceMetadata, SubtitleCue
 from .preflight import build_job_preflight
@@ -155,6 +156,9 @@ def _find_existing_project(output_root: Path, identifier: str) -> Path | None:
 
 
 def _inspect_input(value: str) -> tuple[SourceMetadata, dict[str, Any] | None]:
+    if cached := load_cached_inspection(value):
+        LOGGER.info("Reusing fresh desktop media inspection cache.")
+        return cached, None if cached.source_type == "local" else cached_raw_metadata(cached)
     if is_youtube_url(value):
         return inspect_youtube(value)
     if is_direct_media_candidate_url(value):

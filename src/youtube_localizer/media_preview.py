@@ -11,6 +11,7 @@ from .download.direct import inspect_direct_media, is_direct_media_candidate_url
 from .download.local import inspect_local
 from .download.youtube import inspect_youtube, is_youtube_url
 from .errors import InputValidationError
+from .inspection_cache import load_cached_inspection
 from .models import SourceMetadata
 
 
@@ -26,6 +27,7 @@ class MediaPreview:
     frame_rate: float | None
     thumbnail_url: str
     estimated_bytes: int | None
+    metadata: SourceMetadata | None = None
 
 
 def _format_size(size_bytes: int | None) -> str:
@@ -94,12 +96,21 @@ def _from_metadata(
         frame_rate=metadata.frame_rate,
         thumbnail_url=metadata.thumbnail_url,
         estimated_bytes=estimated_bytes,
+        metadata=metadata,
     )
 
 
 def inspect_media_preview(source: str) -> MediaPreview:
     """Inspect a supported source without downloading or modifying a project."""
     value = source.strip()
+    if cached := load_cached_inspection(value):
+        estimated_bytes = None
+        if cached.source_type == "local":
+            try:
+                estimated_bytes = Path(value).expanduser().resolve().stat().st_size
+            except OSError:
+                estimated_bytes = None
+        return _from_metadata(value, cached, estimated_bytes=estimated_bytes)
     if is_youtube_url(value):
         metadata, info = inspect_youtube(value)
         return _from_metadata(value, metadata, estimated_bytes=estimate_download_bytes(info))
