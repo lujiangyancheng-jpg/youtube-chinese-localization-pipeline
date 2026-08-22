@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 
-[立即下载 v0.7.0.3 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.3/YouTube-Chinese-Localizer-0.7.0.3-Standard-Offline-Setup.exe)
+[立即下载 v0.7.0.4 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.4/YouTube-Chinese-Localizer-0.7.0.4-Standard-Offline-Setup.exe)
 · [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases)
 · [中文完整说明](docs/USER_GUIDE.zh-CN.md)
 
@@ -21,7 +21,7 @@
 
 ## 🚀 三步开始使用
 
-1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.3/YouTube-Chinese-Localizer-0.7.0.3-Standard-Offline-Setup.exe)。
+1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.4/YouTube-Chinese-Localizer-0.7.0.4-Standard-Offline-Setup.exe)。
 2. 双击 `Setup.exe` 安装，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 和本地 AI 段落翻译。只会下载你勾选的模型；Small 适合多数电脑，Medium 识别质量更高。
 3. 打开 Localize Studio，粘贴视频链接；任务中心会先显示标题、时长、画质和预估大小，确认翻译与字幕方式后点击“开始本地化”。
 
@@ -32,11 +32,11 @@
 | 更自然的中英字幕 | “本地 AI 段落翻译” | Standard + Local AI + 一个 Whisper 包，或 Complete + Whisper |
 | 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Standard + Local AI + Whisper，或 Complete + Whisper，或 API |
 
-**Standard v0.7.0.3 开发版：约 289 MiB 的单文件安装包，比 v0.6.9 减少约 37%。** 它包含主程序、Python、单套精简 FFmpeg、字幕字体、GPU/CPU 编码和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。
+**Standard v0.7.0.4 开发版：约 289 MiB 的单文件安装包，比 v0.6.9 减少约 37%。** 它包含主程序、Python、单套精简 FFmpeg、字幕字体、GPU/CPU 编码和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。
 
 软件不会在每次启动时弹出教程。主界面的“帮助中心”集中提供快速教程、模型与环境状态、兼容模型下载入口和常见故障恢复方法，可随时打开。
 
-粘贴一个或多行链接后，逐视频任务中心会在后台预分析标题、时长、分辨率、帧率和预估下载大小，再分别显示下载、识别、翻译和压制进度。常用设置会保存在本机供下次启动恢复，但 API Key 永远不会写入设置文件。
+粘贴一个或多行链接后，逐视频任务中心会在后台预分析标题、时长、分辨率、帧率和预估下载大小，再分别显示下载速度、剩余时间、识别、翻译和压制进度。可只暂停或继续所选项目，并从完成项直接打开成片；关闭应用或电脑重启后，未完成队列也会恢复。预分析结果会短期复用，避免正式处理前重复请求同一来源。常用设置和队列状态会保存在本机，但 API Key 永远不会写入设置或队列文件。
 
 ## ✨ 你能得到什么
 
@@ -56,7 +56,7 @@
 
 ## 📌 版本与支持
 
-- 采用 `0.7.0.3` 形式的四段版本号：最后一段是程序小迭代；前三段相同的版本共用同一批本地模型，升级程序不需要重新下载模型。
+- 采用 `0.7.0.4` 形式的四段版本号：最后一段是程序小迭代；前三段相同的版本共用同一批本地模型，升级程序不需要重新下载模型。
 - 应用内“检查更新”可选择稳定通道或开发通道；四段小迭代通过开发通道提供。
 - 新增、优化和修复：[CHANGELOG.md](CHANGELOG.md)
 - 完整中文使用手册：[docs/USER_GUIDE.zh-CN.md](docs/USER_GUIDE.zh-CN.md)
@@ -620,7 +620,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.7.0.3 adds asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
+Version 0.7.0.4 adds restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
 safe two-job GUI scheduling, and bounded retry handling for temporary public-source limits. It also preserves the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,

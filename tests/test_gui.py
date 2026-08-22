@@ -20,6 +20,7 @@ from youtube_localizer.gui import (
     label_for_value,
     local_ai_available,
     mode_description,
+    notify_window_attention,
     output_directory_status_hint,
     progress_update_from_output,
     project_workspace_from_output,
@@ -27,6 +28,7 @@ from youtube_localizer.gui import (
     retry_queue_commands,
     whisper_model_installation_message,
 )
+from youtube_localizer.hardware import SystemResources
 
 
 def test_build_process_command_uses_argument_array_and_resume() -> None:
@@ -82,11 +84,18 @@ def test_stored_internal_values_are_mapped_back_to_display_labels() -> None:
     assert label_for_value({"推荐": "best"}, "unknown", "回退") == "回退"
 
 
-def test_gui_parallel_queue_is_bounded_to_two_safe_workers() -> None:
-    assert gui_parallel_job_limit(0) == 1
-    assert gui_parallel_job_limit(1) == 1
-    assert gui_parallel_job_limit(2) == 2
-    assert gui_parallel_job_limit(20) == 2
+def test_gui_parallel_queue_adapts_to_cpu_and_memory() -> None:
+    low = SystemResources(4, 8 * 1024)
+    typical = SystemResources(8, 16 * 1024)
+    capable = SystemResources(16, 32 * 1024)
+    high_end = SystemResources(24, 64 * 1024)
+
+    assert gui_parallel_job_limit(0, low) == 1
+    assert gui_parallel_job_limit(20, low) == 1
+    assert gui_parallel_job_limit(20, typical) == 2
+    assert gui_parallel_job_limit(20, capable) == 3
+    assert gui_parallel_job_limit(20, high_end) == 4
+    assert gui_parallel_job_limit(2, high_end) == 2
 
 
 def test_retry_queue_commands_only_restarts_incomplete_items_with_resume() -> None:
@@ -139,8 +148,15 @@ def test_gui_queue_tracks_only_failed_items_for_retry() -> None:
     window = object.__new__(LocalizerWindow)
     window.stop_requested = False
     window.events = Queue()
+    window._pause_requested_indices = set()
 
-    def run_process(_command: list[str], _environment: dict[str, str], index: int, _total: int) -> int:
+    def run_process(
+        _command: list[str],
+        _environment: dict[str, str],
+        index: int,
+        _position: int,
+        _total: int,
+    ) -> int:
         return 1 if index == 2 else 0
 
     window._run_process = run_process  # type: ignore[method-assign]
@@ -157,6 +173,37 @@ def test_gui_queue_tracks_only_failed_items_for_retry() -> None:
     events = list(window.events.queue)
     done_payload = next(payload for event, payload in events if event == "done")
     assert done_payload[-1] == (2,)
+
+
+def test_gui_queue_keeps_a_paused_item_recoverable_without_counting_it_as_failure() -> None:
+    window = object.__new__(LocalizerWindow)
+    window.stop_requested = False
+    window.events = Queue()
+    window._pause_requested_indices = {3}
+
+    def run_process(
+        _command: list[str],
+        _environment: dict[str, str],
+        _index: int,
+        _position: int,
+        _total: int,
+    ) -> int:
+        return 1
+
+    window._run_process = run_process  # type: ignore[method-assign]
+    window._run_queue(
+        [["python", "main.py", "process", "three"]],
+        {},
+        "offline",
+        task_indices=(3,),
+    )
+
+    events = list(window.events.queue)
+    done_payload = next(payload for event, payload in events if event == "done")
+    assert done_payload[0] == 0
+    assert done_payload[4] == 0
+    assert done_payload[5] == 1
+    assert done_payload[-1] == (3,)
 
 
 def test_api_configuration_does_not_require_or_mutate_environment() -> None:
@@ -326,6 +373,47 @@ def test_progress_updates_show_real_download_translation_and_rendering_progress(
     ) or (None, "")
     assert value == 93.5
     assert message == "正在压制字幕：75.0%"
+
+
+def test_download_progress_includes_transfer_speed_and_eta() -> None:
+    value, message = progress_update_from_output(
+        "[download]  50.0% of 100MiB at 12.5MiB/s ETA 00:04",
+        provider="download_only",
+    ) or (None, "")
+
+    assert value == 50.0
+    assert message == "正在下载原视频：50.0% · 12.5MiB/s · 剩余 00:04"
+
+
+def test_completion_attention_always_rings_the_application_bell() -> None:
+    class Root:
+        called = False
+
+        def bell(self) -> None:
+            self.called = True
+
+    root = Root()
+    notify_window_attention(root)  # type: ignore[arg-type]
+    assert root.called is True
+
+
+def test_open_rendered_ignores_short_previews_and_prefers_the_latest_final_video(
+    tmp_path,
+) -> None:
+    project = tmp_path / "project"
+    rendered = project / "rendered"
+    rendered.mkdir(parents=True)
+    (rendered / "review_preview_10.mp4").write_bytes(b"preview")
+    first = rendered / "chinese_hardsub.mp4"
+    second = rendered / "english_hardsub.mp4"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    os.utime(first, (1_700_000_000, 1_700_000_000))
+    os.utime(second, (1_700_000_100, 1_700_000_100))
+    window = object.__new__(LocalizerWindow)
+    window._project_paths_by_queue_index = {1: project}
+
+    assert window._selected_rendered_path(1) == second
 
 
 def test_windows_gui_process_hides_its_console() -> None:
