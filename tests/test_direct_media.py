@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
+import pytest
+
 from youtube_localizer.config import AppConfig, DownloadConfig
 from youtube_localizer.download.direct import (
+    _probe_direct_media_content_type,
+    assess_direct_media_url,
     direct_media_id,
     download_direct_media,
     inspect_direct_media,
     is_direct_media_candidate_url,
     is_direct_media_url,
 )
+from youtube_localizer.errors import InputValidationError
 from youtube_localizer.models import SourceMetadata
 from youtube_localizer.pipeline import _inspect_input, _source_identifier, prepare_project
 
@@ -69,6 +77,53 @@ def test_direct_media_recognition_rejects_playback_pages_and_credentials() -> No
     assert is_direct_media_candidate_url("https://cdn.example.test/opaque/video/resource/")
     assert not is_direct_media_url("https://cdn.example.test/opaque/video/resource/")
     assert not is_direct_media_candidate_url("https://www.example.test/play/123.html")
+
+
+def test_extensionless_cdn_url_is_explained_without_contacting_the_server() -> None:
+    assessment = assess_direct_media_url(
+        "https://groupvideo.photo.qq.com/1071_0bc/opaque-resource/"
+    )
+
+    assert assessment.media_kind == "无扩展名 CDN 媒体直链"
+    assert assessment.signed is False
+    assert assessment.expired is False
+
+
+def test_direct_media_assessment_rejects_a_truncated_player_display_url() -> None:
+    with pytest.raises(InputValidationError, match="截断"):
+        assess_direct_media_url("https://groupvideo.photo.qq.com/1071_0bc…")
+
+
+def test_direct_media_assessment_detects_an_expired_epoch_signature() -> None:
+    assessment = assess_direct_media_url(
+        "https://cdn.example.test/video.mp4?expires=1735689600&token=example",
+        now=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    assert assessment.signed is True
+    assert assessment.expired is True
+    assert assessment.expires_at == datetime(2025, 1, 1, tzinfo=UTC)
+
+
+def test_extensionless_probe_falls_back_when_cdn_rejects_head() -> None:
+    url = "https://groupvideo.photo.qq.com/opaque-resource/"
+    head_response = httpx.Response(403, request=httpx.Request("HEAD", url))
+    range_response = httpx.Response(
+        206,
+        headers={"content-type": "video/mp4"},
+        request=httpx.Request("GET", url),
+    )
+
+    with (
+        patch("youtube_localizer.download.direct.httpx.head", return_value=head_response),
+        patch(
+            "youtube_localizer.download.direct.httpx.stream",
+            return_value=nullcontext(range_response),
+        ) as stream,
+    ):
+        assert _probe_direct_media_content_type(url) == "video/mp4"
+
+    assert stream.call_args.kwargs["headers"]["Range"] == "bytes=0-0"
 
 
 def test_direct_media_identifier_ignores_refreshed_signed_query_values() -> None:

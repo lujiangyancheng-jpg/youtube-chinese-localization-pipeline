@@ -26,6 +26,7 @@ from youtube_localizer.gui import (
     project_workspace_from_output,
     queue_input_values,
     retry_queue_commands,
+    validate_direct_media_links,
     whisper_model_installation_message,
 )
 from youtube_localizer.hardware import SystemResources
@@ -77,6 +78,19 @@ def test_queue_input_values_keeps_local_paths_and_deduplicates_lines() -> None:
         "https://youtu.be/one",
         "C:/Videos/My clip.mp4",
     ]
+
+
+def test_direct_media_dialog_accepts_complete_cdn_links_and_rejects_pages() -> None:
+    link = "https://groupvideo.photo.qq.com/1071_0bc/opaque-resource/"
+    assert validate_direct_media_links(link) == [link]
+
+    with pytest.raises(ValueError, match="播放页"):
+        validate_direct_media_links("https://www.example.test/play/episode.html")
+
+
+def test_direct_media_dialog_rejects_truncated_display_text() -> None:
+    with pytest.raises(ValueError, match="截断"):
+        validate_direct_media_links("https://groupvideo.photo.qq.com/1071_0bc…")
 
 
 def test_stored_internal_values_are_mapped_back_to_display_labels() -> None:
@@ -446,6 +460,7 @@ def test_gui_explains_when_a_packaged_install_has_no_whisper_model(monkeypatch) 
         ("OSError: [Errno 28] No space left on device", "20 GiB"),
         ("FFmpeg hard-subtitle rendering failed", "字幕压制"),
         ("Cloudflare 浏览器验证", "公开媒体地址"),
+        ("媒体服务器拒绝了这条直链（HTTP 403）", "重新复制"),
         ("unexpected failure", "导出诊断包"),
     ],
 )

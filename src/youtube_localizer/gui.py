@@ -30,6 +30,7 @@ from .desktop_queue import (
     save_desktop_queue,
 )
 from .desktop_settings import DesktopSettings, load_desktop_settings, save_desktop_settings
+from .download.direct import assess_direct_media_url, is_direct_media_candidate_url
 from .errors import LocalizerError
 from .hardware import SystemResources, detect_system_resources
 from .inspection_cache import save_cached_inspection
@@ -199,6 +200,26 @@ def queue_input_values(value: str) -> list[str]:
     return list(dict.fromkeys(values))
 
 
+def validate_direct_media_links(value: str) -> list[str]:
+    """Validate direct-media dialog input without making a network request."""
+    links = queue_input_values(value)
+    if not links:
+        raise ValueError("请粘贴完整的 MP4、M3U8、MPD 或 CDN 媒体直链。")
+    for index, link in enumerate(links, start=1):
+        if not is_direct_media_candidate_url(link):
+            raise ValueError(
+                f"第 {index} 行不是可识别的媒体直链。如果这是播放页地址，请使用主界面的“粘贴链接”。"
+            )
+        try:
+            assessment = assess_direct_media_url(link)
+        except LocalizerError as exc:
+            raise ValueError(f"第 {index} 行：{exc}") from exc
+        if assessment.expired:
+            expiry = assessment.expires_at.astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            raise ValueError(f"第 {index} 行的签名直链显示已于 {expiry} 过期，请复制新地址。")
+    return links
+
+
 def gui_parallel_job_limit(
     input_count: int, resources: SystemResources | None = None
 ) -> int:
@@ -346,6 +367,15 @@ def whisper_model_installation_message() -> str | None:
 def friendly_failure_summary(log_text: str) -> str:
     """Translate common terminal failures into one short recovery action."""
     normalized = log_text.casefold()
+    if "媒体服务器拒绝" in normalized and any(
+        marker in normalized for marker in ("401", "403")
+    ):
+        return (
+            "这条媒体直链已过期，或依赖浏览器凭据。"
+            "请从内容方播放器重新复制完整的公开地址后继续任务。"
+        )
+    if "媒体服务器暂时限流" in normalized:
+        return "媒体服务器暂时限流。请稍后继续任务，或重新复制最新的完整直链。"
     if "429" in normalized or "too many requests" in normalized:
         return "YouTube 暂时限制了请求。请等待几分钟后点击“重试未完成任务”；已经完成的阶段不会重做。"
     if any(
@@ -747,6 +777,106 @@ class SubtitlePreviewDialog:
 
     def _apply(self) -> None:
         self.on_apply(self.x_percent, self.y_percent, self.font_size)
+        self.window.destroy()
+
+
+class DirectMediaLinkDialog:
+    """Focused entry point for complete user-supplied media addresses."""
+
+    def __init__(self, parent: tk.Misc, *, on_add: Callable[[list[str]], None]) -> None:
+        self.parent = parent
+        self.on_add = on_add
+        self.window = tk.Toplevel(parent)
+        self.window.title("添加媒体直链｜Localize Studio")
+        self.window.geometry("700x430")
+        self.window.minsize(620, 390)
+        self.window.configure(background=SURFACE)
+        self.window.transient(parent)
+
+        body = ttk.Frame(self.window, style="Card.TFrame", padding=(28, 24, 28, 20))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="粘贴播放器显示的完整媒体地址", style="SectionTitle.TLabel").pack(
+            anchor="w"
+        )
+        ttk.Label(
+            body,
+            text=(
+                "支持 MP4、WebM、M3U8、MPD，以及 groupvideo.photo.qq.com 这类无扩展名 CDN 地址。"
+                "可一行粘贴一条。"
+            ),
+            style="Muted.TLabel",
+            wraplength=630,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 14))
+
+        self.text = scrolledtext.ScrolledText(
+            body,
+            height=7,
+            wrap="char",
+            font=(UI_FONT, 10),
+            background="#FBFCFD",
+            foreground=TEXT,
+            insertbackground=TEXT,
+            relief="solid",
+            borderwidth=1,
+        )
+        self.text.pack(fill="both", expand=True)
+        self.text.focus_set()
+
+        ttk.Label(
+            body,
+            text=(
+                "必须是完整地址：截图中以 “…” 结尾的显示文字不能下载。"
+                "加入后会在后台验证类型和有效性；不会读取浏览器 Cookie 或绕过 DRM。"
+            ),
+            style="Muted.TLabel",
+            wraplength=630,
+            justify="left",
+        ).pack(anchor="w", pady=(12, 0))
+
+        footer = ttk.Frame(body, style="Card.TFrame")
+        footer.pack(fill="x", pady=(18, 0))
+        ttk.Button(
+            footer,
+            text="从剪贴板粘贴",
+            style="Secondary.TButton",
+            command=self._paste,
+        ).pack(side="left")
+        ttk.Button(
+            footer,
+            text="取消",
+            style="Secondary.TButton",
+            command=self.window.destroy,
+        ).pack(side="right")
+        ttk.Button(
+            footer,
+            text="验证并加入任务",
+            style="Primary.TButton",
+            command=self._add,
+        ).pack(side="right", padx=(0, 8))
+        self.window.bind("<Control-v>", self._paste_shortcut)
+
+    def _paste_shortcut(self, _event: object) -> str:
+        self._paste()
+        return "break"
+
+    def _paste(self) -> None:
+        try:
+            value = self.parent.clipboard_get().strip()
+        except tk.TclError:
+            messagebox.showinfo("剪贴板为空", "请先复制完整的媒体直链。", parent=self.window)
+            return
+        self.text.delete("1.0", "end")
+        self.text.insert("1.0", value)
+        self.text.mark_set("insert", "end-1c")
+
+    def _add(self) -> None:
+        try:
+            links = validate_direct_media_links(self.text.get("1.0", "end"))
+        except ValueError as exc:
+            messagebox.showwarning("直链还不能使用", str(exc), parent=self.window)
+            return
+        self.on_add(links)
         self.window.destroy()
 
 
@@ -1177,6 +1307,7 @@ class LocalizerWindow:
         self._project_paths_by_queue_index: dict[int, Path] = {}
         self._diagnostic_projects: set[Path] = set()
         self.help_center: HelpCenterDialog | None = None
+        self.direct_media_dialog: DirectMediaLinkDialog | None = None
 
         endpoint, model, api_key = api_configuration(os.environ)
         saved_settings = load_desktop_settings()
@@ -1400,7 +1531,7 @@ class LocalizerWindow:
 
         hero = tk.Frame(outer, background=HEADER, padx=18, pady=12)
         hero.grid(row=0, column=0, sticky="ew")
-        hero.columnconfigure(3, weight=1)
+        hero.columnconfigure(4, weight=1)
         brand = tk.Frame(hero, background=HEADER)
         brand.grid(row=0, column=0, sticky="w", padx=(0, 22))
         tk.Label(
@@ -1422,24 +1553,31 @@ class LocalizerWindow:
             hero, text="＋  粘贴链接", style="Primary.TButton", command=self._paste
         )
         self.paste_button.grid(row=0, column=1, padx=(0, 8))
+        self.direct_media_button = ttk.Button(
+            hero,
+            text="媒体直链",
+            style="Secondary.TButton",
+            command=self._open_direct_media_dialog,
+        )
+        self.direct_media_button.grid(row=0, column=2, padx=(0, 8))
         self.local_file_button = ttk.Button(
             hero,
             text="选择本地视频",
             style="Secondary.TButton",
             command=self._choose_local_file,
         )
-        self.local_file_button.grid(row=0, column=2)
+        self.local_file_button.grid(row=0, column=3)
         ttk.Button(
             hero,
             text="帮助中心",
             style="Toolbar.TButton",
             command=self._open_help_center,
-        ).grid(row=0, column=3, padx=(8, 0), sticky="w")
+        ).grid(row=0, column=4, padx=(8, 0), sticky="w")
         secondary_tools = tk.Frame(hero, background=HEADER)
         secondary_tools.grid(
             row=1,
             column=0,
-            columnspan=4,
+            columnspan=5,
             sticky="e",
             pady=(7, 0),
         )
@@ -1509,7 +1647,7 @@ class LocalizerWindow:
         ).pack()
         ttk.Label(
             empty_content,
-            text="支持 YouTube、公开 HTML5 播放页、MP4/M3U8 直链；可一次粘贴多行",
+            text="支持 YouTube、公开 HTML5 播放页、MP4/M3U8/MPD 和无扩展名 CDN 直链",
             style="AppMuted.TLabel",
         ).pack(pady=(7, 3))
         ttk.Label(
@@ -2327,6 +2465,25 @@ class LocalizerWindow:
                 self.output_directory.get().strip() or default_output_directory()
             ).expanduser(),
         )
+
+    def _open_direct_media_dialog(self) -> None:
+        if self._has_active_processes() or (self.worker and self.worker.is_alive()):
+            messagebox.showinfo("任务进行中", "请先停止当前任务，再修改视频队列。", parent=self.root)
+            return
+        if self.direct_media_dialog is not None and self.direct_media_dialog.window.winfo_exists():
+            self.direct_media_dialog.window.lift()
+            self.direct_media_dialog.window.focus_force()
+            return
+        self.direct_media_dialog = DirectMediaLinkDialog(
+            self.root,
+            on_add=self._add_direct_media_links,
+        )
+
+    def _add_direct_media_links(self, links: list[str]) -> None:
+        combined = queue_input_values("\n".join([self.input_value.get(), *links]))
+        self.input_value.set("\n".join(combined))
+        self.input_entry.icursor("end")
+        self._set_status(f"已加入 {len(links)} 条媒体直链，正在验证有效性…", "active")
 
     def _apply_setup_workflow(self, workflow: str) -> None:
         if workflow == "download":
