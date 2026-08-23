@@ -84,6 +84,15 @@ def test_builder_prunes_build_only_python_tools_but_keeps_deno() -> None:
     assert 'Where-Object { $_.Name -ne "deno.exe" }' in builder
 
 
+def test_desktop_install_verification_isolated_from_the_users_saved_queue() -> None:
+    builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")
+    verifier = (INSTALLER / "test_offline_install.ps1").read_text(encoding="utf-8")
+
+    assert '$previousLocalAppData = $env:LOCALAPPDATA' in builder
+    assert '$env:LOCALAPPDATA = $SmokeLocalAppData' in builder
+    assert '$env:LOCALAPPDATA = $VerificationLocalAppData' in verifier
+
+
 def test_model_pack_refuses_missing_or_mismatched_base_installations() -> None:
     for filename in ("whisper-model-pack.iss", "local-ai-model-pack.iss"):
         script = (INSTALLER / filename).read_text(encoding="utf-8")

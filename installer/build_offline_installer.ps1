@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.7.0.5",
+    [string]$Version = "0.7.0.6",
     [string]$ModelPackVersion = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
@@ -478,12 +478,17 @@ if (-not $SkipSmokeTest) {
     $previousFonts = $env:YOUTUBE_LOCALIZER_FONTS
     $previousFfmpeg = $env:FFMPEG_PATH
     $previousFfprobe = $env:FFPROBE_PATH
+    $previousLocalAppData = $env:LOCALAPPDATA
+    $SmokeLocalAppData = Join-Path $BuildRoot "smoke-local-app-data"
+    Reset-GeneratedDirectory $SmokeLocalAppData
     try {
         $env:YOUTUBE_LOCALIZER_HOME = $StageRoot
         $env:YOUTUBE_LOCALIZER_MODELS = $ModelsRoot
         $env:YOUTUBE_LOCALIZER_FONTS = $FontsRoot
         $env:FFMPEG_PATH = Join-Path $FfmpegBin "ffmpeg.exe"
         $env:FFPROBE_PATH = Join-Path $FfmpegBin "ffprobe.exe"
+        # The staged desktop test must not read or overwrite the developer's real saved queue.
+        $env:LOCALAPPDATA = $SmokeLocalAppData
         if ($IsCompletePackage) {
             & $EmbeddedPython -c "from youtube_localizer.resources import bundled_fonts_directory, bundled_ollama_models, ollama_executable, nvenc_compatibility_ffmpeg; assert bundled_fonts_directory(); assert bundled_ollama_models(); assert ollama_executable(); assert nvenc_compatibility_ffmpeg(); print('complete offline runtime smoke test: ok')"
         } else {
@@ -503,6 +508,7 @@ if (-not $SkipSmokeTest) {
         $env:YOUTUBE_LOCALIZER_FONTS = $previousFonts
         $env:FFMPEG_PATH = $previousFfmpeg
         $env:FFPROBE_PATH = $previousFfprobe
+        $env:LOCALAPPDATA = $previousLocalAppData
     }
 } else {
     Write-Host "[9/9] Smoke test skipped."

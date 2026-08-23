@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.7.0.5"
+  #define AppVersion "0.7.0.6"
 #endif
 #ifndef ModelPackVersion
   #define ModelPackVersion "0.7.0"

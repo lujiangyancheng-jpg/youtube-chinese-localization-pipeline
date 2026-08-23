@@ -97,6 +97,10 @@ Write-Host "offline asset manifest: ok ($(@($Manifest.assets).Count) verified as
 $env:YOUTUBE_LOCALIZER_HOME = $Root
 $env:YOUTUBE_LOCALIZER_MODELS = $Models
 $env:YOUTUBE_LOCALIZER_FONTS = $Fonts
+$VerificationLocalAppData = Join-Path $Root ".verify-state"
+New-Item -ItemType Directory -Path $VerificationLocalAppData -Force | Out-Null
+# Installation verification must never read or overwrite the user's saved desktop queue.
+$env:LOCALAPPDATA = $VerificationLocalAppData
 $env:FFMPEG_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffmpeg.exe"
 $env:FFPROBE_PATH = Join-Path $Root "runtime\ffmpeg\bin\ffprobe.exe"
 if ($IsCompletePackage) { $env:OLLAMA_PATH = $Ollama } else { Remove-Item Env:OLLAMA_PATH -ErrorAction SilentlyContinue }
