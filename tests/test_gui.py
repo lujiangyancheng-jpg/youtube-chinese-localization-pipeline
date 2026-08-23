@@ -445,6 +445,7 @@ def test_gui_explains_when_a_packaged_install_has_no_whisper_model(monkeypatch) 
         ("CUDA error: out of memory", "显存"),
         ("OSError: [Errno 28] No space left on device", "20 GiB"),
         ("FFmpeg hard-subtitle rendering failed", "字幕压制"),
+        ("Cloudflare 浏览器验证", "公开媒体地址"),
         ("unexpected failure", "导出诊断包"),
     ],
 )

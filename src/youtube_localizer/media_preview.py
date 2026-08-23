@@ -7,8 +7,13 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .download.direct import inspect_direct_media, is_direct_media_candidate_url
+from .download.direct import (
+    inspect_direct_media,
+    is_direct_media_candidate_url,
+    is_direct_media_url,
+)
 from .download.local import inspect_local
+from .download.webpage import inspect_webpage_media, is_webpage_url
 from .download.youtube import inspect_youtube, is_youtube_url
 from .errors import InputValidationError
 from .inspection_cache import load_cached_inspection
@@ -114,14 +119,26 @@ def inspect_media_preview(source: str) -> MediaPreview:
     if is_youtube_url(value):
         metadata, info = inspect_youtube(value)
         return _from_metadata(value, metadata, estimated_bytes=estimate_download_bytes(info))
-    if is_direct_media_candidate_url(value):
+    if is_direct_media_url(value):
         metadata, info = inspect_direct_media(value)
+        return _from_metadata(value, metadata, estimated_bytes=estimate_download_bytes(info))
+    if is_direct_media_candidate_url(value):
+        try:
+            metadata, info = inspect_direct_media(value)
+        except InputValidationError as direct_error:
+            try:
+                metadata, info = inspect_webpage_media(value)
+            except InputValidationError as page_error:
+                if "没有返回 HTML 播放页" in str(page_error):
+                    raise direct_error from page_error
+                raise
+        return _from_metadata(value, metadata, estimated_bytes=estimate_download_bytes(info))
+    if is_webpage_url(value):
+        metadata, info = inspect_webpage_media(value)
         return _from_metadata(value, metadata, estimated_bytes=estimate_download_bytes(info))
     parsed = urlparse(value)
     if parsed.scheme in {"http", "https"}:
-        raise InputValidationError(
-            "这个地址是播放网页，不是可下载的媒体链接。请粘贴 YouTube 链接或实际视频地址。"
-        )
+        raise InputValidationError("网页地址无效，或包含了不允许使用的登录凭据。")
     path = Path(value).expanduser()
     metadata = inspect_local(path)
     return _from_metadata(value, metadata, estimated_bytes=path.resolve().stat().st_size)

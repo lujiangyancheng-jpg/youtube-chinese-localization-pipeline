@@ -4,14 +4,14 @@
 
 <img src="assets/branding/app-icon.png" alt="Localize Studio" width="112">
 
-把你有权处理的视频，转换为带自然字幕的本地化成品。支持 YouTube、授权的媒体直链和本地视频；下载、识别、翻译、字幕压制与断点续跑都在本机完成。
+把你有权处理的视频，转换为带自然字幕的本地化成品。支持 YouTube、公开声明媒体地址的授权播放页、媒体直链和本地视频；下载、识别、翻译、字幕压制与断点续跑都在本机完成。
 
 [![Release](https://img.shields.io/github/v/release/lujiangyancheng-jpg/youtube-chinese-localization-pipeline?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases)
 [![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
 [![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
 
-[立即下载 v0.7.0.4 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.4/YouTube-Chinese-Localizer-0.7.0.4-Standard-Offline-Setup.exe)
+[立即下载 v0.7.0.5 Standard 开发版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.5/YouTube-Chinese-Localizer-0.7.0.5-Standard-Offline-Setup.exe)
 · [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases)
 · [中文完整说明](docs/USER_GUIDE.zh-CN.md)
 
@@ -21,7 +21,7 @@
 
 ## 🚀 三步开始使用
 
-1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.4/YouTube-Chinese-Localizer-0.7.0.4-Standard-Offline-Setup.exe)。
+1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.5/YouTube-Chinese-Localizer-0.7.0.5-Standard-Offline-Setup.exe)。
 2. 双击 `Setup.exe` 安装，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 和本地 AI 段落翻译。只会下载你勾选的模型；Small 适合多数电脑，Medium 识别质量更高。
 3. 打开 Localize Studio，粘贴视频链接；任务中心会先显示标题、时长、画质和预估大小，确认翻译与字幕方式后点击“开始本地化”。
 
@@ -32,7 +32,7 @@
 | 更自然的中英字幕 | “本地 AI 段落翻译” | Standard + Local AI + 一个 Whisper 包，或 Complete + Whisper |
 | 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Standard + Local AI + Whisper，或 Complete + Whisper，或 API |
 
-**Standard v0.7.0.4 开发版：约 289 MiB 的单文件安装包，比 v0.6.9 减少约 37%。** 它包含主程序、Python、单套精简 FFmpeg、字幕字体、GPU/CPU 编码和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。
+**Standard v0.7.0.5 开发版：约 289 MiB 的单文件安装包，比 v0.6.9 减少约 37%。** 它包含主程序、Python、单套精简 FFmpeg、字幕字体、GPU/CPU 编码和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。
 
 软件不会在每次启动时弹出教程。主界面的“帮助中心”集中提供快速教程、模型与环境状态、兼容模型下载入口和常见故障恢复方法，可随时打开。
 
@@ -42,7 +42,7 @@
 
 | 输入 | 处理 | 输出 |
 | --- | --- | --- |
-| YouTube 公开视频、授权直链或本地视频 | 本地 Whisper 识别、段落翻译、字幕质量检查 | SRT、ASS、硬字幕 MP4、可选软字幕 MP4、项目报告 |
+| YouTube 公开视频、授权公开播放页、直链或本地视频 | 本地 Whisper 识别、段落翻译、字幕质量检查 | SRT、ASS、硬字幕 MP4、可选软字幕 MP4、项目报告 |
 | 英文或简体中文语音 | 中英双向、本地 AI 或 API 多语种翻译 | 中文、英文、日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语、阿拉伯语字幕 |
 | 高画质视频 | 自动选择已验证的 NVIDIA / Intel / AMD 编码器；不可用则安全回退 CPU | 保持原始分辨率和帧率，或按你的设置限制输出 |
 
@@ -56,7 +56,7 @@
 
 ## 📌 版本与支持
 
-- 采用 `0.7.0.4` 形式的四段版本号：最后一段是程序小迭代；前三段相同的版本共用同一批本地模型，升级程序不需要重新下载模型。
+- 采用 `0.7.0.5` 形式的四段版本号：最后一段是程序小迭代；前三段相同的版本共用同一批本地模型，升级程序不需要重新下载模型。
 - 应用内“检查更新”可选择稳定通道或开发通道；四段小迭代通过开发通道提供。
 - 新增、优化和修复：[CHANGELOG.md](CHANGELOG.md)
 - 完整中文使用手册：[docs/USER_GUIDE.zh-CN.md](docs/USER_GUIDE.zh-CN.md)
@@ -85,14 +85,17 @@ It does not bypass DRM, paywalls, private-video controls, age gates, region/auth
 requirements, or platform access controls. You are responsible for verifying the license,
 attribution requirements, and publishing-platform rules.
 
-For non-YouTube sources, paste only a public, direct media URL you are authorized to download
-(`.mp4`, `.webm`, `.mov`, `.mkv`, `.m3u8`, or `.mpd`), or an extensionless URL whose server
-explicitly identifies it as video/HLS/DASH. Playback webpages, browser cookies, login credentials,
-and DRM-protected streams are intentionally unsupported.
+For non-YouTube sources, paste an authorized public page that explicitly declares its media in
+HTML5 `<video>`/`<source>`, Open Graph, Twitter Card, or VideoObject JSON-LD, or paste the public
+direct media URL (`.mp4`, `.webm`, `.mov`, `.mkv`, `.m3u8`, `.mpd`, or an explicitly typed
+extensionless response). The resolver does not execute or deobfuscate scripts, traverse third-party
+iframes, copy browser cookies, solve anti-bot challenges, or bypass login, paywall, region, or DRM
+controls.
 
 ## Phase 1 capabilities
 
 - Public YouTube metadata inspection with `yt-dlp` before download
+- Bounded public-page media resolution from standard declarative HTML metadata
 - Asynchronous per-video pre-analysis and a visual task centre with independent status/progress
 - Highest-quality video plus audio direct-download mode with no subtitle processing
 - Consistent local English or Chinese transcription without YouTube caption requests
@@ -247,7 +250,7 @@ project folder. The streamlined downloader-style interface makes **Paste Link** 
 action, keeps the empty state distraction-free, and reveals the current task only after a video
 is added. Processing settings, API fields, and the run log stay collapsed until needed. You can then:
 
-1. paste an authorized public YouTube URL, an authorized direct media URL, or select a local video;
+1. paste an authorized public YouTube URL, declarative HTML5 media page, direct media URL, or select a local video;
 2. choose an English/Chinese source and its target language;
 3. choose target-only or bilingual subtitles;
 4. confirm that you have the required rights or permission; and
@@ -264,10 +267,16 @@ frame rate, bitrate, and file size; FFmpeg still produces the final hard-subtitl
 project dependency set includes Deno and `yt-dlp-ejs`; `python main.py doctor` must report
 `yt-dlp JavaScript support: ok` so YouTube's complete format list can be discovered.
 
-An authorized direct media address can be pasted in the same field. The URL must point to the
-actual MP4/WebM/MOV/MKV file or HLS/DASH manifest (`.m3u8`/`.mpd`), not to a site playback page.
-An extensionless CDN URL is also accepted when its response identifies it as video or a playlist.
-The app does not scrape player pages, supply browser cookies, or bypass DRM. If a signed media URL
+An authorized public playback page can be pasted in the same field when it explicitly publishes
+the media through HTML5 `<video>`/`<source>`, Open Graph, Twitter Card, or VideoObject JSON-LD.
+Resolution is read-only, limited to 2 MiB of HTML and five validated public redirects, and blocks
+localhost/private-network targets. Pages that require Cloudflare/browser challenges, JavaScript
+deobfuscation, cookies, login, iframe traversal, or DRM are reported as unsupported instead of
+being bypassed.
+
+An authorized direct media address can also be pasted. It may point to an actual
+MP4/WebM/MOV/MKV file or HLS/DASH manifest (`.m3u8`/`.mpd`). An extensionless CDN URL is accepted
+when its response identifies it as video or a playlist. If a signed media URL
 expires, paste its refreshed direct URL and keep **resume** enabled; the project is matched by its
 stable media path rather than the temporary query string.
 
@@ -620,7 +629,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.7.0.4 adds restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
+Version 0.7.0.5 adds bounded public-page media resolution with explicit authorization and access-control boundaries. Version 0.7.0.4 added restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
 safe two-job GUI scheduling, and bounded retry handling for temporary public-source limits. It also preserves the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,

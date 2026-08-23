@@ -57,3 +57,18 @@ def test_report_identifies_the_slowest_stage_and_gives_a_relevant_next_step(tmp_
     assert report["performance_summary"]["slowest_stage"] == "render"
     assert "NVENC" in report["performance_summary"]["recommendation"]
     assert "Slowest stage: render (179.0 s)" in markdown.read_text(encoding="utf-8")
+
+
+def test_webpage_report_omits_the_resolved_media_signature() -> None:
+    metadata = SourceMetadata(
+        source_type="webpage_media",
+        source_input="https://creator.example.com/watch/lesson.html",
+        source_url="https://cdn.example.com/master.m3u8?token=secret",
+        video_id="lesson",
+        title="Lesson",
+    )
+
+    report = build_report(metadata, PipelineStateData())
+
+    assert report["source"]["source_input"] == metadata.source_input
+    assert report["source"]["source_url"] is None
