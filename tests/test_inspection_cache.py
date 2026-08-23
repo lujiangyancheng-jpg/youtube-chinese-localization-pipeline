@@ -115,3 +115,19 @@ def test_pipeline_reuses_cached_remote_inspection_without_another_network_call(
     assert inspected == metadata
     assert raw is not None
     assert raw["_localizer_inspection_cache"] is True
+
+
+def test_webpage_media_cache_never_restores_a_resolved_signature(tmp_path) -> None:
+    source = "https://creator.example.com/watch/lesson.html"
+    metadata = SourceMetadata(
+        source_type="webpage_media",
+        source_input=source,
+        source_url="https://cdn.example.com/master.m3u8?token=secret",
+        video_id="lesson",
+        title="Lesson",
+    )
+
+    path = save_cached_inspection(source, metadata, cache_directory=tmp_path, now=100)
+
+    assert load_cached_inspection(source, cache_directory=tmp_path, now=101) is None
+    assert "token=secret" not in path.read_text(encoding="utf-8")

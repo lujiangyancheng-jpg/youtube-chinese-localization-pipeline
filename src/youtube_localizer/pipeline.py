@@ -12,9 +12,11 @@ from .download.direct import (
     download_direct_media,
     inspect_direct_media,
     is_direct_media_candidate_url,
+    is_direct_media_url,
 )
 from .download.local import import_local, inspect_local
 from .download.metadata import metadata_from_probe, probe_media
+from .download.webpage import inspect_webpage_media, is_webpage_url, webpage_media_id
 from .download.youtube import (
     download_youtube,
     inspect_youtube,
@@ -114,6 +116,13 @@ def load_project_metadata(project: ProjectPaths) -> SourceMetadata:
     return SourceMetadata.model_validate(load_json(project.metadata))
 
 
+def _stored_metadata(metadata: SourceMetadata) -> dict[str, Any]:
+    """Return project metadata without persisting a resolved webpage media signature."""
+    if metadata.source_type == "webpage_media":
+        metadata = metadata.model_copy(update={"source_url": None})
+    return metadata.model_dump(mode="json")
+
+
 def save_project_config(project: ProjectPaths, config: AppConfig) -> Path:
     path = project.root / "config.resolved.json"
     atomic_write_json(path, config.model_dump(mode="json"))
@@ -133,8 +142,8 @@ def _source_identifier(value: str) -> str:
         return video_id
     if is_direct_media_candidate_url(value):
         return direct_media_id(value)
-    if value.lower().startswith(("http://", "https://")):
-        return hash_text(value)[:10]
+    if is_webpage_url(value):
+        return webpage_media_id(value)
     path = Path(value).expanduser().resolve()
     return hash_text(str(path).casefold())[:10]
 
@@ -161,13 +170,20 @@ def _inspect_input(value: str) -> tuple[SourceMetadata, dict[str, Any] | None]:
         return cached, None if cached.source_type == "local" else cached_raw_metadata(cached)
     if is_youtube_url(value):
         return inspect_youtube(value)
-    if is_direct_media_candidate_url(value):
+    if is_direct_media_url(value):
         return inspect_direct_media(value)
-    if value.lower().startswith(("http://", "https://")):
-        raise InputValidationError(
-            "Paste a public YouTube URL, a direct MP4/WebM/MOV/MKV/M3U8/MPD media URL, or a "
-            "local video file. Playback webpages are not downloaded."
-        )
+    if is_direct_media_candidate_url(value):
+        try:
+            return inspect_direct_media(value)
+        except InputValidationError as direct_error:
+            try:
+                return inspect_webpage_media(value)
+            except InputValidationError as page_error:
+                if "没有返回 HTML 播放页" in str(page_error):
+                    raise direct_error from page_error
+                raise
+    if is_webpage_url(value):
+        return inspect_webpage_media(value)
     metadata = inspect_local(Path(value))
     return metadata, None
 
@@ -192,7 +208,7 @@ def prepare_project(
             # Signed media URLs often expire. Their stable path maps to the same project, while
             # this refreshes the time-limited query string before the resumed download.
             metadata = metadata.model_copy(update={"source_input": value, "source_url": value})
-            atomic_write_json(project.metadata, metadata.model_dump(mode="json"))
+            atomic_write_json(project.metadata, _stored_metadata(metadata))
         save_project_config(project, config)
         return project, metadata, None
 
@@ -209,7 +225,7 @@ def prepare_project(
             )
     project = ProjectPaths(root)
     project.create()
-    atomic_write_json(project.metadata, metadata.model_dump(mode="json"))
+    atomic_write_json(project.metadata, _stored_metadata(metadata))
     save_project_config(project, config)
     return project, metadata, raw_info
 
@@ -226,9 +242,14 @@ def _input_hash(metadata: SourceMetadata, fallback_video: Path | None = None) ->
             )
             return hash_file(fallback_video)
         raise InputValidationError(f"Original local source no longer exists: {path}")
+    source_reference = (
+        metadata.source_input
+        if metadata.source_type == "webpage_media"
+        else metadata.source_url or metadata.source_input
+    )
     return stable_hash(
         {
-            "source_url": metadata.source_url or metadata.source_input,
+            "source_url": source_reference,
             "video_id": metadata.video_id,
         }
     )
@@ -239,7 +260,11 @@ def _translation_context(metadata: SourceMetadata, glossary: dict[str, str]) -> 
         title=metadata.title,
         channel=metadata.channel,
         description=metadata.description,
-        source_url=metadata.source_url or metadata.source_input,
+        source_url=(
+            metadata.source_input
+            if metadata.source_type == "webpage_media"
+            else metadata.source_url or metadata.source_input
+        ),
         glossary=glossary,
     )
 
@@ -780,6 +805,8 @@ def process_pipeline(
                             refreshed, raw_info = inspect_youtube(metadata.source_input)
                         elif metadata.source_type == "direct_media":
                             refreshed, raw_info = inspect_direct_media(metadata.source_input)
+                        elif metadata.source_type == "webpage_media":
+                            refreshed, raw_info = inspect_webpage_media(metadata.source_input)
                         else:  # pragma: no cover - protects saved project metadata from corruption
                             raise LocalizerError(
                                 f"Unsupported remote source type: {metadata.source_type}"
@@ -837,14 +864,23 @@ def process_pipeline(
                     subtitle_source = metadata.subtitle_kind
                     if config.download.download_metadata:
                         raw_path = project.source / "metadata.raw.json"
-                        save_raw_metadata(raw_info, raw_path)
+                        raw_to_save = raw_info
+                        if metadata.source_type == "webpage_media":
+                            raw_to_save = {
+                                **cached_raw_metadata(metadata),
+                                "source_page": metadata.source_input,
+                                "media_declaration": raw_info.get(
+                                    "_localizer_media_declaration", ""
+                                ),
+                            }
+                        save_raw_metadata(raw_to_save, raw_path)
                         step_outputs.append(raw_path)
                     if config.download.download_thumbnail and metadata.thumbnail_url:
                         thumbnail = project.source / "thumbnail.jpg"
                         save_thumbnail(metadata.thumbnail_url, thumbnail)
                         if thumbnail.is_file():
                             step_outputs.append(thumbnail)
-                atomic_write_json(project.metadata, metadata.model_dump(mode="json"))
+                atomic_write_json(project.metadata, _stored_metadata(metadata))
                 step_outputs.extend([source_video, project.metadata])
         source_video = find_source_video(project)
 

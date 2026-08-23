@@ -32,7 +32,11 @@ def generate_publishing_assets(
     natural = f"{metadata.title}｜中文字幕"
     concise = metadata.title
     titles = f"1. 忠实版：{faithful}\n2. 平台自然版：{natural}\n3. 精简版：{concise}\n"
-    source_url = metadata.source_url or metadata.source_input
+    source_url = (
+        metadata.source_input
+        if metadata.source_type == "webpage_media"
+        else metadata.source_url or metadata.source_input
+    )
     attribution = config.attribution_template.format(
         channel=metadata.channel or "（请填写原作者）",
         source_url=source_url,

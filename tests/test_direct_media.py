@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
-
 from youtube_localizer.config import AppConfig, DownloadConfig
 from youtube_localizer.download.direct import (
     direct_media_id,
@@ -13,7 +11,6 @@ from youtube_localizer.download.direct import (
     is_direct_media_candidate_url,
     is_direct_media_url,
 )
-from youtube_localizer.errors import InputValidationError
 from youtube_localizer.models import SourceMetadata
 from youtube_localizer.pipeline import _inspect_input, _source_identifier, prepare_project
 
@@ -146,6 +143,22 @@ def test_direct_media_download_uses_best_quality_without_caption_requests(tmp_pa
     assert FakeDownloadYDL.last_options["subtitleslangs"] == []
 
 
-def test_pipeline_rejects_a_playback_page_with_a_direct_media_hint() -> None:
-    with pytest.raises(InputValidationError, match="direct MP4/WebM/MOV/MKV/M3U8/MPD"):
-        _inspect_input("https://www.lmm85.com/play/7072_2_2.html")
+def test_pipeline_sends_a_playback_page_to_the_public_page_resolver(monkeypatch) -> None:
+    url = "https://creator.example.test/play/7072_2_2.html"
+    metadata = SourceMetadata(
+        source_type="webpage_media",
+        source_input=url,
+        source_url="https://cdn.example.test/owned/demo.mp4",
+        video_id="page",
+        title="Authorized page",
+    )
+    monkeypatch.setattr("youtube_localizer.pipeline.load_cached_inspection", lambda _url: None)
+    monkeypatch.setattr(
+        "youtube_localizer.pipeline.inspect_webpage_media",
+        lambda _url: (metadata, {"id": "page"}),
+    )
+
+    inspected, raw = _inspect_input(url)
+
+    assert inspected == metadata
+    assert raw == {"id": "page"}

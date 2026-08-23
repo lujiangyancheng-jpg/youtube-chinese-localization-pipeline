@@ -360,6 +360,14 @@ def friendly_failure_summary(log_text: str) -> str:
         return "输出磁盘空间不足。请至少预留 20 GiB，或在“处理设置”中更换输出位置。"
     if any(marker in normalized for marker in ("private video", "sign in", "video unavailable")):
         return "视频不可公开访问、需要登录或已失效。请确认链接权限，或改用你有权处理的本地文件。"
+    if any(
+        marker in normalized
+        for marker in ("cloudflare", "浏览器验证", "iframe", "混淆脚本")
+    ):
+        return (
+            "该播放页没有可由本程序读取的公开媒体地址，或要求浏览器验证。"
+            "程序不会绕过限制；请改用内容方提供的公开直链或你有权保存的本地文件。"
+        )
     if "ffmpeg hard-subtitle rendering failed" in normalized or "字幕压制失败" in normalized:
         return "字幕压制未完成，但视频和字幕中间文件会保留。请点击重试；程序会重新检测可用编码器。"
     return "可先点击“重试未完成任务”。若仍失败，请导出诊断包；诊断包不会包含视频和字幕正文。"
@@ -417,7 +425,7 @@ def build_process_command(
     """Build the argument-array command used by the desktop launcher."""
     value = input_value.strip()
     if not value:
-        raise ValueError("请粘贴 YouTube 或直接媒体链接，或选择本地视频。")
+        raise ValueError("请粘贴 YouTube、公开播放页或媒体直链，或选择本地视频。")
     if subtitle_mode not in SUBTITLE_MODES.values():
         raise ValueError("未知的字幕模式。")
     if translation_provider not in TRANSLATION_MODES.values():
@@ -828,7 +836,7 @@ class HelpCenterDialog:
         ).pack(side="left", padx=(10, 0))
         ttk.Label(
             frame,
-            text="提示：YouTube、媒体直链和本地视频都从同一个入口处理；一次粘贴多行链接即可建立队列。",
+            text="提示：YouTube、公开 HTML5 播放页、媒体直链和本地视频都从同一个入口处理；一次粘贴多行即可建立队列。",
             style="Muted.TLabel",
             wraplength=650,
             justify="left",
@@ -1501,7 +1509,7 @@ class LocalizerWindow:
         ).pack()
         ttk.Label(
             empty_content,
-            text="支持 YouTube、直接 MP4/M3U8 链接，或复制多行链接后点击上方“粘贴链接”",
+            text="支持 YouTube、公开 HTML5 播放页、MP4/M3U8 直链；可一次粘贴多行",
             style="AppMuted.TLabel",
         ).pack(pady=(7, 3))
         ttk.Label(
@@ -2446,7 +2454,7 @@ class LocalizerWindow:
         except tk.TclError:
             messagebox.showinfo(
                 "剪贴板为空",
-                "请先复制 YouTube 链接或直接媒体地址。",
+                "请先复制 YouTube、公开播放页或直接媒体地址。",
                 parent=self.root,
             )
             return
@@ -2612,7 +2620,7 @@ class LocalizerWindow:
             raise ValueError(whisper_message)
         values = queue_input_values(self.input_value.get())
         if not values:
-            raise ValueError("请粘贴 YouTube 或直接媒体链接，或选择本地视频文件。")
+            raise ValueError("请粘贴 YouTube、公开播放页或媒体直链，或选择本地视频文件。")
         commands = [
             build_process_command(
                 value,
@@ -3042,7 +3050,10 @@ class LocalizerWindow:
                     if isinstance(preview, MediaPreview):
                         self._media_previews[task_index] = preview
                         self._media_preview_errors.pop(task_index, None)
-                        if preview.metadata is not None:
+                        if (
+                            preview.metadata is not None
+                            and preview.metadata.source_type != "webpage_media"
+                        ):
                             with suppress(OSError, TypeError, ValueError):
                                 save_cached_inspection(
                                     self._task_sources[task_index - 1], preview.metadata

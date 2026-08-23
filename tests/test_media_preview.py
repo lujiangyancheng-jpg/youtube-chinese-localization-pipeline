@@ -98,3 +98,32 @@ def test_youtube_preview_estimates_the_best_stream_pair(monkeypatch) -> None:
 
     assert preview.title == "YouTube example"
     assert preview.estimated_bytes == 1200
+
+
+def test_public_webpage_preview_uses_resolved_media_metadata(monkeypatch) -> None:
+    source = "https://creator.example.com/watch/lesson.html"
+    monkeypatch.setattr(media_preview, "is_youtube_url", lambda _value: False)
+    monkeypatch.setattr(media_preview, "is_direct_media_candidate_url", lambda _value: False)
+    monkeypatch.setattr(
+        media_preview,
+        "inspect_webpage_media",
+        lambda value: (
+            SourceMetadata(
+                source_type="webpage_media",
+                source_input=value,
+                source_url="https://cdn.example.com/video.mp4",
+                video_id="lesson",
+                title="Creator lesson",
+                duration=120,
+                width=1920,
+                height=1080,
+            ),
+            {"filesize": 50_000_000},
+        ),
+    )
+
+    preview = media_preview.inspect_media_preview(source)
+
+    assert preview.source_type == "webpage_media"
+    assert preview.title == "Creator lesson"
+    assert preview.estimated_bytes == 50_000_000

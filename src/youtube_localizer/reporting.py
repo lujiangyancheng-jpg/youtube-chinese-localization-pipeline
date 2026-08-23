@@ -76,10 +76,15 @@ def build_report(
     errors: list[str] | None = None,
 ) -> dict[str, Any]:
     stage_timings = {name: record.elapsed_seconds for name, record in state.steps.items()}
+    report_metadata = (
+        metadata.model_copy(update={"source_url": None})
+        if metadata.source_type == "webpage_media"
+        else metadata
+    )
     return {
         "generated_at": datetime.now(UTC).isoformat(),
         "project_status": state.project_status,
-        "source": metadata.model_dump(mode="json"),
+        "source": report_metadata.model_dump(mode="json"),
         "video_duration_seconds": metadata.duration,
         "subtitle_source": subtitle_source or metadata.subtitle_kind,
         "whisper_model": whisper_model,
