@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.7.0.7",
+    [string]$Version = "0.7.0.8",
     [string]$ModelPackVersion = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",

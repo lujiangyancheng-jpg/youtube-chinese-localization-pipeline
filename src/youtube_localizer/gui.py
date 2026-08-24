@@ -240,6 +240,34 @@ def validate_browser_capture_input(value: str) -> str:
     return page_url
 
 
+_BROWSER_CAPTURE_ERROR_MARKERS = (
+    "cloudflare",
+    "浏览器验证",
+    "iframe",
+    "第三方播放器",
+    "混淆脚本",
+    "动态脚本",
+)
+
+
+def browser_capture_required(message: str) -> bool:
+    """Return whether a media-inspection failure needs the visible browser flow."""
+    normalized = message.casefold()
+    return any(marker in normalized for marker in _BROWSER_CAPTURE_ERROR_MARKERS)
+
+
+def browser_capture_required_source(
+    sources: list[str], preview_errors: Mapping[int, str]
+) -> str | None:
+    """Return the first queued playback page that must be resolved before processing."""
+    for index, source in enumerate(sources, start=1):
+        if not browser_capture_required(preview_errors.get(index, "")):
+            continue
+        if is_webpage_url(source) and not is_youtube_url(source):
+            return source
+    return None
+
+
 def gui_parallel_job_limit(
     input_count: int, resources: SystemResources | None = None
 ) -> int:
@@ -909,10 +937,12 @@ class BrowserCaptureDialog:
         *,
         initial_url: str,
         on_capture: Callable[[BrowserMediaCapture], None],
+        on_cancel: Callable[[], None] | None = None,
         auto_start: bool = False,
     ) -> None:
         self.parent = parent
         self.on_capture = on_capture
+        self.on_cancel = on_cancel
         self.cancel_event = threading.Event()
         self.worker: threading.Thread | None = None
         self.closed = False
@@ -1051,6 +1081,8 @@ class BrowserCaptureDialog:
         self.closed = True
         with suppress(tk.TclError):
             self.window.destroy()
+        if self.on_cancel is not None:
+            self.on_cancel()
 
 
 class HelpCenterDialog:
@@ -1463,6 +1495,7 @@ class LocalizerWindow:
         self._media_previews: dict[int, MediaPreview] = {}
         self._media_preview_errors: dict[int, str] = {}
         self._browser_capture_prompted_sources: set[str] = set()
+        self._pending_start_after_browser_capture = False
         self.stop_requested = False
         self.active_direction = "en-to-zh"
         self.active_provider = ""
@@ -1577,9 +1610,7 @@ class LocalizerWindow:
             if len(saved_queue.tasks) == 1:
                 restored = saved_queue.tasks[0]
                 restored_detail = f"{restored.media_summary} {restored.error}".casefold()
-                if any(
-                    marker in restored_detail for marker in ("cloudflare", "浏览器验证")
-                ):
+                if browser_capture_required(restored_detail):
                     self._browser_capture_prompted_sources.add(restored.source)
                     self.root.after(
                         650,
@@ -2698,8 +2729,14 @@ class LocalizerWindow:
             self.root,
             initial_url=selected_url,
             on_capture=self._add_browser_capture,
+            on_cancel=lambda page=selected_url: self._cancel_pending_browser_capture(page),
             auto_start=auto_start,
         )
+
+    def _cancel_pending_browser_capture(self, page_url: str) -> None:
+        self._pending_start_after_browser_capture = False
+        self._browser_capture_prompted_sources.discard(page_url)
+        self._set_status("已取消浏览器抓取；任务尚未开始。", "muted")
 
     def _add_browser_capture(self, capture: BrowserMediaCapture) -> None:
         sources = queue_input_values(self.input_value.get())
@@ -3052,6 +3089,24 @@ class LocalizerWindow:
             messagebox.showwarning("还不能开始", str(exc), parent=self.root)
             return
 
+        if self._analysis_worker is not None and self._analysis_worker.is_alive():
+            self._pending_start_after_browser_capture = True
+            self._set_status("正在完成媒体预分析，完成后会自动继续…", "active")
+            return
+
+        sources = queue_input_values(self.input_value.get())
+        capture_source = browser_capture_required_source(sources, self._media_preview_errors)
+        if capture_source is not None:
+            self._pending_start_after_browser_capture = True
+            self._browser_capture_prompted_sources.add(capture_source)
+            self._set_status(
+                "该页面必须先通过浏览器抓取完整媒体地址，成功后会自动继续…",
+                "active",
+            )
+            self._open_browser_capture_dialog(capture_source, auto_start=True)
+            return
+
+        self._pending_start_after_browser_capture = False
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self._save_desktop_settings()
         self._begin_queue(commands, environment, provider)
@@ -3467,11 +3522,7 @@ class LocalizerWindow:
                             state_code="ready",
                             error=message,
                         )
-                        normalized_error = message.casefold()
-                        if any(
-                            marker in normalized_error
-                            for marker in ("cloudflare", "浏览器验证")
-                        ):
+                        if browser_capture_required(message):
                             source = self._task_sources[task_index - 1]
                             if source not in self._browser_capture_prompted_sources:
                                 self._browser_capture_prompted_sources.add(source)
@@ -3500,6 +3551,8 @@ class LocalizerWindow:
                             )
                         else:
                             self._set_status(f"{total} 个视频信息已就绪，可以开始", "success")
+                        if self._pending_start_after_browser_capture:
+                            self.root.after(100, self._start)
                 elif event == "done":
                     (
                         return_code,
