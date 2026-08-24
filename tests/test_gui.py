@@ -12,6 +12,8 @@ from youtube_localizer.gui import (
     SUBTITLE_FONTS,
     LocalizerWindow,
     api_configuration,
+    browser_capture_required,
+    browser_capture_required_source,
     build_process_command,
     clamp_subtitle_preview_values,
     friendly_failure_summary,
@@ -105,6 +107,67 @@ def test_browser_capture_accepts_one_dynamic_page_and_rejects_a_queue() -> None:
 def test_browser_capture_redirects_youtube_to_the_normal_link_flow() -> None:
     with pytest.raises(ValueError, match="YouTube"):
         validate_browser_capture_input("https://www.youtube.com/watch?v=abc123")
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "该站点要求 Cloudflare 浏览器验证",
+        "播放器使用第三方 iframe",
+        "页面通过混淆脚本动态加载媒体",
+    ],
+)
+def test_browser_capture_required_recognizes_dynamic_page_failures(message: str) -> None:
+    assert browser_capture_required(message)
+
+
+def test_browser_capture_required_source_blocks_only_the_affected_playback_page() -> None:
+    sources = [
+        "https://cdn.example.test/video.mp4",
+        "https://www.lmm85.com/play/8164_1_1.html",
+        "https://www.youtube.com/watch?v=abc123",
+    ]
+    errors = {
+        1: "HTTP 429",
+        2: "该站点要求 Cloudflare 浏览器验证",
+        3: "Cloudflare",
+    }
+
+    assert browser_capture_required_source(sources, errors) == sources[1]
+    assert browser_capture_required_source(sources, {1: "HTTP 429"}) is None
+
+
+def test_start_routes_dynamic_page_through_browser_capture_before_pipeline() -> None:
+    page = "https://www.lmm85.com/play/8164_1_1.html"
+
+    class FakeVariable:
+        def get(self) -> str:
+            return page
+
+    window = object.__new__(LocalizerWindow)
+    window._has_active_processes = lambda: False
+    window.worker = None
+    window._analysis_worker = None
+    window._validate = lambda: ([['python', 'main.py', 'process', page]], {}, "download_only")
+    window.input_value = FakeVariable()
+    window._media_preview_errors = {1: "该站点要求 Cloudflare 浏览器验证"}
+    window._browser_capture_prompted_sources = set()
+    window._pending_start_after_browser_capture = False
+    statuses: list[tuple[str, str]] = []
+    opened: list[tuple[str, bool]] = []
+    started: list[object] = []
+    window._set_status = lambda message, state: statuses.append((message, state))
+    window._open_browser_capture_dialog = (
+        lambda source, auto_start=False: opened.append((source, auto_start))
+    )
+    window._begin_queue = lambda *args, **kwargs: started.append((args, kwargs))
+
+    window._start()
+
+    assert opened == [(page, True)]
+    assert not started
+    assert window._pending_start_after_browser_capture is True
+    assert "自动继续" in statuses[-1][0]
 
 
 def test_stored_internal_values_are_mapped_back_to_display_labels() -> None:
