@@ -16,6 +16,7 @@ from youtube_localizer.gui import (
     browser_capture_required_source,
     build_process_command,
     clamp_subtitle_preview_values,
+    continued_start_sources_after_capture,
     friendly_failure_summary,
     gui_parallel_job_limit,
     gui_process_creationflags,
@@ -27,6 +28,7 @@ from youtube_localizer.gui import (
     progress_update_from_output,
     project_workspace_from_output,
     queue_input_values,
+    retain_pending_start_sources,
     retry_queue_commands,
     validate_browser_capture_input,
     validate_direct_media_links,
@@ -137,6 +139,31 @@ def test_browser_capture_required_source_blocks_only_the_affected_playback_page(
     assert browser_capture_required_source(sources, {1: "HTTP 429"}) is None
 
 
+def test_capture_retargets_only_the_start_request_that_expected_that_page() -> None:
+    page = "https://www.lmm85.com/play/8164_1_1.html"
+    media = "https://cdn.example.test/video.mp4"
+
+    assert continued_start_sources_after_capture(
+        (page,), page_url=page, updated_sources=[media]
+    ) == (media,)
+    assert (
+        continued_start_sources_after_capture(
+            ("https://example.test/other",),
+            page_url=page,
+            updated_sources=[media],
+        )
+        is None
+    )
+
+
+def test_pending_start_is_cancelled_when_the_visible_queue_changes() -> None:
+    original = ("https://example.test/original",)
+
+    assert retain_pending_start_sources(original, list(original)) == original
+    assert retain_pending_start_sources(original, ["https://example.test/replacement"]) is None
+    assert retain_pending_start_sources(None, list(original)) is None
+
+
 def test_start_routes_dynamic_page_through_browser_capture_before_pipeline() -> None:
     page = "https://www.lmm85.com/play/8164_1_1.html"
 
@@ -152,7 +179,7 @@ def test_start_routes_dynamic_page_through_browser_capture_before_pipeline() -> 
     window.input_value = FakeVariable()
     window._media_preview_errors = {1: "该站点要求 Cloudflare 浏览器验证"}
     window._browser_capture_prompted_sources = set()
-    window._pending_start_after_browser_capture = False
+    window._pending_start_sources = None
     statuses: list[tuple[str, str]] = []
     opened: list[tuple[str, bool]] = []
     started: list[object] = []
@@ -166,7 +193,7 @@ def test_start_routes_dynamic_page_through_browser_capture_before_pipeline() -> 
 
     assert opened == [(page, True)]
     assert not started
-    assert window._pending_start_after_browser_capture is True
+    assert window._pending_start_sources == (page,)
     assert "自动继续" in statuses[-1][0]
 
 

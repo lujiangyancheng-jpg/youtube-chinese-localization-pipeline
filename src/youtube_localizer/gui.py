@@ -268,6 +268,27 @@ def browser_capture_required_source(
     return None
 
 
+def continued_start_sources_after_capture(
+    pending_sources: tuple[str, ...] | None,
+    *,
+    page_url: str,
+    updated_sources: list[str],
+) -> tuple[str, ...] | None:
+    """Retarget one explicit start request only when its captured page was expected."""
+    if pending_sources is None or page_url not in pending_sources:
+        return None
+    return tuple(updated_sources)
+
+
+def retain_pending_start_sources(
+    pending_sources: tuple[str, ...] | None, current_sources: list[str]
+) -> tuple[str, ...] | None:
+    """Keep a queued start request only while the user-visible input is unchanged."""
+    if pending_sources is None or pending_sources != tuple(current_sources):
+        return None
+    return pending_sources
+
+
 def gui_parallel_job_limit(
     input_count: int, resources: SystemResources | None = None
 ) -> int:
@@ -1495,7 +1516,7 @@ class LocalizerWindow:
         self._media_previews: dict[int, MediaPreview] = {}
         self._media_preview_errors: dict[int, str] = {}
         self._browser_capture_prompted_sources: set[str] = set()
-        self._pending_start_after_browser_capture = False
+        self._pending_start_sources: tuple[str, ...] | None = None
         self.stop_requested = False
         self.active_direction = "en-to-zh"
         self.active_provider = ""
@@ -1575,7 +1596,7 @@ class LocalizerWindow:
         self.model = tk.StringVar(value=model)
         self.api_key = tk.StringVar(value=api_key)
         self.update_channel_label = tk.StringVar(
-            value=label_for_value(UPDATE_CHANNELS, saved_settings.update_channel, "开发")
+            value=label_for_value(UPDATE_CHANNELS, saved_settings.update_channel, "稳定")
         )
         self.authorized = tk.BooleanVar(value=False)
         self.resume = tk.BooleanVar(value=saved_settings.resume)
@@ -2279,6 +2300,10 @@ class LocalizerWindow:
 
     def _update_input_state(self, *_args: object) -> None:
         has_input = bool(self.input_value.get().strip())
+        current_sources = queue_input_values(self.input_value.get())
+        self._pending_start_sources = retain_pending_start_sources(
+            self._pending_start_sources, current_sources
+        )
         self._sync_task_sources()
         task_frames = (
             self.input_frame,
@@ -2734,7 +2759,7 @@ class LocalizerWindow:
         )
 
     def _cancel_pending_browser_capture(self, page_url: str) -> None:
-        self._pending_start_after_browser_capture = False
+        self._pending_start_sources = None
         self._browser_capture_prompted_sources.discard(page_url)
         self._set_status("已取消浏览器抓取；任务尚未开始。", "muted")
 
@@ -2751,6 +2776,11 @@ class LocalizerWindow:
                 updated.append(source)
         if not replaced and capture.media_url not in updated:
             updated.append(capture.media_url)
+        self._pending_start_sources = continued_start_sources_after_capture(
+            self._pending_start_sources,
+            page_url=capture.page_url,
+            updated_sources=updated,
+        )
         self.input_value.set("\n".join(updated))
         self.input_entry.icursor("end")
         self._set_status("浏览器已捕获完整媒体地址，正在验证并读取画质信息…", "active")
@@ -3089,15 +3119,15 @@ class LocalizerWindow:
             messagebox.showwarning("还不能开始", str(exc), parent=self.root)
             return
 
+        sources = queue_input_values(self.input_value.get())
         if self._analysis_worker is not None and self._analysis_worker.is_alive():
-            self._pending_start_after_browser_capture = True
+            self._pending_start_sources = tuple(sources)
             self._set_status("正在完成媒体预分析，完成后会自动继续…", "active")
             return
 
-        sources = queue_input_values(self.input_value.get())
         capture_source = browser_capture_required_source(sources, self._media_preview_errors)
         if capture_source is not None:
-            self._pending_start_after_browser_capture = True
+            self._pending_start_sources = tuple(sources)
             self._browser_capture_prompted_sources.add(capture_source)
             self._set_status(
                 "该页面必须先通过浏览器抓取完整媒体地址，成功后会自动继续…",
@@ -3106,7 +3136,7 @@ class LocalizerWindow:
             self._open_browser_capture_dialog(capture_source, auto_start=True)
             return
 
-        self._pending_start_after_browser_capture = False
+        self._pending_start_sources = None
         self.active_direction = TRANSLATION_DIRECTIONS[self.direction_label.get()]
         self._save_desktop_settings()
         self._begin_queue(commands, environment, provider)
@@ -3551,7 +3581,10 @@ class LocalizerWindow:
                             )
                         else:
                             self._set_status(f"{total} 个视频信息已就绪，可以开始", "success")
-                        if self._pending_start_after_browser_capture:
+                        if retain_pending_start_sources(
+                            self._pending_start_sources,
+                            queue_input_values(self.input_value.get()),
+                        ) is not None:
                             self.root.after(100, self._start)
                 elif event == "done":
                     (

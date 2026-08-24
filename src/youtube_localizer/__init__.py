@@ -1,3 +1,3 @@
 """YouTube Chinese Localization Pipeline."""
 
-__version__ = "0.7.0.8"
+__version__ = "0.7.0.9"

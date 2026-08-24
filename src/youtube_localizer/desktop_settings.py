@@ -47,7 +47,7 @@ class DesktopSettings:
     output_fps: int | None = None
     output_height: int | None = None
     output_directory: str = ""
-    update_channel: str = "development"
+    update_channel: str = "stable"
     resume: bool = True
 
     def to_dict(self) -> dict[str, Any]:
