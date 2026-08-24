@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "youtube-chinese-localizer"
-version = "0.7.0.6"
+version = "0.7.0.7"
 description = "A local, resumable pipeline for creating Simplified Chinese localization assets from authorized videos."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,7 @@ dependencies = [
   "rich>=13.8,<15",
   "tenacity>=9,<10",
   "typer>=0.12.5,<1",
+  "websockets>=14,<18",
   "yt-dlp[default,deno]>=2026.7.4",
 ]
 

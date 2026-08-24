@@ -26,6 +26,7 @@ from youtube_localizer.gui import (
     project_workspace_from_output,
     queue_input_values,
     retry_queue_commands,
+    validate_browser_capture_input,
     validate_direct_media_links,
     whisper_model_installation_message,
 )
@@ -91,6 +92,19 @@ def test_direct_media_dialog_accepts_complete_cdn_links_and_rejects_pages() -> N
 def test_direct_media_dialog_rejects_truncated_display_text() -> None:
     with pytest.raises(ValueError, match="截断"):
         validate_direct_media_links("https://groupvideo.photo.qq.com/1071_0bc…")
+
+
+def test_browser_capture_accepts_one_dynamic_page_and_rejects_a_queue() -> None:
+    page = "https://www.lmm85.com/play/8164_1_1.html"
+    assert validate_browser_capture_input(page) == page
+
+    with pytest.raises(ValueError, match="每次需要一个"):
+        validate_browser_capture_input(f"{page}\nhttps://www.example.test/play/other.html")
+
+
+def test_browser_capture_redirects_youtube_to_the_normal_link_flow() -> None:
+    with pytest.raises(ValueError, match="YouTube"):
+        validate_browser_capture_input("https://www.youtube.com/watch?v=abc123")
 
 
 def test_stored_internal_values_are_mapped_back_to_display_labels() -> None:
@@ -459,7 +473,7 @@ def test_gui_explains_when_a_packaged_install_has_no_whisper_model(monkeypatch) 
         ("CUDA error: out of memory", "显存"),
         ("OSError: [Errno 28] No space left on device", "20 GiB"),
         ("FFmpeg hard-subtitle rendering failed", "字幕压制"),
-        ("Cloudflare 浏览器验证", "公开媒体地址"),
+        ("Cloudflare 浏览器验证", "浏览器抓取"),
         ("媒体服务器拒绝了这条直链（HTTP 403）", "重新复制"),
         ("unexpected failure", "导出诊断包"),
     ],
