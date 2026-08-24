@@ -30,7 +30,14 @@ from .desktop_queue import (
     save_desktop_queue,
 )
 from .desktop_settings import DesktopSettings, load_desktop_settings, save_desktop_settings
+from .download.browser_capture import (
+    BrowserMediaCapture,
+    capture_browser_media,
+    validate_browser_capture_page,
+)
 from .download.direct import assess_direct_media_url, is_direct_media_candidate_url
+from .download.webpage import is_webpage_url
+from .download.youtube import is_youtube_url
 from .errors import LocalizerError
 from .hardware import SystemResources, detect_system_resources
 from .inspection_cache import save_cached_inspection
@@ -220,6 +227,19 @@ def validate_direct_media_links(value: str) -> list[str]:
     return links
 
 
+def validate_browser_capture_input(value: str) -> str:
+    """Return the one playback page accepted by the browser-assisted capture dialog."""
+    sources = queue_input_values(value)
+    if len(sources) != 1:
+        raise ValueError("浏览器抓取每次需要一个播放页地址；请先只保留当前要抓取的页面。")
+    page_url = sources[0]
+    if not is_webpage_url(page_url):
+        raise ValueError("请粘贴完整的 HTTP(S) 播放页地址。")
+    if is_youtube_url(page_url):
+        raise ValueError("YouTube 请直接使用“粘贴链接”，不需要浏览器抓取。")
+    return page_url
+
+
 def gui_parallel_job_limit(
     input_count: int, resources: SystemResources | None = None
 ) -> int:
@@ -395,8 +415,8 @@ def friendly_failure_summary(log_text: str) -> str:
         for marker in ("cloudflare", "浏览器验证", "iframe", "混淆脚本")
     ):
         return (
-            "该播放页没有可由本程序读取的公开媒体地址，或要求浏览器验证。"
-            "程序不会绕过限制；请改用内容方提供的公开直链或你有权保存的本地文件。"
+            "该动态播放页需要浏览器环境。请回到主界面点击“浏览器抓取”，"
+            "在独立 Edge 窗口中让视频开始播放；程序会自动接收完整媒体地址。"
         )
     if "ffmpeg hard-subtitle rendering failed" in normalized or "字幕压制失败" in normalized:
         return "字幕压制未完成，但视频和字幕中间文件会保留。请点击重试；程序会重新检测可用编码器。"
@@ -880,6 +900,159 @@ class DirectMediaLinkDialog:
         self.window.destroy()
 
 
+class BrowserCaptureDialog:
+    """Visible, cancellable browser-assisted media capture for dynamic playback pages."""
+
+    def __init__(
+        self,
+        parent: tk.Misc,
+        *,
+        initial_url: str,
+        on_capture: Callable[[BrowserMediaCapture], None],
+        auto_start: bool = False,
+    ) -> None:
+        self.parent = parent
+        self.on_capture = on_capture
+        self.cancel_event = threading.Event()
+        self.worker: threading.Thread | None = None
+        self.closed = False
+
+        self.window = tk.Toplevel(parent)
+        self.window.title("浏览器抓取播放地址｜Localize Studio")
+        self.window.geometry("720x440")
+        self.window.minsize(640, 410)
+        self.window.configure(background=SURFACE)
+        self.window.transient(parent)
+        self.window.protocol("WM_DELETE_WINDOW", self._cancel)
+
+        body = ttk.Frame(self.window, style="Card.TFrame", padding=(28, 24, 28, 20))
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="从动态播放页捕获完整媒体地址", style="SectionTitle.TLabel").pack(
+            anchor="w"
+        )
+        ttk.Label(
+            body,
+            text=(
+                "软件会打开一个使用全新临时配置的 Edge 窗口。让视频开始播放后，"
+                "检测到的完整媒体 URL 会自动替换当前播放页并进入任务队列。"
+            ),
+            style="Muted.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(6, 16))
+
+        ttk.Label(body, text="播放页地址", style="Field.TLabel").pack(anchor="w")
+        self.page_url = tk.StringVar(value=initial_url.strip())
+        self.entry = ttk.Entry(body, textvariable=self.page_url, style="Modern.TEntry")
+        self.entry.pack(fill="x", pady=(6, 14), ipady=6)
+        self.entry.focus_set()
+
+        self.status = tk.StringVar(value="准备就绪。点击开始后，请在 Edge 中让视频开始播放。")
+        ttk.Label(
+            body,
+            textvariable=self.status,
+            style="Muted.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w", pady=(2, 8))
+        self.progress = ttk.Progressbar(body, mode="indeterminate", style="Modern.Horizontal.TProgressbar")
+        self.progress.pack(fill="x", pady=(0, 14))
+
+        ttk.Label(
+            body,
+            text=(
+                "隐私与权限：不会读取你日常 Edge 的 Cookie、登录状态或密码，也不会保存请求头。"
+                "需要站点验证时由你亲自完成；DRM、付费和权限限制不会被绕过。"
+            ),
+            style="Muted.TLabel",
+            wraplength=650,
+            justify="left",
+        ).pack(anchor="w")
+
+        footer = ttk.Frame(body, style="Card.TFrame")
+        footer.pack(fill="x", pady=(20, 0))
+        self.cancel_button = ttk.Button(
+            footer,
+            text="取消",
+            style="Secondary.TButton",
+            command=self._cancel,
+        )
+        self.cancel_button.pack(side="right")
+        self.start_button = ttk.Button(
+            footer,
+            text="打开 Edge 并开始抓取",
+            style="Primary.TButton",
+            command=self._start,
+        )
+        self.start_button.pack(side="right", padx=(0, 8))
+        if auto_start:
+            self.window.after(200, self._start)
+
+    def _post(self, callback: Callable[[], None]) -> None:
+        with suppress(tk.TclError):
+            self.parent.after(0, callback)
+
+    def _set_progress_message(self, message: str) -> None:
+        self._post(lambda: self.status.set(message) if not self.closed else None)
+
+    def _start(self) -> None:
+        try:
+            page_url = validate_browser_capture_input(self.page_url.get())
+        except ValueError as exc:
+            messagebox.showwarning("播放页地址有误", str(exc), parent=self.window)
+            return
+        self.cancel_event.clear()
+        self.entry.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        self.progress.start(10)
+        self.status.set("正在检查播放页并准备独立 Edge 窗口……")
+
+        def worker() -> None:
+            try:
+                validate_browser_capture_page(page_url)
+                capture = capture_browser_media(
+                    page_url,
+                    cancel_event=self.cancel_event,
+                    progress=self._set_progress_message,
+                )
+            except (OSError, ValueError, LocalizerError) as exc:
+                message = str(exc)
+                self._post(lambda error=message: self._failed(error))
+            else:
+                self._post(lambda: self._finished(capture))
+
+        self.worker = threading.Thread(
+            target=worker,
+            daemon=True,
+            name="localizer-browser-capture",
+        )
+        self.worker.start()
+
+    def _failed(self, message: str) -> None:
+        if self.closed:
+            return
+        self.progress.stop()
+        self.entry.configure(state="normal")
+        self.start_button.configure(state="normal")
+        self.status.set(message)
+        messagebox.showerror("没有捕获到媒体地址", message, parent=self.window)
+
+    def _finished(self, capture: BrowserMediaCapture) -> None:
+        if self.closed:
+            return
+        self.progress.stop()
+        self.status.set("已捕获完整媒体地址，正在加入任务队列……")
+        self.on_capture(capture)
+        self.closed = True
+        self.window.destroy()
+
+    def _cancel(self) -> None:
+        self.cancel_event.set()
+        self.closed = True
+        with suppress(tk.TclError):
+            self.window.destroy()
+
+
 class HelpCenterDialog:
     """Persistent tutorial, readiness summary, and recovery guidance."""
 
@@ -1289,6 +1462,7 @@ class LocalizerWindow:
         self._task_errors: dict[int, str] = {}
         self._media_previews: dict[int, MediaPreview] = {}
         self._media_preview_errors: dict[int, str] = {}
+        self._browser_capture_prompted_sources: set[str] = set()
         self.stop_requested = False
         self.active_direction = "en-to-zh"
         self.active_provider = ""
@@ -1308,6 +1482,7 @@ class LocalizerWindow:
         self._diagnostic_projects: set[Path] = set()
         self.help_center: HelpCenterDialog | None = None
         self.direct_media_dialog: DirectMediaLinkDialog | None = None
+        self.browser_capture_dialog: BrowserCaptureDialog | None = None
 
         endpoint, model, api_key = api_configuration(os.environ)
         saved_settings = load_desktop_settings()
@@ -1399,6 +1574,19 @@ class LocalizerWindow:
                 f"已恢复上次的 {len(saved_queue.tasks)} 个任务；中断项目可直接继续",
                 "active",
             )
+            if len(saved_queue.tasks) == 1:
+                restored = saved_queue.tasks[0]
+                restored_detail = f"{restored.media_summary} {restored.error}".casefold()
+                if any(
+                    marker in restored_detail for marker in ("cloudflare", "浏览器验证")
+                ):
+                    self._browser_capture_prompted_sources.add(restored.source)
+                    self.root.after(
+                        650,
+                        lambda page=restored.source: self._open_browser_capture_dialog(
+                            page, auto_start=True
+                        ),
+                    )
         self.root.after(100, self._poll_events)
 
     def _configure_style(self) -> None:
@@ -1531,7 +1719,7 @@ class LocalizerWindow:
 
         hero = tk.Frame(outer, background=HEADER, padx=18, pady=12)
         hero.grid(row=0, column=0, sticky="ew")
-        hero.columnconfigure(4, weight=1)
+        hero.columnconfigure(5, weight=1)
         brand = tk.Frame(hero, background=HEADER)
         brand.grid(row=0, column=0, sticky="w", padx=(0, 22))
         tk.Label(
@@ -1560,24 +1748,31 @@ class LocalizerWindow:
             command=self._open_direct_media_dialog,
         )
         self.direct_media_button.grid(row=0, column=2, padx=(0, 8))
+        self.browser_capture_button = ttk.Button(
+            hero,
+            text="浏览器抓取",
+            style="Secondary.TButton",
+            command=self._open_browser_capture_dialog,
+        )
+        self.browser_capture_button.grid(row=0, column=3, padx=(0, 8))
         self.local_file_button = ttk.Button(
             hero,
             text="选择本地视频",
             style="Secondary.TButton",
             command=self._choose_local_file,
         )
-        self.local_file_button.grid(row=0, column=3)
+        self.local_file_button.grid(row=0, column=4)
         ttk.Button(
             hero,
             text="帮助中心",
             style="Toolbar.TButton",
             command=self._open_help_center,
-        ).grid(row=0, column=4, padx=(8, 0), sticky="w")
+        ).grid(row=0, column=5, padx=(8, 0), sticky="w")
         secondary_tools = tk.Frame(hero, background=HEADER)
         secondary_tools.grid(
             row=1,
             column=0,
-            columnspan=5,
+            columnspan=6,
             sticky="e",
             pady=(7, 0),
         )
@@ -2485,6 +2680,44 @@ class LocalizerWindow:
         self.input_entry.icursor("end")
         self._set_status(f"已加入 {len(links)} 条媒体直链，正在验证有效性…", "active")
 
+    def _open_browser_capture_dialog(
+        self, initial_url: str | None = None, *, auto_start: bool = False
+    ) -> None:
+        if self._has_active_processes() or (self.worker and self.worker.is_alive()):
+            messagebox.showinfo("任务进行中", "请先停止当前任务，再抓取新的播放页。", parent=self.root)
+            return
+        if (
+            self.browser_capture_dialog is not None
+            and self.browser_capture_dialog.window.winfo_exists()
+        ):
+            self.browser_capture_dialog.window.lift()
+            self.browser_capture_dialog.window.focus_force()
+            return
+        selected_url = initial_url if initial_url is not None else self.input_value.get().strip()
+        self.browser_capture_dialog = BrowserCaptureDialog(
+            self.root,
+            initial_url=selected_url,
+            on_capture=self._add_browser_capture,
+            auto_start=auto_start,
+        )
+
+    def _add_browser_capture(self, capture: BrowserMediaCapture) -> None:
+        sources = queue_input_values(self.input_value.get())
+        replaced = False
+        updated: list[str] = []
+        for source in sources:
+            if source == capture.page_url:
+                if capture.media_url not in updated:
+                    updated.append(capture.media_url)
+                replaced = True
+            elif source not in updated:
+                updated.append(source)
+        if not replaced and capture.media_url not in updated:
+            updated.append(capture.media_url)
+        self.input_value.set("\n".join(updated))
+        self.input_entry.icursor("end")
+        self._set_status("浏览器已捕获完整媒体地址，正在验证并读取画质信息…", "active")
+
     def _apply_setup_workflow(self, workflow: str) -> None:
         if workflow == "download":
             self.subtitle_label.set("仅下载原视频（无字幕）")
@@ -2953,6 +3186,8 @@ class LocalizerWindow:
         self.stop_button.configure(state="normal")
         self.input_entry.configure(state="disabled")
         self.paste_button.configure(state="disabled")
+        self.direct_media_button.configure(state="disabled")
+        self.browser_capture_button.configure(state="disabled")
         self.local_file_button.configure(state="disabled")
         self._update_task_action_states()
         self.worker = threading.Thread(
@@ -3232,6 +3467,24 @@ class LocalizerWindow:
                             state_code="ready",
                             error=message,
                         )
+                        normalized_error = message.casefold()
+                        if any(
+                            marker in normalized_error
+                            for marker in ("cloudflare", "浏览器验证")
+                        ):
+                            source = self._task_sources[task_index - 1]
+                            if source not in self._browser_capture_prompted_sources:
+                                self._browser_capture_prompted_sources.add(source)
+                                self._set_status(
+                                    "该页面需要浏览器环境，正在启动独立 Edge 抓取窗口…",
+                                    "active",
+                                )
+                                self.root.after(
+                                    150,
+                                    lambda page=source: self._open_browser_capture_dialog(
+                                        page, auto_start=True
+                                    ),
+                                )
                 elif event == "media_analysis_done":
                     generation, total = payload  # type: ignore[misc]
                     if int(generation) != self._analysis_generation:
@@ -3396,6 +3649,8 @@ class LocalizerWindow:
         self.stop_button.configure(state="disabled")
         self.input_entry.configure(state="normal")
         self.paste_button.configure(state="normal")
+        self.direct_media_button.configure(state="normal")
+        self.browser_capture_button.configure(state="normal")
         self.local_file_button.configure(state="normal")
         self.process = None
         self._parallel_queue = False
@@ -3552,6 +3807,8 @@ class LocalizerWindow:
         )
 
     def _on_close(self) -> None:
+        if self.browser_capture_dialog is not None:
+            self.browser_capture_dialog.cancel_event.set()
         process_running = self._has_active_processes()
         worker_running = self.worker is not None and self.worker.is_alive()
         if process_running or worker_running:

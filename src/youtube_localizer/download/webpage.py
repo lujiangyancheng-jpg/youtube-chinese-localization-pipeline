@@ -281,8 +281,8 @@ def _fetch_public_html(url: str) -> tuple[str, str]:
                         continue
                     if response.status_code == 403 and response.headers.get("cf-mitigated"):
                         raise InputValidationError(
-                            "该站点要求 Cloudflare 浏览器验证，本程序不会模拟浏览器或绕过挑战。"
-                            "请使用内容方提供的公开媒体直链或本地文件。"
+                            "该站点要求 Cloudflare 浏览器验证。请在桌面版点击“浏览器抓取”，"
+                            "并在独立 Edge 窗口中亲自完成验证、开始播放；程序不会绕过挑战。"
                         )
                     if response.status_code in {401, 403}:
                         raise InputValidationError(
