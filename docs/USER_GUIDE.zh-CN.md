@@ -4,7 +4,7 @@
 
 项目地址：
 
-<https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline>
+<https://github.com/lujiangyancheng-jpg/video-localizer>
 
 ## 1. 软件能做什么
 
@@ -56,11 +56,11 @@ flowchart LR
 
 ### 3.0 推荐：离线安装包
 
-下载 `YouTube-Chinese-Localizer-0.7.0.9-Standard-Offline-Setup.exe` 后直接双击安装即可。Standard 已是单文件安装包，
+下载 `YouTube-Chinese-Localizer-0.7.0.10-Standard-Offline-Setup.exe` 后直接双击安装即可。Standard 已是单文件安装包，
 不再需要额外的 `.bin`。它包含 Python、精简 FFmpeg、字幕字体和两套快速翻译模型；
 安装过程会出现“选择本地模型”页，可按需勾选 Whisper Small（多数电脑推荐）、Whisper Medium（更高识别质量）
 和本地 AI 段落翻译所需的 Qwen3:4b 与 Ollama。安装器只会下载所勾选的组件并逐个校验 SHA-256；未勾选的
-模型不会下载或占用磁盘。若电脑暂时不联网，可不勾选模型，之后从兼容模型 Release 下载安装独立模型包。四段版本号的最后一段是程序迭代号，例如 `0.7.0.9` 继续使用 `0.7.0` 模型包。
+模型不会下载或占用磁盘。若电脑暂时不联网，可不勾选模型，之后从兼容模型 Release 下载安装独立模型包。四段版本号的最后一段是程序迭代号，例如 `0.7.0.10` 继续使用 `0.7.0` 模型包。
 
 ### 3.0.1 添加播放器媒体直链
 
@@ -109,8 +109,8 @@ winget install Git.Git
 ### 3.2 下载项目
 
 ```powershell
-git clone https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline.git
-cd youtube-chinese-localization-pipeline
+git clone https://github.com/lujiangyancheng-jpg/video-localizer.git
+cd video-localizer
 ```
 
 ### 3.3 安装 Python

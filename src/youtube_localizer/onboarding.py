@@ -11,7 +11,10 @@ from typing import Literal
 from . import __version__
 from .utils.files import atomic_write_json, load_json
 
-REPOSITORY_URL = "https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline"
+REPOSITORY_OWNER = "lujiangyancheng-jpg"
+REPOSITORY_NAME = "video-localizer"
+REPOSITORY_URL = f"https://github.com/{REPOSITORY_OWNER}/{REPOSITORY_NAME}"
+REPOSITORY_API_URL = f"https://api.github.com/repos/{REPOSITORY_OWNER}/{REPOSITORY_NAME}"
 
 
 @dataclass(frozen=True)

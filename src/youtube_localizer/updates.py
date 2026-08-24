@@ -8,10 +8,10 @@ from typing import Any, Literal
 import httpx
 
 from . import __version__
-from .onboarding import REPOSITORY_URL
+from .onboarding import REPOSITORY_API_URL, REPOSITORY_URL
 
-_LATEST_RELEASE_API = "https://api.github.com/repos/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest"
-_RELEASES_API = "https://api.github.com/repos/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases?per_page=30"
+_LATEST_RELEASE_API = f"{REPOSITORY_API_URL}/releases/latest"
+_RELEASES_API = f"{REPOSITORY_API_URL}/releases?per_page=30"
 UpdateChannel = Literal["stable", "development"]
 
 
@@ -73,6 +73,7 @@ def check_for_update(
             _LATEST_RELEASE_API if channel == "stable" else _RELEASES_API,
             headers={"Accept": "application/vnd.github+json", "User-Agent": "Localize-Studio"},
             timeout=timeout_seconds,
+            follow_redirects=True,
         )
         response.raise_for_status()
         payload = response.json()

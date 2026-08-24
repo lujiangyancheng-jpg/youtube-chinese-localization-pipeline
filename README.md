@@ -1,70 +1,82 @@
-# Localize Studio — 视频本地化工具
+# Video Localizer
 
 <div align="center">
 
-<img src="assets/branding/app-icon.png" alt="Localize Studio" width="112">
+<img src="assets/branding/app-icon.png" alt="Video Localizer / Localize Studio" width="112">
 
-把你有权处理的视频，转换为带自然字幕的本地化成品。支持 YouTube、公开声明媒体地址的授权播放页、媒体直链和本地视频；下载、识别、翻译、字幕压制与断点续跑都在本机完成。
+### 把授权视频变成可交付的多语言成片
 
-[![Release](https://img.shields.io/github/v/release/lujiangyancheng-jpg/youtube-chinese-localization-pipeline?display_name=tag&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/total?label=%E4%B8%8B%E8%BD%BD%E9%87%8F)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases)
-[![License](https://img.shields.io/github/license/lujiangyancheng-jpg/youtube-chinese-localization-pipeline)](LICENSE)
-[![Windows](https://img.shields.io/badge/Windows-10%20%2F%2011-0078D4?logo=windows)](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/latest)
+**下载、语音识别、自然段落翻译、字幕预览与压制，在一套 Windows 桌面工作流里完成。**
 
-[立即下载 v0.7.0.9 Standard 正式版](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.9/YouTube-Chinese-Localizer-0.7.0.9-Standard-Offline-Setup.exe)
-· [查看全部发布包](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases)
-· [中文完整说明](docs/USER_GUIDE.zh-CN.md)
+[![Release](https://img.shields.io/github/v/release/lujiangyancheng-jpg/video-localizer?display_name=tag&label=%E7%A8%B3%E5%AE%9A%E7%89%88)](https://github.com/lujiangyancheng-jpg/video-localizer/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/lujiangyancheng-jpg/video-localizer/total?label=%E4%B8%8B%E8%BD%BD)](https://github.com/lujiangyancheng-jpg/video-localizer/releases)
+[![Windows quality gate](https://github.com/lujiangyancheng-jpg/video-localizer/actions/workflows/ci.yml/badge.svg)](https://github.com/lujiangyancheng-jpg/video-localizer/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/lujiangyancheng-jpg/video-localizer)](LICENSE)
+
+[**下载 v0.7.0.10 Standard 正式版**](https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v0.7.0.10/YouTube-Chinese-Localizer-0.7.0.10-Standard-Offline-Setup.exe)
+· [使用说明](docs/USER_GUIDE.zh-CN.md)
+· [参加测试](docs/TESTING_GUIDE.zh-CN.md)
+· [讨论与求助](https://github.com/lujiangyancheng-jpg/video-localizer/discussions)
 
 </div>
 
+> Video Localizer 是项目名，安装后的桌面程序名为 **Localize Studio**。当前主要支持 Windows 10/11。
+
 > 仅处理你拥有、已获授权、属于公共领域或许可允许本次用途的视频。软件不会绕过 DRM、登录、付费、地区或平台访问限制。
 
-> 当前 Windows 安装包尚未使用商业代码签名证书，可能触发 SmartScreen 来源提示。请只从本项目 GitHub Release 下载，并核对同页的 SHA-256。
+## 30 秒了解它
 
-## 🚀 三步开始使用
-
-1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v0.7.0.9/YouTube-Chinese-Localizer-0.7.0.9-Standard-Offline-Setup.exe)。
-2. 双击 `Setup.exe` 安装，在“选择本地模型”页按需勾选 Whisper Small、Whisper Medium 和本地 AI 段落翻译。只会下载你勾选的模型；Small 适合多数电脑，Medium 识别质量更高。
-3. 打开 Localize Studio，粘贴视频链接；任务中心会先显示标题、时长、画质和预估大小，确认翻译与字幕方式后点击“开始本地化”。
-
-| 你想做什么 | 选择方式 | 需要什么 |
+| 输入 | 本地处理 | 输出 |
 | --- | --- | --- |
-| 最高画质无字幕下载 | “仅下载原视频（无字幕）” | 只需 Standard |
-| 英文 ↔ 简体中文 | “本地快速翻译” | Standard + 一个 Whisper 包 |
-| 更自然的中英字幕 | “本地 AI 段落翻译” | Standard + Local AI + 一个 Whisper 包，或 Complete + Whisper |
-| 日 / 韩 / 西 / 法 / 德 / 葡 / 俄 / 阿字幕 | “本地 AI”或“API 自动翻译” | Standard + Local AI + Whisper，或 Complete + Whisper，或 API |
-| 动态播放页提取完整媒体 URL | “浏览器抓取” | Standard + Windows 自带 Microsoft Edge |
+| YouTube 公开视频 | 最高质量下载、Whisper 识别、翻译、字幕质检 | 无字幕原片、SRT、ASS、硬字幕或软字幕 MP4 |
+| 获得授权的公开播放页或媒体直链 | 自动解析；动态页面可在隔离 Edge 窗口中捕获播放器公开媒体 URL | 可恢复的本地项目与最终成片 |
+| 本地视频 | 不上传视频；自动选择 NVIDIA、Intel、AMD 或 CPU 安全方案 | 保持原始画质/帧率，或按设置限制输出 |
 
-**Standard v0.7.0.9 正式版：约 289 MiB 的单文件安装包，比 v0.6.9 减少约 37%。** 它包含主程序、Python、单套精简 FFmpeg、字幕字体、GPU/CPU 编码和两套中英快速离线翻译模型。安装器会让你决定是否附加 Whisper 或本地 AI；未勾选的模型既不下载，也不占安装空间。
+- 中英快速离线翻译不需要 API；本地 AI 可提供更自然的段落翻译和更多语种。
+- 任务可暂停、继续和断点续跑，重启电脑后仍能恢复；API Key 不会写入设置或队列文件。
+- 按电脑的显存、内存、CPU、磁盘和编码器能力自动调度，低配置优先稳定，高配置允许安全并行。
 
-软件不会在每次启动时弹出教程。主界面的“帮助中心”集中提供快速教程、模型与环境状态、兼容模型下载入口和常见故障恢复方法，可随时打开。
+## 三步开始
 
-粘贴一个或多行链接后，逐视频任务中心会在后台预分析标题、时长、分辨率、帧率和预估下载大小，再分别显示下载速度、剩余时间、识别、翻译和压制进度。播放器已显示完整媒体地址时，可使用顶部“媒体直链”专用入口；动态播放页要求浏览器环境时，点击“浏览器抓取”，或等待预分析自动切换到独立 Edge 窗口，让视频开始播放后即可自动取得完整 URL。抓取窗口使用临时隔离配置，不读取日常浏览器 Cookie 或登录状态。可只暂停或继续所选项目，并从完成项直接打开成片；关闭应用或电脑重启后，未完成队列也会恢复。预分析结果会短期复用，避免正式处理前重复请求同一来源。常用设置和队列状态会保存在本机，但 API Key 永远不会写入设置或队列文件。
+1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v0.7.0.10/YouTube-Chinese-Localizer-0.7.0.10-Standard-Offline-Setup.exe)。
+2. 安装时按需选择 Whisper Small、Whisper Medium 和 Local AI。只下载勾选的模型；Whisper Small 适合第一次使用。
+3. 打开 **Localize Studio**，粘贴一个或多个链接，确认预分析信息后点击“开始本地化”。
 
-## ✨ 你能得到什么
-
-| 输入 | 处理 | 输出 |
+| 目标 | 推荐组件 | 是否需要 API |
 | --- | --- | --- |
-| YouTube 公开视频、授权公开播放页、直链或本地视频 | 本地 Whisper 识别、段落翻译、字幕质量检查 | SRT、ASS、硬字幕 MP4、可选软字幕 MP4、项目报告 |
-| 英文或简体中文语音 | 中英双向、本地 AI 或 API 多语种翻译 | 中文、英文、日语、韩语、西班牙语、法语、德语、葡萄牙语、俄语、阿拉伯语字幕 |
-| 高画质视频 | 自动选择已验证的 NVIDIA / Intel / AMD 编码器；不可用则安全回退 CPU | 保持原始分辨率和帧率，或按你的设置限制输出 |
+| 最高画质无字幕下载 | Standard | 不需要 |
+| 英文 ↔ 简体中文字幕 | Standard + Whisper Small | 不需要 |
+| 更自然的中英字幕 | Standard + Whisper + Local AI | 不需要 |
+| 日、韩、西、法、德、葡、俄、阿字幕 | Whisper + Local AI，或兼容 API | 两种方案任选 |
 
-## 👥 适合谁
+**Standard v0.7.0.10 正式版约 289 MiB**，内含程序、Python、精简 FFmpeg、字幕字体、硬件编码支持和两套中英快速翻译模型。Whisper 与 Local AI 是可选包，不勾选就不下载、不占空间。前三段版本相同的程序共用模型，例如 `0.7.0.10` 继续使用 `0.7.0` 模型包。
 
-- 想离线观看、学习英文视频的中文用户；
-- 有授权素材、需要制作多语言字幕的创作者、课程编辑和播客团队；
-- 希望保留项目文件、可中断续跑、可复核字幕和术语的专业用户。
+当前 Windows 安装包尚未使用商业代码签名证书，因此浏览器或 SmartScreen 可能显示来源提示。请只从本仓库的 GitHub Release 下载，并核对 Release 同页提供的 SHA-256。
 
-不适合批量搬运、无人值守转载、规避平台限制，或处理未获授权的内容。
+## 我们正在招募测试者
 
-## 📌 版本与支持
+这个项目最需要的不是“帮忙点个 Star”，而是来自不同电脑和真实工作流的可复现反馈。即使不会写代码，也可以直接参与：
 
-- 采用 `0.7.0.9` 形式的四段版本号：最后一段是程序小迭代；前三段相同的版本共用同一批本地模型，升级程序不需要重新下载模型。
-- 新安装默认使用稳定更新通道；愿意提前试用后续预发布迭代时，可手动切换到开发通道。
-- 新增、优化和修复：[CHANGELOG.md](CHANGELOG.md)
-- 完整中文使用手册：[docs/USER_GUIDE.zh-CN.md](docs/USER_GUIDE.zh-CN.md)
-- 安装、模型和故障排查：[docs/INSTALLATION.zh-CN.md](docs/INSTALLATION.zh-CN.md)
-- 报告问题或提出功能建议：[Issues](https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/issues)
+- **不同硬件**：NVIDIA / AMD / Intel 核显、纯 CPU、8–64 GiB 内存；
+- **不同素材**：长短视频、中文或英文语音、4K/高帧率、本地文件与授权公开链接；
+- **字幕质量**：术语、断句、翻译自然度、字幕速度和位置；
+- **安装升级**：全新安装、模型选装、旧版升级、断网恢复与低磁盘空间；
+- **易用性**：任何让你停下来猜“下一步该点哪里”的地方。
+
+从 [15 分钟测试清单](docs/TESTING_GUIDE.zh-CN.md) 开始；发现问题后使用 [Bug 报告模板](https://github.com/lujiangyancheng-jpg/video-localizer/issues/new?template=bug_report.yml)。程序里的“导出诊断包”会生成不包含视频、字幕正文、链接、路径或凭据的脱敏信息，方便定位问题。
+
+## 一起完善
+
+- 想确认用法、分享测试结果或讨论方向：进入 [Discussions](https://github.com/lujiangyancheng-jpg/video-localizer/discussions)。
+- 有明确故障或功能建议：创建 [Issue](https://github.com/lujiangyancheng-jpg/video-localizer/issues/new/choose)。
+- 能修改代码、文档或测试：阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，从带有 `good first issue` 或 `help wanted` 标签的任务开始。
+- 每一版做了什么：[CHANGELOG.md](CHANGELOG.md)；安装与模型说明：[docs/INSTALLATION.zh-CN.md](docs/INSTALLATION.zh-CN.md)。
+
+适合视频学习者、独立创作者、课程/采访/播客编辑和需要可审计项目文件的本地化团队。不适合批量搬运、无人值守转载、规避平台限制，或处理未获授权的内容。
+
+## 当前状态
+
+`0.7.0.10` 是公开稳定版，但项目仍处于积极开发期。新安装默认使用稳定更新通道；希望提前验证新功能的测试者可在应用内切换“开发”通道。已知限制、可复现命令和开发细节见下文。
 
 ---
 
@@ -639,7 +651,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.7.0.9 is the first stable 0.7.0-series release, defaults new installations to the stable update channel, and binds browser-capture continuation to the exact requested queue. Version 0.7.0.8 prevents dynamic playback pages from bypassing browser capture and automatically resumes the requested task after a successful capture. Version 0.7.0.7 adds isolated Edge-assisted media capture for dynamic playback pages, automatic Cloudflare-page recovery, and URL-only DevTools filtering. Version 0.7.0.6 added a dedicated direct-media entry point, signed-URL diagnostics, and safer extensionless-CDN validation. Version 0.7.0.5 added bounded public-page media resolution with explicit authorization and access-control boundaries. Version 0.7.0.4 added restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
+Version 0.7.0.10 renames the GitHub project to Video Localizer, migrates every in-app release/model URL, and adds a tester-focused project home, contribution guide, testing checklist, Discussions, and structured issue forms. Version 0.7.0.9 was the first stable 0.7.0-series release, defaulted new installations to the stable update channel, and bound browser-capture continuation to the exact requested queue. Version 0.7.0.8 prevents dynamic playback pages from bypassing browser capture and automatically resumes the requested task after a successful capture. Version 0.7.0.7 adds isolated Edge-assisted media capture for dynamic playback pages, automatic Cloudflare-page recovery, and URL-only DevTools filtering. Version 0.7.0.6 added a dedicated direct-media entry point, signed-URL diagnostics, and safer extensionless-CDN validation. Version 0.7.0.5 added bounded public-page media resolution with explicit authorization and access-control boundaries. Version 0.7.0.4 added restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
 safe two-job GUI scheduling, and bounded retry handling for temporary public-source limits. It also preserves the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,

@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.7.0.9"
+  #define AppVersion "0.7.0.10"
 #endif
 #ifndef ModelPackVersion
   #define ModelPackVersion "0.7.0"
@@ -48,8 +48,8 @@
 AppId={{96FB8698-9622-4824-9224-87C402D0BA9E}
 AppName=YouTube Chinese Localizer
 AppVersion={#AppVersion}
-AppPublisher=YouTube Chinese Localization Pipeline contributors
-AppPublisherURL=https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline
+AppPublisher=Video Localizer contributors
+AppPublisherURL=https://github.com/lujiangyancheng-jpg/video-localizer
 DefaultDirName={localappdata}\Programs\YouTube Chinese Localizer
 DefaultGroupName=YouTube Chinese Localizer
 DisableProgramGroupPage=yes
@@ -123,7 +123,7 @@ Filename: "{app}\Localize Studio.exe"; Description: "Launch YouTube Chinese Loca
 [Code]
 const
   ReleaseAssetBaseUrl =
-    'https://github.com/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/download/v{#ModelPackVersion}/';
+    'https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v{#ModelPackVersion}/';
   WhisperSmallSetup = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Small-Model-Setup.exe';
   WhisperSmallBin = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Small-Model-Setup-1.bin';
   WhisperMediumSetup = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Whisper-Medium-Model-Setup.exe';
