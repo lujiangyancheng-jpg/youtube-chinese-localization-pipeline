@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from youtube_localizer import __version__
 from youtube_localizer.onboarding import (
+    REPOSITORY_NAME,
+    REPOSITORY_URL,
     model_compatibility_version,
     model_release_page_url,
     onboarding_completed,
@@ -17,6 +19,8 @@ from youtube_localizer.onboarding import (
 
 
 def test_release_links_use_the_current_version() -> None:
+    assert REPOSITORY_NAME == "video-localizer"
+    assert REPOSITORY_URL.endswith("/video-localizer")
     assert release_page_url().endswith(f"/releases/tag/v{__version__}")
     assert release_asset_url("setup.exe").endswith(f"/v{__version__}/setup.exe")
     assert model_release_page_url().endswith("/releases/tag/v0.7.0")

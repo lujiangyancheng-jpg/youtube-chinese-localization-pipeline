@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.7.0.9",
+    [string]$Version = "0.7.0.10",
     [string]$ModelPackVersion = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
@@ -131,7 +131,7 @@ function Get-RequiredReleaseAssetHash([string]$AssetName) {
         return (Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant()
     }
     if ($null -eq $script:ModelPackRelease) {
-        $releaseUri = "https://api.github.com/repos/lujiangyancheng-jpg/youtube-chinese-localization-pipeline/releases/tags/v$ModelPackVersion"
+        $releaseUri = "https://api.github.com/repos/lujiangyancheng-jpg/video-localizer/releases/tags/v$ModelPackVersion"
         $script:ModelPackRelease = Invoke-RestMethod -Uri $releaseUri -Headers @{ Accept = "application/vnd.github+json" }
     }
     $releaseAsset = @($script:ModelPackRelease.assets | Where-Object name -eq $AssetName)

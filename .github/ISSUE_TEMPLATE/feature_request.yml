@@ -1,0 +1,50 @@
+name: 功能建议
+description: 用具体使用场景说明希望改进的工作流
+title: "[Feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已搜索现有 Issue 和 Discussions，没有发现相同建议。
+          required: true
+        - label: 该建议用于有权处理的素材，不要求绕过 DRM、登录、付费、地区或平台访问限制。
+          required: true
+  - type: textarea
+    id: workflow
+    attributes:
+      label: 你现在想完成什么
+      description: 请描述真实工作流、素材类型和最终交付物。
+    validations:
+      required: true
+  - type: textarea
+    id: limitation
+    attributes:
+      label: 当前哪里不顺
+      description: 现有操作、失败点、需要重复做的步骤或无法完成的部分。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的改进
+      description: 可以描述界面或行为，但不要求给出技术实现。
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 已尝试的替代方式
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 对你的影响
+      options:
+        - 阻止我完成主要工作流
+        - 每次使用都会造成明显麻烦
+        - 偶尔需要，属于效率提升
+        - 探索性想法
+    validations:
+      required: true

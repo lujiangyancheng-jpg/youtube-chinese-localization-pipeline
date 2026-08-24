@@ -1,0 +1,78 @@
+name: Bug 报告
+description: 提交可复现的安装、下载、识别、翻译、字幕或渲染故障
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢测试。请勿上传 API Key、Cookie、令牌、私人视频、完整字幕、带签名的媒体直链或未经脱敏的日志。优先附加程序导出的诊断包。
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我使用的是本仓库 GitHub Release 中的最新版，或已说明无法升级的原因。
+          required: true
+        - label: 我已搜索现有 Issue，没有发现相同问题。
+          required: true
+        - label: 我确认有权处理用于复现的素材。
+          required: true
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      placeholder: 例如 0.7.0.10 Standard
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: 失败阶段
+      options:
+        - 安装或启动
+        - 链接预分析或浏览器抓取
+        - 下载
+        - Whisper 识别
+        - 翻译
+        - 字幕预览或质量检查
+        - FFmpeg 压制或输出验证
+        - 暂停、恢复或升级
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 最少复现步骤
+      description: 从打开程序开始，按顺序写出操作和选择。
+      placeholder: |
+        1. 打开 Localize Studio
+        2. 选择……
+        3. 点击……
+    validations:
+      required: true
+  - type: textarea
+    id: expected_actual
+    attributes:
+      label: 预期结果与实际结果
+      placeholder: 预期……；实际……
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: 系统与硬件
+      placeholder: Windows 版本；CPU；内存；GPU/显存；驱动版本；可用磁盘；Whisper 模型
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏诊断与截图
+      description: 可拖入诊断包或截图；删除任何凭据、私人路径、字幕正文和受限链接。
+  - type: textarea
+    id: notes
+    attributes:
+      label: 其他信息
+      description: 是否每次发生、临时解决方式、与旧版本的差异等。

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 使用交流与测试结果
+    url: https://github.com/lujiangyancheng-jpg/video-localizer/discussions
+    about: 不确定是否为 Bug、需要使用帮助或想分享测试结果时，请先在 Discussions 交流。
+  - name: 安全问题
+    url: https://github.com/lujiangyancheng-jpg/video-localizer/security/advisories/new
+    about: 涉及凭据泄漏、任意代码执行或其他安全风险时，请勿创建公开 Issue。
