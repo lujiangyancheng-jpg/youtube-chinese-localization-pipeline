@@ -42,3 +42,16 @@ def test_four_part_iterations_reuse_the_matching_three_part_model_packs() -> Non
         text = path.read_text(encoding="utf-8")
         assert marker in text
         assert f'"{expected_model_version}"' in text
+
+
+def test_current_release_is_presented_as_the_stable_standard_download() -> None:
+    expected = __version__
+    readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+    checklist = (PROJECT_ROOT / "docs" / "RELEASE_CHECKLIST.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert f"v{expected} Standard 正式版" in readme
+    assert f"YouTube-Chinese-Localizer-{expected}-Standard-Offline-Setup.exe" in readme
+    assert "默认使用稳定更新通道" in readme
+    assert "作为非 Pre-release 发布" in checklist

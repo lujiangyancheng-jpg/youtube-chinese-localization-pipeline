@@ -68,6 +68,7 @@ def test_corrupt_settings_fall_back_to_defaults(tmp_path) -> None:
 
     assert settings.output_quality == "best"
     assert settings.output_directory
+    assert settings.update_channel == "stable"
 
 
 def test_settings_path_uses_local_app_data() -> None:
