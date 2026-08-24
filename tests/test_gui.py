@@ -30,6 +30,7 @@ from youtube_localizer.gui import (
     queue_input_values,
     retain_pending_start_sources,
     retry_queue_commands,
+    task_tree_visible_rows,
     validate_browser_capture_input,
     validate_direct_media_links,
     whisper_model_installation_message,
@@ -83,6 +84,13 @@ def test_queue_input_values_keeps_local_paths_and_deduplicates_lines() -> None:
         "https://youtu.be/one",
         "C:/Videos/My clip.mp4",
     ]
+
+
+def test_task_tree_rows_keep_small_queues_compact() -> None:
+    assert task_tree_visible_rows(0) == 2
+    assert task_tree_visible_rows(1) == 2
+    assert task_tree_visible_rows(3) == 3
+    assert task_tree_visible_rows(20) == 5
 
 
 def test_direct_media_dialog_accepts_complete_cdn_links_and_rejects_pages() -> None:

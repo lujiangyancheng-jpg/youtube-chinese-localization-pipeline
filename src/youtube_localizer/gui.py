@@ -71,18 +71,19 @@ from .utils.text import ms_to_srt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-APP_BACKGROUND = "#F5F6F8"
+APP_BACKGROUND = "#F2F4F7"
 SURFACE = "#FFFFFF"
-HEADER = "#FFFFFF"
-PRIMARY = "#2FAD68"
-PRIMARY_HOVER = "#278F57"
-TEXT = "#24272C"
-MUTED = "#747A84"
-BORDER = "#E2E5E9"
-SUCCESS = "#2FAD68"
-DANGER = "#D14D57"
-LOG_BACKGROUND = "#F7F8FA"
-LOG_TEXT = "#40444B"
+HEADER = "#FCFCFD"
+PRIMARY = "#20A864"
+PRIMARY_HOVER = "#198A52"
+PRIMARY_SOFT = "#EAF7F0"
+TEXT = "#171A1F"
+MUTED = "#69717D"
+BORDER = "#DEE3E8"
+SUCCESS = "#20A864"
+DANGER = "#C94754"
+LOG_BACKGROUND = "#15191F"
+LOG_TEXT = "#D7DCE3"
 UI_FONT = "Microsoft YaHei UI"
 
 SUBTITLE_MODES = {
@@ -205,6 +206,11 @@ def queue_input_values(value: str) -> list[str]:
     if not values and value.strip():
         values = [value.strip()]
     return list(dict.fromkeys(values))
+
+
+def task_tree_visible_rows(task_count: int) -> int:
+    """Keep short queues compact while allowing larger batches to remain scannable."""
+    return max(2, min(5, task_count))
 
 
 def validate_direct_media_links(value: str) -> list[str]:
@@ -1494,8 +1500,8 @@ class LocalizerWindow:
             except tk.TclError:
                 # A missing/unsupported icon must never prevent the application from starting.
                 self._application_icon = None
-        self.root.geometry("1060x780")
-        self.root.minsize(900, 680)
+        self.root.geometry("1180x820")
+        self.root.minsize(960, 700)
         self.root.configure(background=APP_BACKGROUND)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -1648,7 +1654,17 @@ class LocalizerWindow:
 
         style.configure("App.TFrame", background=APP_BACKGROUND)
         style.configure("Toolbar.TFrame", background=HEADER)
-        style.configure("Card.TFrame", background=SURFACE, relief="flat")
+        style.configure(
+            "Card.TFrame",
+            background=SURFACE,
+            bordercolor=BORDER,
+            lightcolor=BORDER,
+            darkcolor=BORDER,
+            borderwidth=1,
+            relief="solid",
+        )
+        style.configure("CardBody.TFrame", background=SURFACE, relief="flat")
+        style.configure("Soft.TFrame", background=PRIMARY_SOFT, relief="flat")
         style.configure("Toolbar.TLabel", background=HEADER, foreground=TEXT, font=(UI_FONT, 10))
         style.configure("Card.TLabel", background=SURFACE, foreground=TEXT, font=(UI_FONT, 10))
         style.configure(
@@ -1662,7 +1678,31 @@ class LocalizerWindow:
             "SectionTitle.TLabel",
             background=SURFACE,
             foreground=TEXT,
-            font=(UI_FONT, 12, "bold"),
+            font=(UI_FONT, 13, "bold"),
+        )
+        style.configure(
+            "HeroTitle.TLabel",
+            background=SURFACE,
+            foreground=TEXT,
+            font=(UI_FONT, 19, "bold"),
+        )
+        style.configure(
+            "HeroMuted.TLabel",
+            background=SURFACE,
+            foreground=MUTED,
+            font=(UI_FONT, 10),
+        )
+        style.configure(
+            "Soft.TLabel",
+            background=PRIMARY_SOFT,
+            foreground="#26724A",
+            font=(UI_FONT, 9),
+        )
+        style.configure(
+            "Eyebrow.TLabel",
+            background=SURFACE,
+            foreground=PRIMARY_HOVER,
+            font=(UI_FONT, 9, "bold"),
         )
         style.configure(
             "Primary.TButton",
@@ -1670,7 +1710,7 @@ class LocalizerWindow:
             foreground="#FFFFFF",
             bordercolor=PRIMARY,
             font=(UI_FONT, 10, "bold"),
-            padding=(17, 9),
+            padding=(18, 10),
         )
         style.map(
             "Primary.TButton",
@@ -1687,18 +1727,60 @@ class LocalizerWindow:
             foreground=TEXT,
             bordercolor=BORDER,
             font=(UI_FONT, 9),
-            padding=(12, 7),
+            padding=(13, 8),
         )
-        style.map("Secondary.TButton", background=[("active", "#F0F2F4")])
+        style.map(
+            "Secondary.TButton",
+            background=[("active", "#F4F6F8"), ("pressed", "#ECEFF2")],
+        )
+        style.configure(
+            "Source.TButton",
+            background=HEADER,
+            foreground=TEXT,
+            bordercolor=BORDER,
+            font=(UI_FONT, 9),
+            padding=(13, 8),
+        )
+        style.map(
+            "Source.TButton",
+            background=[("active", PRIMARY_SOFT), ("pressed", "#DDF1E6")],
+            foreground=[("active", PRIMARY_HOVER)],
+        )
         style.configure(
             "Toolbar.TButton",
             background=HEADER,
-            foreground=TEXT,
+            foreground=MUTED,
             bordercolor=HEADER,
             font=(UI_FONT, 9),
-            padding=(11, 7),
+            padding=(10, 7),
         )
-        style.map("Toolbar.TButton", background=[("active", "#F0F2F4")])
+        style.map(
+            "Toolbar.TButton",
+            background=[("active", "#F0F2F4")],
+            foreground=[("active", TEXT)],
+        )
+        style.configure(
+            "CardToolbar.TButton",
+            background=SURFACE,
+            foreground=MUTED,
+            bordercolor=SURFACE,
+            font=(UI_FONT, 9),
+            padding=(9, 6),
+        )
+        style.map(
+            "CardToolbar.TButton",
+            background=[("active", "#F4F6F8")],
+            foreground=[("active", TEXT)],
+        )
+        style.configure(
+            "SoftLink.TButton",
+            background=PRIMARY_SOFT,
+            foreground=PRIMARY_HOVER,
+            bordercolor=PRIMARY_SOFT,
+            font=(UI_FONT, 9, "bold"),
+            padding=(8, 5),
+        )
+        style.map("SoftLink.TButton", background=[("active", "#DDF1E6")])
         style.configure(
             "Danger.TButton",
             background="#FBEAEC",
@@ -1740,7 +1822,7 @@ class LocalizerWindow:
             bordercolor="#E8ECE9",
             lightcolor=PRIMARY,
             darkcolor=PRIMARY,
-            thickness=5,
+            thickness=7,
         )
         style.configure(
             "Task.Treeview",
@@ -1748,7 +1830,7 @@ class LocalizerWindow:
             fieldbackground=SURFACE,
             foreground=TEXT,
             bordercolor=BORDER,
-            rowheight=31,
+            rowheight=38,
             font=(UI_FONT, 9),
         )
         style.configure(
@@ -1757,9 +1839,13 @@ class LocalizerWindow:
             foreground=MUTED,
             bordercolor=BORDER,
             font=(UI_FONT, 9, "bold"),
-            padding=(7, 6),
+            padding=(8, 8),
         )
-        style.map("Task.Treeview", background=[("selected", "#E2F4E9")])
+        style.map(
+            "Task.Treeview",
+            background=[("selected", PRIMARY_SOFT)],
+            foreground=[("selected", TEXT)],
+        )
 
     def _build_layout(self) -> None:
         outer = ttk.Frame(self.root, style="App.TFrame")
@@ -1769,67 +1855,115 @@ class LocalizerWindow:
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(7, weight=1)
 
-        hero = tk.Frame(outer, background=HEADER, padx=18, pady=12)
+        header_shell = tk.Frame(outer, background=HEADER)
+        header_shell.grid(row=0, column=0, sticky="ew")
+        header_shell.columnconfigure(0, weight=1)
+
+        hero = tk.Frame(header_shell, background=HEADER, padx=24, pady=13)
         hero.grid(row=0, column=0, sticky="ew")
-        hero.columnconfigure(5, weight=1)
+        hero.columnconfigure(1, weight=1)
         brand = tk.Frame(hero, background=HEADER)
-        brand.grid(row=0, column=0, sticky="w", padx=(0, 22))
+        brand.grid(row=0, column=0, sticky="w")
+        if self._application_icon is not None:
+            icon_scale = max(1, self._application_icon.width() // 38)
+            self._header_icon = self._application_icon.subsample(icon_scale, icon_scale)
+            tk.Label(
+                brand,
+                image=self._header_icon,
+                background=HEADER,
+                borderwidth=0,
+            ).pack(side="left")
+        else:
+            self._header_icon = None
+            tk.Label(
+                brand,
+                text="L",
+                width=2,
+                background=PRIMARY,
+                foreground="#FFFFFF",
+                font=(UI_FONT, 13, "bold"),
+            ).pack(side="left")
+        brand_copy = tk.Frame(brand, background=HEADER)
+        brand_copy.pack(side="left", padx=(10, 0))
         tk.Label(
-            brand,
-            text="L",
-            width=2,
-            background=PRIMARY,
-            foreground="#FFFFFF",
-            font=(UI_FONT, 13, "bold"),
-        ).pack(side="left")
-        tk.Label(
-            brand,
+            brand_copy,
             text="Localize Studio",
             background=HEADER,
             foreground=TEXT,
             font=(UI_FONT, 12, "bold"),
-        ).pack(side="left", padx=(9, 0))
-        self.paste_button = ttk.Button(
-            hero, text="＋  粘贴链接", style="Primary.TButton", command=self._paste
+        ).pack(anchor="w")
+        tk.Label(
+            brand_copy,
+            text="Video Localizer · 本地 AI 字幕工具",
+            background=HEADER,
+            foreground=MUTED,
+            font=(UI_FONT, 8),
+        ).pack(anchor="w", pady=(1, 0))
+
+        secondary_tools = tk.Frame(hero, background=HEADER)
+        secondary_tools.grid(row=0, column=2, sticky="e")
+        self.settings_button = ttk.Button(
+            secondary_tools,
+            text="处理设置",
+            style="Toolbar.TButton",
+            command=self._toggle_settings,
         )
-        self.paste_button.grid(row=0, column=1, padx=(0, 8))
-        self.direct_media_button = ttk.Button(
-            hero,
-            text="媒体直链",
-            style="Secondary.TButton",
-            command=self._open_direct_media_dialog,
-        )
-        self.direct_media_button.grid(row=0, column=2, padx=(0, 8))
-        self.browser_capture_button = ttk.Button(
-            hero,
-            text="浏览器抓取",
-            style="Secondary.TButton",
-            command=self._open_browser_capture_dialog,
-        )
-        self.browser_capture_button.grid(row=0, column=3, padx=(0, 8))
-        self.local_file_button = ttk.Button(
-            hero,
-            text="选择本地视频",
-            style="Secondary.TButton",
-            command=self._choose_local_file,
-        )
-        self.local_file_button.grid(row=0, column=4)
+        self.settings_button.pack(side="left")
         ttk.Button(
-            hero,
+            secondary_tools,
+            text="字幕审核",
+            style="Toolbar.TButton",
+            command=self._open_subtitle_review,
+        ).pack(side="left", padx=(2, 0))
+        ttk.Button(
+            secondary_tools,
+            text="输出文件夹",
+            style="Toolbar.TButton",
+            command=self._open_output,
+        ).pack(side="left", padx=(2, 0))
+        ttk.Button(
+            secondary_tools,
+            text="导出诊断",
+            style="Toolbar.TButton",
+            command=self._export_support_bundle,
+        ).pack(side="left", padx=(2, 0))
+        ttk.Button(
+            secondary_tools,
             text="帮助中心",
             style="Toolbar.TButton",
             command=self._open_help_center,
-        ).grid(row=0, column=5, padx=(8, 0), sticky="w")
-        secondary_tools = tk.Frame(hero, background=HEADER)
-        secondary_tools.grid(
-            row=1,
-            column=0,
-            columnspan=6,
-            sticky="e",
-            pady=(7, 0),
+        ).pack(side="left", padx=(2, 0))
+
+        sourcebar = tk.Frame(header_shell, background=HEADER, padx=24, pady=10)
+        sourcebar.grid(row=1, column=0, sticky="ew")
+        sourcebar.columnconfigure(5, weight=1)
+        self.paste_button = ttk.Button(
+            sourcebar, text="＋  粘贴链接", style="Primary.TButton", command=self._paste
         )
+        self.paste_button.grid(row=0, column=0, padx=(0, 8))
+        self.direct_media_button = ttk.Button(
+            sourcebar,
+            text="媒体直链",
+            style="Source.TButton",
+            command=self._open_direct_media_dialog,
+        )
+        self.direct_media_button.grid(row=0, column=1, padx=(0, 8))
+        self.browser_capture_button = ttk.Button(
+            sourcebar,
+            text="从浏览器获取",
+            style="Source.TButton",
+            command=self._open_browser_capture_dialog,
+        )
+        self.browser_capture_button.grid(row=0, column=2, padx=(0, 8))
+        self.local_file_button = ttk.Button(
+            sourcebar,
+            text="选择本地视频",
+            style="Source.TButton",
+            command=self._choose_local_file,
+        )
+        self.local_file_button.grid(row=0, column=3)
         update_tools = tk.Frame(secondary_tools, background=HEADER)
-        update_tools.pack(side="left")
+        update_tools.pack(side="right", padx=(10, 0))
         self.update_channel_combo = ttk.Combobox(
             update_tools,
             textvariable=self.update_channel_label,
@@ -1846,79 +1980,91 @@ class LocalizerWindow:
             command=self._begin_update_check,
         )
         self.update_button.pack(side="left")
-        ttk.Button(
-            secondary_tools,
-            text="字幕审核",
-            style="Toolbar.TButton",
-            command=self._open_subtitle_review,
-        ).pack(side="left", padx=(4, 0))
-        self.settings_button = ttk.Button(
-            secondary_tools,
-            text="处理设置",
-            style="Toolbar.TButton",
-            command=self._toggle_settings,
-        )
-        self.settings_button.pack(side="left", padx=(8, 0))
-        ttk.Button(
-            secondary_tools,
-            text="输出文件夹",
-            style="Toolbar.TButton",
-            command=self._open_output,
-        ).pack(side="left", padx=(4, 0))
-        ttk.Button(
-            secondary_tools,
-            text="导出诊断包",
-            style="Toolbar.TButton",
-            command=self._export_support_bundle,
-        ).pack(side="left", padx=(4, 0))
-        ttk.Separator(outer, orient="horizontal").grid(row=0, column=0, sticky="sew")
+        ttk.Label(
+            sourcebar,
+            textvariable=self.readiness_hint,
+            style="Toolbar.TLabel",
+        ).grid(row=0, column=5, sticky="e", padx=(18, 0))
+        ttk.Separator(header_shell, orient="horizontal").grid(row=2, column=0, sticky="ew")
 
         self.empty_state = ttk.Frame(outer, style="App.TFrame")
         self.empty_state.grid(row=1, column=0, rowspan=7, sticky="nsew")
-        empty_content = ttk.Frame(self.empty_state, style="App.TFrame")
+        empty_content = ttk.Frame(
+            self.empty_state,
+            style="Card.TFrame",
+            padding=(54, 40, 54, 38),
+        )
         empty_content.pack(expand=True)
-        tk.Label(
+        ttk.Label(
             empty_content,
-            text="↓",
-            width=3,
-            background="#E2F4E9",
-            foreground=PRIMARY,
-            font=(UI_FONT, 24, "bold"),
-        ).pack(pady=(0, 16))
-        tk.Label(
+            text="VIDEO LOCALIZER",
+            style="Eyebrow.TLabel",
+        ).pack(pady=(0, 9))
+        ttk.Label(
             empty_content,
-            text="添加一个或多个视频链接",
-            background=APP_BACKGROUND,
-            foreground=TEXT,
-            font=(UI_FONT, 16, "bold"),
+            text="从一个视频开始",
+            style="HeroTitle.TLabel",
         ).pack()
         ttk.Label(
             empty_content,
-            text="支持 YouTube、公开 HTML5 播放页、MP4/M3U8/MPD 和无扩展名 CDN 直链",
-            style="AppMuted.TLabel",
-        ).pack(pady=(7, 3))
-        ttk.Label(
-            empty_content,
-            text="最高画质下载 · 本地语音识别 · 离线翻译 · 字幕压制",
-            style="AppMuted.TLabel",
-        ).pack()
-        ttk.Label(
-            empty_content,
-            textvariable=self.readiness_hint,
-            style="AppMuted.TLabel",
-        ).pack(pady=(7, 0))
-        ttk.Button(
-            empty_content,
-            text="打开使用教程与环境检查",
-            style="Secondary.TButton",
-            command=self._open_help_center,
-        ).pack(pady=(18, 0))
+            text="粘贴授权链接或选择本地视频，程序会先分析画质、帧率和大小，再开始处理。",
+            style="HeroMuted.TLabel",
+        ).pack(pady=(9, 0))
 
-        self.input_frame = ttk.Frame(outer, style="Card.TFrame", padding=(22, 16, 22, 18))
+        empty_actions = ttk.Frame(empty_content, style="CardBody.TFrame")
+        empty_actions.pack(pady=(22, 20))
+        ttk.Button(
+            empty_actions,
+            text="＋  粘贴视频链接",
+            style="Primary.TButton",
+            command=self._paste,
+        ).pack(side="left")
+        ttk.Button(
+            empty_actions,
+            text="选择本地视频",
+            style="Secondary.TButton",
+            command=self._choose_local_file,
+        ).pack(side="left", padx=(10, 0))
+
+        feature_row = ttk.Frame(empty_content, style="CardBody.TFrame")
+        feature_row.pack()
+        for index, feature in enumerate(("最高画质", "本地 Whisper", "离线翻译", "断点续跑")):
+            tk.Label(
+                feature_row,
+                text=f"✓  {feature}",
+                background="#F4F6F8",
+                foreground="#4B5563",
+                font=(UI_FONT, 9),
+                padx=11,
+                pady=6,
+            ).grid(row=0, column=index, padx=(0 if index == 0 else 7, 0))
+
+        readiness = ttk.Frame(empty_content, style="Soft.TFrame", padding=(16, 9))
+        readiness.pack(fill="x", pady=(22, 0))
+        ttk.Label(
+            readiness,
+            textvariable=self.readiness_hint,
+            style="Soft.TLabel",
+        ).pack(side="left")
+        ttk.Button(
+            readiness,
+            text="查看环境与教程  →",
+            style="SoftLink.TButton",
+            command=self._open_help_center,
+        ).pack(side="right", padx=(22, 0))
+
+        self.input_frame = ttk.Frame(outer, style="Card.TFrame", padding=(24, 18, 24, 20))
         self.input_frame.grid(row=1, column=0, sticky="ew", padx=24, pady=(20, 0))
         self.input_frame.columnconfigure(0, weight=1)
-        ttk.Label(self.input_frame, text="准备处理", style="SectionTitle.TLabel").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10)
+        ttk.Label(self.input_frame, text="任务队列", style="SectionTitle.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 3)
+        )
+        ttk.Label(
+            self.input_frame,
+            text="链接分析在后台进行，确认媒体信息后再开始处理",
+            style="Muted.TLabel",
+        ).grid(
+            row=0, column=1, sticky="e", pady=(0, 3)
         )
         self.input_entry = ttk.Entry(
             self.input_frame,
@@ -1936,8 +2082,8 @@ class LocalizerWindow:
         ttk.Label(self.input_frame, textvariable=self.workflow_summary, style="Muted.TLabel").grid(
             row=2, column=0, columnspan=2, sticky="w", pady=(9, 0)
         )
-        task_toolbar = ttk.Frame(self.input_frame, style="Card.TFrame")
-        task_toolbar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(12, 7))
+        task_toolbar = ttk.Frame(self.input_frame, style="CardBody.TFrame")
+        task_toolbar.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(14, 7))
         task_toolbar.columnconfigure(0, weight=1)
         ttk.Label(task_toolbar, text="视频任务", style="Field.TLabel").grid(
             row=0, column=0, sticky="w"
@@ -1945,7 +2091,7 @@ class LocalizerWindow:
         self.remove_selected_button = ttk.Button(
             task_toolbar,
             text="移除所选",
-            style="Toolbar.TButton",
+            style="CardToolbar.TButton",
             command=self._remove_selected_task,
             state="disabled",
         )
@@ -1953,7 +2099,7 @@ class LocalizerWindow:
         self.pause_selected_button = ttk.Button(
             task_toolbar,
             text="暂停所选",
-            style="Toolbar.TButton",
+            style="CardToolbar.TButton",
             command=self._pause_selected_task,
             state="disabled",
         )
@@ -1961,7 +2107,7 @@ class LocalizerWindow:
         self.retry_selected_button = ttk.Button(
             task_toolbar,
             text="继续所选",
-            style="Toolbar.TButton",
+            style="CardToolbar.TButton",
             command=self._retry_selected_task,
             state="disabled",
         )
@@ -1969,7 +2115,7 @@ class LocalizerWindow:
         self.open_rendered_button = ttk.Button(
             task_toolbar,
             text="打开成片",
-            style="Toolbar.TButton",
+            style="CardToolbar.TButton",
             command=self._open_selected_rendered,
             state="disabled",
         )
@@ -1977,20 +2123,20 @@ class LocalizerWindow:
         self.open_task_button = ttk.Button(
             task_toolbar,
             text="打开项目",
-            style="Toolbar.TButton",
+            style="CardToolbar.TButton",
             command=self._open_selected_task_project,
             state="disabled",
         )
         self.open_task_button.grid(row=0, column=5, padx=(4, 0))
 
-        task_list = ttk.Frame(self.input_frame, style="Card.TFrame")
+        task_list = ttk.Frame(self.input_frame, style="CardBody.TFrame")
         task_list.grid(row=4, column=0, columnspan=2, sticky="ew")
         task_list.columnconfigure(0, weight=1)
         self.task_tree = ttk.Treeview(
             task_list,
             columns=("video", "media", "status", "progress"),
             show="headings",
-            height=4,
+            height=5,
             selectmode="browse",
             style="Task.Treeview",
         )
@@ -2018,17 +2164,25 @@ class LocalizerWindow:
         options.grid(row=2, column=0, sticky="ew", padx=24, pady=(12, 0))
         for column in range(4):
             options.columnconfigure(column, weight=1, uniform="settings")
+        ttk.Label(options, text="处理设置", style="SectionTitle.TLabel").grid(
+            row=0, column=0, sticky="w", pady=(0, 3)
+        )
+        ttk.Label(
+            options,
+            text="只显示会影响最终结果的选项；性能方案由程序按硬件自动选择",
+            style="Muted.TLabel",
+        ).grid(row=0, column=1, columnspan=3, sticky="e", pady=(0, 3))
         ttk.Label(options, text="翻译方向", style="Field.TLabel").grid(
-            row=0, column=0, sticky="w", pady=(0, 5), padx=(0, 6)
+            row=1, column=0, sticky="w", pady=(11, 5), padx=(0, 6)
         )
         ttk.Label(options, text="字幕 / 下载模式", style="Field.TLabel").grid(
-            row=0, column=1, sticky="w", pady=(0, 5), padx=6
+            row=1, column=1, sticky="w", pady=(11, 5), padx=6
         )
         ttk.Label(options, text="翻译方式", style="Field.TLabel").grid(
-            row=0, column=2, sticky="w", pady=(0, 5), padx=6
+            row=1, column=2, sticky="w", pady=(11, 5), padx=6
         )
         ttk.Label(options, text="字幕字号", style="Field.TLabel").grid(
-            row=0, column=3, sticky="w", pady=(0, 5), padx=(6, 0)
+            row=1, column=3, sticky="w", pady=(11, 5), padx=(6, 0)
         )
         self.direction_combo = ttk.Combobox(
             options,
@@ -2037,7 +2191,7 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.direction_combo.grid(row=1, column=0, sticky="ew", padx=(0, 6))
+        self.direction_combo.grid(row=2, column=0, sticky="ew", padx=(0, 6))
         self.direction_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
@@ -2048,7 +2202,7 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.subtitle_combo.grid(row=1, column=1, sticky="ew", padx=6)
+        self.subtitle_combo.grid(row=2, column=1, sticky="ew", padx=6)
         self.subtitle_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
@@ -2066,7 +2220,7 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.font_size_combo.grid(row=1, column=3, sticky="ew", padx=(6, 0))
+        self.font_size_combo.grid(row=2, column=3, sticky="ew", padx=(6, 0))
         self.font_size_combo.bind("<<ComboboxSelected>>", self._select_subtitle_font_size)
         self.translation_combo = ttk.Combobox(
             options,
@@ -2075,12 +2229,12 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.translation_combo.grid(row=1, column=2, sticky="ew", padx=6)
+        self.translation_combo.grid(row=2, column=2, sticky="ew", padx=6)
         self.translation_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_translation_fields()
         )
         ttk.Label(options, textvariable=self.mode_hint, style="Muted.TLabel").grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(9, 0)
+            row=3, column=0, columnspan=3, sticky="w", pady=(9, 0)
         )
         self.preview_button = ttk.Button(
             options,
@@ -2088,25 +2242,25 @@ class LocalizerWindow:
             style="Secondary.TButton",
             command=self._show_subtitle_preview,
         )
-        self.preview_button.grid(row=2, column=3, sticky="e", pady=(8, 0))
+        self.preview_button.grid(row=3, column=3, sticky="e", pady=(8, 0))
 
         ttk.Label(options, text="智能加速", style="Field.TLabel").grid(
-            row=3, column=0, sticky="w", pady=(12, 5), padx=(0, 6)
+            row=4, column=0, sticky="w", pady=(12, 5), padx=(0, 6)
         )
         ttk.Label(options, text="输出画质", style="Field.TLabel").grid(
-            row=3, column=1, sticky="w", pady=(12, 5), padx=6
+            row=4, column=1, sticky="w", pady=(12, 5), padx=6
         )
         ttk.Label(options, text="输出帧率", style="Field.TLabel").grid(
-            row=3, column=2, sticky="w", pady=(12, 5), padx=6
+            row=4, column=2, sticky="w", pady=(12, 5), padx=6
         )
         ttk.Label(options, text="输出分辨率", style="Field.TLabel").grid(
-            row=3, column=3, sticky="w", pady=(12, 5), padx=(6, 0)
+            row=4, column=3, sticky="w", pady=(12, 5), padx=(6, 0)
         )
         ttk.Label(
             options,
             text="自动识别显卡；不可用时自动改用 CPU",
             style="Muted.TLabel",
-        ).grid(row=4, column=0, sticky="w", padx=(0, 6))
+        ).grid(row=5, column=0, sticky="w", padx=(0, 6))
         self.output_quality_combo = ttk.Combobox(
             options,
             textvariable=self.output_quality_label,
@@ -2114,7 +2268,7 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.output_quality_combo.grid(row=4, column=1, sticky="ew", padx=6)
+        self.output_quality_combo.grid(row=5, column=1, sticky="ew", padx=6)
         self.output_quality_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
         )
@@ -2125,7 +2279,7 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.output_fps_combo.grid(row=4, column=2, sticky="ew", padx=6)
+        self.output_fps_combo.grid(row=5, column=2, sticky="ew", padx=6)
         self.output_fps_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
         )
@@ -2136,30 +2290,30 @@ class LocalizerWindow:
             state="readonly",
             style="Modern.TCombobox",
         )
-        self.output_height_combo.grid(row=4, column=3, sticky="ew", padx=(6, 0))
+        self.output_height_combo.grid(row=5, column=3, sticky="ew", padx=(6, 0))
         self.output_height_combo.bind(
             "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
         )
         ttk.Label(options, textvariable=self.output_hint, style="Muted.TLabel").grid(
-            row=5, column=0, columnspan=4, sticky="w", pady=(7, 0)
+            row=6, column=0, columnspan=4, sticky="w", pady=(7, 0)
         )
         ttk.Label(options, text="项目输出文件夹", style="Field.TLabel").grid(
-            row=6, column=0, sticky="w", pady=(14, 5), padx=(0, 6)
+            row=7, column=0, sticky="w", pady=(14, 5), padx=(0, 6)
         )
         self.output_directory_entry = ttk.Entry(
             options,
             textvariable=self.output_directory,
             style="Modern.TEntry",
         )
-        self.output_directory_entry.grid(row=7, column=0, columnspan=3, sticky="ew", padx=(0, 6))
+        self.output_directory_entry.grid(row=8, column=0, columnspan=3, sticky="ew", padx=(0, 6))
         ttk.Button(
             options,
             text="选择位置",
             style="Secondary.TButton",
             command=self._choose_output_directory,
-        ).grid(row=7, column=3, sticky="ew", padx=(6, 0))
+        ).grid(row=8, column=3, sticky="ew", padx=(6, 0))
         ttk.Label(options, textvariable=self.output_directory_hint, style="Muted.TLabel").grid(
-            row=8, column=0, columnspan=4, sticky="w", pady=(7, 0)
+            row=9, column=0, columnspan=4, sticky="w", pady=(7, 0)
         )
 
         self.api_frame = ttk.Frame(
@@ -2207,7 +2361,11 @@ class LocalizerWindow:
             style="Card.TCheckbutton",
         ).grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        actions = self.actions_frame = ttk.Frame(outer, style="App.TFrame")
+        actions = self.actions_frame = ttk.Frame(
+            outer,
+            style="Card.TFrame",
+            padding=(18, 13),
+        )
         actions.grid(row=5, column=0, sticky="ew", padx=24, pady=(12, 10))
         self.start_button = ttk.Button(
             actions,
@@ -2257,7 +2415,7 @@ class LocalizerWindow:
         self.log_button = ttk.Button(
             status_card,
             text="显示运行记录",
-            style="Toolbar.TButton",
+            style="CardToolbar.TButton",
             command=self._toggle_log,
         )
         self.log_button.grid(row=0, column=2, sticky="e")
@@ -2316,8 +2474,10 @@ class LocalizerWindow:
             for frame in task_frames:
                 frame.grid()
             if self.settings_visible:
+                self.input_frame.grid_remove()
                 self.settings_panel.grid()
             else:
+                self.input_frame.grid()
                 self.settings_panel.grid_remove()
             if self.log_visible:
                 self.log_card.grid()
@@ -2394,6 +2554,7 @@ class LocalizerWindow:
         self._project_paths_by_queue_index = {}
         for item in self.task_tree.get_children():
             self.task_tree.delete(item)
+        self.task_tree.configure(height=task_tree_visible_rows(len(sources)))
         for index, source in enumerate(sources, start=1):
             preview = previous_previews.get(source)
             error = previous_errors.get(source)
