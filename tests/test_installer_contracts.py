@@ -68,6 +68,7 @@ def test_standard_installer_does_not_silently_create_an_unusable_subtitle_instal
     assert "function InstalledWhisperModelExists" in script
     assert "OptionalModelsPage.Values[0] := True" in script
     assert "not WizardSilent" in script
+    assert "if not WizardSilent and" in script
     assert "你没有选择 Whisper 语音识别模型" in script
     assert "确定只安装基础版吗" in script
     assert "MB_YESNO, IDNO" in script
