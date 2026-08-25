@@ -62,6 +62,17 @@ def test_standard_installer_downloads_only_selected_hash_verified_model_packs() 
     assert "$Manifest.application_version" in verifier
 
 
+def test_standard_installer_does_not_silently_create_an_unusable_subtitle_install() -> None:
+    script = (INSTALLER / "offline-installer.iss").read_text(encoding="utf-8")
+
+    assert "function InstalledWhisperModelExists" in script
+    assert "OptionalModelsPage.Values[0] := True" in script
+    assert "not WizardSilent" in script
+    assert "你没有选择 Whisper 语音识别模型" in script
+    assert "确定只安装基础版吗" in script
+    assert "MB_YESNO, IDNO" in script
+
+
 def test_standard_uses_one_pinned_compact_ffmpeg_runtime() -> None:
     installer = (INSTALLER / "offline-installer.iss").read_text(encoding="utf-8")
     builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")

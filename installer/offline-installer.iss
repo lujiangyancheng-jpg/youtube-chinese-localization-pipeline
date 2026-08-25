@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.7.0.11"
+  #define AppVersion "0.7.0.12"
 #endif
 #ifndef ModelPackVersion
   #define ModelPackVersion "0.7.0"
@@ -139,6 +139,14 @@ var
   InstallWhisperSmall: Boolean;
   InstallWhisperMedium: Boolean;
   InstallLocalAI: Boolean;
+  ModelDefaultsInitialized: Boolean;
+
+function InstalledWhisperModelExists(const InstallDir: String): Boolean;
+begin
+  Result :=
+    FileExists(AddBackslash(InstallDir) + 'models\faster-whisper-small\model.bin') or
+    FileExists(AddBackslash(InstallDir) + 'models\faster-whisper-medium\model.bin');
+end;
 
 procedure InitializeWizard;
 begin
@@ -150,10 +158,22 @@ begin
   OptionalModelsPage.Add('Whisper Small（推荐多数电脑；字幕识别）');
   OptionalModelsPage.Add('Whisper Medium（更高识别质量；占用更多磁盘和内存/显存）');
   OptionalModelsPage.Add('本地 AI 段落翻译：Qwen3:4b + Ollama（多语种与更自然翻译；体积较大）');
+  ModelDefaultsInitialized := False;
 
   DownloadPage := CreateDownloadPage('下载已选模型',
     '正在下载并校验所选的本地模型。请保持网络连接；你可在此步骤取消并稍后重新运行安装器。', nil);
   DownloadPage.ShowBaseNameInsteadOfUrl := True;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = OptionalModelsPage.ID) and not ModelDefaultsInitialized then begin
+    { A fresh subtitle installation should not silently become a base-only installation.
+      Existing Small/Medium installations remain untouched during application upgrades. }
+    if not InstalledWhisperModelExists(WizardDirValue) and not WizardSilent then
+      OptionalModelsPage.Values[0] := True;
+    ModelDefaultsInitialized := True;
+  end;
 end;
 
 function AnyOptionalModelSelected: Boolean;
@@ -215,6 +235,14 @@ begin
     InstallWhisperSmall := OptionalModelsPage.Values[0];
     InstallWhisperMedium := OptionalModelsPage.Values[1];
     InstallLocalAI := OptionalModelsPage.Values[2];
+    if not InstallWhisperSmall and not InstallWhisperMedium and
+       not InstalledWhisperModelExists(WizardDirValue) then begin
+      Result := SuppressibleMsgBox(
+        '你没有选择 Whisper 语音识别模型。安装完成后仍可下载无字幕视频，' +
+        '但不能识别、翻译或压制字幕。' + #13#10 + #13#10 +
+        '确定只安装基础版吗？',
+        mbConfirmation, MB_YESNO, IDNO) = IDYES;
+    end;
   end else if CurPageID = wpReady then
     Result := DownloadSelectedModelPacks;
 end;
