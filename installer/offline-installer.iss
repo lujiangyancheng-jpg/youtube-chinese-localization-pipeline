@@ -235,7 +235,8 @@ begin
     InstallWhisperSmall := OptionalModelsPage.Values[0];
     InstallWhisperMedium := OptionalModelsPage.Values[1];
     InstallLocalAI := OptionalModelsPage.Values[2];
-    if not InstallWhisperSmall and not InstallWhisperMedium and
+    if not WizardSilent and
+       not InstallWhisperSmall and not InstallWhisperMedium and
        not InstalledWhisperModelExists(WizardDirValue) then begin
       Result := SuppressibleMsgBox(
         '你没有选择 Whisper 语音识别模型。安装完成后仍可下载无字幕视频，' +
