@@ -120,3 +120,21 @@ def test_packaged_base_blocks_subtitle_jobs_without_a_whisper_model(tmp_path, mo
 
     assert not plan.ready
     assert any("No Whisper speech-recognition model" in blocker for blocker in plan.blockers)
+
+
+def test_preflight_blocks_selected_super_resolution_without_optional_pack(
+    tmp_path, monkeypatch
+) -> None:
+    from youtube_localizer import preflight
+
+    monkeypatch.setattr(preflight, "detect_system_resources", lambda: SystemResources(8, 16 * 1024))
+    monkeypatch.setattr(preflight, "query_nvidia_gpus", lambda: [])
+    monkeypatch.setattr(preflight, "super_resolution_runtime", lambda: None)
+    config = AppConfig.model_validate(
+        {"subtitle_mode": "download_only", "enhancement": {"mode": "general"}}
+    )
+
+    plan = build_job_preflight(_metadata(tmp_path), config)
+
+    assert not plan.ready
+    assert any("enhancement pack" in blocker for blocker in plan.blockers)

@@ -17,7 +17,12 @@ def test_native_launcher_source_has_a_noninteractive_verification_mode() -> None
 
 def test_installers_and_launcher_use_the_branded_application_icon() -> None:
     launcher_builder = (INSTALLER / "build_launcher.ps1").read_text(encoding="utf-8")
-    for filename in ("offline-installer.iss", "whisper-model-pack.iss", "local-ai-model-pack.iss"):
+    for filename in (
+        "offline-installer.iss",
+        "whisper-model-pack.iss",
+        "local-ai-model-pack.iss",
+        "super-resolution-pack.iss",
+    ):
         script = (INSTALLER / filename).read_text(encoding="utf-8")
         assert "SetupIconFile=" in script
         assert "app-icon.ico" in script
@@ -51,10 +56,12 @@ def test_standard_installer_downloads_only_selected_hash_verified_model_packs() 
     assert "ReleaseAssetBaseUrl" in script
     assert "WhisperSmallSetupSha256" in script
     assert "LocalAIBin3Sha256" in script
+    assert "SuperResolutionSetupSha256" in script
     assert "CurStep = ssPostInstall" in script
     assert "InstallModelPack" in script
     assert "Get-RequiredReleaseAssetHash" in builder
     assert "Local-AI-Model-Setup" in builder
+    assert "AI-Super-Resolution-Setup" in builder
     assert "ModelPackVersion" in builder
     assert "ModelPackVersion" in script
     assert "application_version" in builder
@@ -106,7 +113,11 @@ def test_desktop_install_verification_isolated_from_the_users_saved_queue() -> N
 
 
 def test_model_pack_refuses_missing_or_mismatched_base_installations() -> None:
-    for filename in ("whisper-model-pack.iss", "local-ai-model-pack.iss"):
+    for filename in (
+        "whisper-model-pack.iss",
+        "local-ai-model-pack.iss",
+        "super-resolution-pack.iss",
+    ):
         script = (INSTALLER / filename).read_text(encoding="utf-8")
 
         assert "function BaseInstallationError" in script
@@ -131,9 +142,25 @@ def test_release_signing_is_optional_but_requires_a_real_certificate() -> None:
     base_builder = (INSTALLER / "build_offline_installer.ps1").read_text(encoding="utf-8")
     model_builder = (INSTALLER / "build_whisper_model_pack.ps1").read_text(encoding="utf-8")
     local_ai_builder = (INSTALLER / "build_local_ai_model_pack.ps1").read_text(encoding="utf-8")
+    super_resolution_builder = (INSTALLER / "build_super_resolution_pack.ps1").read_text(
+        encoding="utf-8"
+    )
 
     assert "Cert:\\CurrentUser\\My" in signer
     assert "Get-AuthenticodeSignature" in signer
     assert "CertificateThumbprint" in base_builder
     assert "CertificateThumbprint" in model_builder
     assert "CertificateThumbprint" in local_ai_builder
+    assert "CertificateThumbprint" in super_resolution_builder
+
+
+def test_super_resolution_pack_is_pinned_and_probes_safe_device_fallbacks() -> None:
+    builder = (INSTALLER / "build_super_resolution_pack.ps1").read_text(encoding="utf-8")
+    script = (INSTALLER / "super-resolution-pack.iss").read_text(encoding="utf-8")
+
+    assert 'RuntimeVersion = "20250915"' in builder
+    assert "7425BE94B94E4C8F37A1E433AC0E0100C43790E2C37418F4B65D8235ADFBDC87" in builder
+    assert 'foreach ($GpuId in @(0, 1, -1))' in builder
+    assert "models-upconv_7_photo" in builder
+    assert "models-cunet" in builder
+    assert "super-resolution-pack.json" in script

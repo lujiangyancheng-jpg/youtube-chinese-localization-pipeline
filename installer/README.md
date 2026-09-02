@@ -10,6 +10,11 @@ sets the packaged environment and starts `pythonw.exe`, so the normal Start menu
 open a command-prompt window. `Localize Studio.exe --verify` performs a non-interactive launcher
 integrity check for release testing.
 
+Standard's component page can also install the separate **AI Super Resolution** pack. It contains
+the pinned `waifu2x-ncnn-vulkan` runtime plus photo and CUNet models, and does not increase the base
+installer when unchecked. The application probes Vulkan devices and processes bounded frame
+batches so one incompatible GPU does not make the whole video job unusable.
+
 - **Standard** is a single-file installer with one pinned compact FFmpeg build. It retains
   libass subtitle rendering plus NVIDIA NVENC, Intel QSV, AMD AMF, and CPU encoding. It supports
   fast offline sentence translation once a user-selected Whisper model pack is installed.
@@ -51,13 +56,20 @@ powershell -ExecutionPolicy Bypass -File .\installer\build_whisper_model_pack.ps
 powershell -ExecutionPolicy Bypass -File .\installer\build_whisper_model_pack.ps1 -Model Medium
 ```
 
+Build the compatible optional super-resolution pack:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installer\build_super_resolution_pack.ps1 -Version 0.7.0
+```
+
 The base builder pins Python 3.12.10, every Python runtime dependency, compact FFmpeg 8.0 for
 Standard, Ollama v0.32.5 for Complete, and the Noto Sans CJK SC font source revision. The
 model-pack builder pins each Whisper revision and validates its `model.bin` hash before it emits
 the selected model installer. Standard is one `.exe`; keep every Complete/model-pack `.exe` and
 its adjacent `.bin` files together when copying or installing it.
 
-Each build writes `SHA256SUMS-<version>-<tier>.txt`; `SHA256SUMS.txt` is a combined list for
+Each build writes `SHA256SUMS-<version>-<tier>.txt`; the super-resolution builder writes
+`SHA256SUMS-<version>-super-resolution.txt`. `SHA256SUMS.txt` is a combined list for
 all package tiers present in `dist`.
 
 For a signed public release, pass a real certificate thumbprint from `Cert:\CurrentUser\My` to

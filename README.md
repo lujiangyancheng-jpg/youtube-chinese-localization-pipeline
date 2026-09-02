@@ -13,7 +13,7 @@
 [![Windows quality gate](https://github.com/lujiangyancheng-jpg/video-localizer/actions/workflows/ci.yml/badge.svg)](https://github.com/lujiangyancheng-jpg/video-localizer/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/lujiangyancheng-jpg/video-localizer)](LICENSE)
 
-[**下载 v0.7.0.12 Standard 正式版**](https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v0.7.0.12/YouTube-Chinese-Localizer-0.7.0.12-Standard-Offline-Setup.exe)
+[**下载 v0.7.0.13 Standard 正式版**](https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v0.7.0.13/YouTube-Chinese-Localizer-0.7.0.13-Standard-Offline-Setup.exe)
 · [使用说明](docs/USER_GUIDE.zh-CN.md)
 · [参加测试](docs/TESTING_GUIDE.zh-CN.md)
 · [讨论与求助](https://github.com/lujiangyancheng-jpg/video-localizer/discussions)
@@ -30,16 +30,17 @@
 | --- | --- | --- |
 | YouTube 公开视频 | 最高质量下载、Whisper 识别、翻译、字幕质检 | 无字幕原片、SRT、ASS、硬字幕或软字幕 MP4 |
 | 获得授权的公开播放页或媒体直链 | 自动解析；动态页面可在隔离 Edge 窗口中捕获播放器公开媒体 URL | 可恢复的本地项目与最终成片 |
-| 本地视频 | 不上传视频；自动选择 NVIDIA、Intel、AMD 或 CPU 安全方案 | 保持原始画质/帧率，或按设置限制输出 |
+| 本地视频 | 不上传视频；自动选择 NVIDIA、Intel、AMD 或 CPU 安全方案 | 保持原始画质/帧率，或可选本地 AI 超分辨率 |
 
 - 中英快速离线翻译不需要 API；本地 AI 可提供更自然的段落翻译和更多语种。
 - 任务可暂停、继续和断点续跑，重启电脑后仍能恢复；API Key 不会写入设置或队列文件。
 - 按电脑的显存、内存、CPU、磁盘和编码器能力自动调度，低配置优先稳定，高配置允许安全并行。
+- 每个项目生成版权依据与署名记录；版权记录是发布前核对工具，不会替用户判断授权是否合法。
 
 ## 三步开始
 
-1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v0.7.0.12/YouTube-Chinese-Localizer-0.7.0.12-Standard-Offline-Setup.exe)。
-2. 安装时按需选择 Whisper Small、Whisper Medium 和 Local AI。全新安装默认勾选 Whisper Small；只下载勾选的模型，已有模型升级时不会重复下载。
+1. 下载单文件 [Standard Setup.exe](https://github.com/lujiangyancheng-jpg/video-localizer/releases/download/v0.7.0.13/YouTube-Chinese-Localizer-0.7.0.13-Standard-Offline-Setup.exe)。
+2. 安装时按需选择 Whisper Small、Whisper Medium、Local AI 和 AI 超分辨率。全新安装默认勾选 Whisper Small；只下载勾选的组件，已有组件升级时不会重复下载。
 3. 打开 **Localize Studio**，粘贴一个或多个链接，确认预分析信息后点击“开始本地化”。
 
 | 目标 | 推荐组件 | 是否需要 API |
@@ -49,11 +50,11 @@
 | 更自然的中英字幕 | Standard + Whisper + Local AI | 不需要 |
 | 日、韩、西、法、德、葡、俄、阿字幕 | Whisper + Local AI，或兼容 API | 两种方案任选 |
 
-**Standard v0.7.0.12 正式版约 289 MiB**，内含程序、Python、精简 FFmpeg、字幕字体、硬件编码支持和两套中英快速翻译模型。Whisper 与 Local AI 是可选包；全新安装默认选择 Whisper Small，你也可以改选 Medium 或确认只安装基础版。前三段版本相同的程序共用模型，例如 `0.7.0.12` 继续使用 `0.7.0` 模型包。
+**Standard v0.7.0.13 正式版基础包约 289 MiB**，内含程序、Python、精简 FFmpeg、字幕字体、硬件编码支持和两套中英快速翻译模型。Whisper、Local AI 与 AI 超分辨率是可选包；超分组件不塞进基础包。前三段版本相同的程序共用模型，例如 `0.7.0.13` 继续使用 `0.7.0` 组件包。
 
 当前 Windows 安装包尚未使用商业代码签名证书，因此浏览器或 SmartScreen 可能显示来源提示。请只从本仓库的 GitHub Release 下载，并核对 Release 同页提供的 SHA-256。
 
-> 从 `v0.7.0.9` 或更早版本升级：GitHub 网页、Git 和 Release 链接会自动跳转到新仓库，但旧程序的更新检查不会跟随 GitHub API 的 `301` 重定向。如果界面显示“暂时无法检查更新”，请手动安装一次 `v0.7.0.12`；之后的版本已支持仓库改名重定向。现有模型和项目会保留。
+> 从 `v0.7.0.9` 或更早版本升级：GitHub 网页、Git 和 Release 链接会自动跳转到新仓库，但旧程序的更新检查不会跟随 GitHub API 的 `301` 重定向。如果界面显示“暂时无法检查更新”，请手动安装一次当前版本；现有模型和项目会保留。
 
 ## 我们正在招募测试者
 
@@ -78,7 +79,7 @@
 
 ## 当前状态
 
-`0.7.0.12` 是公开稳定版，修复了全新安装时容易无意跳过 Whisper 模型的问题，并保留 `0.7.0.11` 的新版主界面。项目仍处于积极开发期；新安装默认使用稳定更新通道，希望提前验证新功能的测试者可在应用内切换“开发”通道。已知限制、可复现命令和开发细节见下文。
+`0.7.0.13` 是公开稳定版，加入可选本地 AI 超分辨率、跨显卡设备回退和逐项目版权记录。项目仍处于积极开发期；新安装默认使用稳定更新通道，希望提前验证新功能的测试者可在应用内切换“开发”通道。已知限制、可复现命令和开发细节见下文。
 
 ---
 
@@ -119,6 +120,7 @@ request headers, response bodies, or DRM data; any browser challenge must be com
 - Isolated Edge-assisted capture of the public media URL actually selected by a dynamic player
 - Asynchronous per-video pre-analysis and a visual task centre with independent status/progress
 - Highest-quality video plus audio direct-download mode with no subtitle processing
+- Optional bounded-batch, cross-vendor NCNN/Vulkan video super resolution for footage or animation
 - Consistent local English or Chinese transcription without YouTube caption requests
 - Local video validation and safe copying
 - VTT/SRT/ASS parsing and normalized UTF-8 SRT output
@@ -138,6 +140,7 @@ request headers, response bodies, or DRM data; any browser challenge must be com
 - Atomic state/report writes and hash-based resume decisions
 - Structured JSONL file logs plus readable console output
 - Conservative publishing metadata drafts marked for human review
+- Per-project user-supplied rights declarations and ready-to-copy attribution records
 - Offline unit tests and an FFmpeg synthetic-video integration test
 
 Advanced retiming, thumbnail overlays, and polished platform-specific metadata generation remain
@@ -653,7 +656,7 @@ explicit codec such as `h264_nvenc`, `h264_qsv`, `h264_amf`, or `libx264` for a 
 
 ## Release verification
 
-Version 0.7.0.12 defaults fresh installations to Whisper Small, preserves existing Whisper models during upgrades, and confirms intentional base-only installations. Version 0.7.0.11 redesigned the desktop UI around a focused source bar, a clearer empty-state start card, compact adaptive task rows, and a settings view that remains usable at the minimum supported window size. Version 0.7.0.10 renamed the GitHub project to Video Localizer, migrated every in-app release/model URL, and added a tester-focused project home, contribution guide, testing checklist, Discussions, and structured issue forms. Version 0.7.0.9 was the first stable 0.7.0-series release, defaulted new installations to the stable update channel, and bound browser-capture continuation to the exact requested queue. Version 0.7.0.8 prevents dynamic playback pages from bypassing browser capture and automatically resumes the requested task after a successful capture. Version 0.7.0.7 adds isolated Edge-assisted media capture for dynamic playback pages, automatic Cloudflare-page recovery, and URL-only DevTools filtering. Version 0.7.0.6 added a dedicated direct-media entry point, signed-URL diagnostics, and safer extensionless-CDN validation. Version 0.7.0.5 added bounded public-page media resolution with explicit authorization and access-control boundaries. Version 0.7.0.4 added restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
+Version 0.7.0.13 adds optional bounded-batch NCNN/Vulkan super resolution, verified device fallback, per-project rights declarations, and attribution records. Version 0.7.0.12 defaults fresh installations to Whisper Small, preserves existing Whisper models during upgrades, and confirms intentional base-only installations. Version 0.7.0.11 redesigned the desktop UI around a focused source bar, a clearer empty-state start card, compact adaptive task rows, and a settings view that remains usable at the minimum supported window size. Version 0.7.0.10 renamed the GitHub project to Video Localizer, migrated every in-app release/model URL, and added a tester-focused project home, contribution guide, testing checklist, Discussions, and structured issue forms. Version 0.7.0.9 was the first stable 0.7.0-series release, defaulted new installations to the stable update channel, and bound browser-capture continuation to the exact requested queue. Version 0.7.0.8 prevents dynamic playback pages from bypassing browser capture and automatically resumes the requested task after a successful capture. Version 0.7.0.7 adds isolated Edge-assisted media capture for dynamic playback pages, automatic Cloudflare-page recovery, and URL-only DevTools filtering. Version 0.7.0.6 added a dedicated direct-media entry point, signed-URL diagnostics, and safer extensionless-CDN validation. Version 0.7.0.5 added bounded public-page media resolution with explicit authorization and access-control boundaries. Version 0.7.0.4 added restart-safe desktop queues, per-task pause/continue and rendered-video actions, shared inspection caching, hardware-adaptive queue concurrency, transfer ETA, and completion attention. Version 0.7.0.3 added asynchronous media pre-analysis, a per-video task centre, and non-secret desktop preference persistence. Version 0.7.0.2 replaced recurring startup guidance with a persistent in-app help center, added model/environment readiness status and actionable failure summaries, and linked four-part application iterations to their compatible three-part model release. Version 0.7.0.1 added integrity-aware resume, adaptive heavy-work scheduling, stable/development update channels, and four-part application iterations that reuse compatible three-part model packs. Version 0.7.0 made Standard a compact single-file installer and added complete application branding; version 0.6.9 added selectable, hash-verified model downloads in the Standard installer; version 0.6.8 added a native Windows desktop launcher, matching-version model-pack validation,
 safe two-job GUI scheduling, and bounded retry handling for temporary public-source limits. It also preserves the
 compressed Standard distribution. It also includes local-AI/API-only translation paths from English
 or Simplified Chinese to eight additional target languages, extensionless CDN video URL validation,

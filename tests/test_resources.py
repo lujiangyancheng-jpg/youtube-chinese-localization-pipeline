@@ -12,6 +12,7 @@ from youtube_localizer.resources import (
     nvenc_compatibility_ffmpeg,
     package_tier,
     resolve_whisper_model,
+    super_resolution_runtime,
 )
 
 
@@ -96,3 +97,17 @@ def test_nvenc_compatibility_ffmpeg_uses_the_installed_bundle(tmp_path, monkeypa
     monkeypatch.setenv("YOUTUBE_LOCALIZER_HOME", str(tmp_path))
 
     assert nvenc_compatibility_ffmpeg() == executable.resolve()
+
+
+def test_super_resolution_runtime_uses_the_installed_optional_pack(tmp_path, monkeypatch) -> None:
+    runtime = tmp_path / "runtime" / "super-resolution"
+    (runtime / "models-upconv_7_photo").mkdir(parents=True)
+    (runtime / "models-cunet").mkdir()
+    (runtime / "models-upconv_7_photo" / "noise1_scale2.0x_model.param").write_text("")
+    (runtime / "models-cunet" / "noise1_scale2.0x_model.param").write_text("")
+    executable = runtime / "waifu2x-ncnn-vulkan.exe"
+    executable.write_bytes(b"exe")
+    monkeypatch.setenv("YOUTUBE_LOCALIZER_HOME", str(tmp_path))
+    monkeypatch.delenv("VIDEO_LOCALIZER_UPSCALER_PATH", raising=False)
+
+    assert super_resolution_runtime() == (executable.resolve(), runtime.resolve())

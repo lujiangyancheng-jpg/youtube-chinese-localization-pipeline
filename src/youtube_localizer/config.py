@@ -224,6 +224,48 @@ class RenderConfig(StrictModel):
     output_fps: int | None = Field(default=None, ge=1, le=240)
 
 
+class EnhancementConfig(StrictModel):
+    """Optional, fully local AI video restoration settings.
+
+    ``off`` keeps the original source pixels.  The two enabled modes use the portable
+    NCNN/Vulkan runtime so NVIDIA, AMD, and Intel GPUs can share one package.
+    ``target_height`` is taken from ``render.output_height`` when the user chose one;
+    otherwise a conservative 2x target capped at ``max_auto_height`` is used.
+    """
+
+    mode: Literal["off", "general", "animation"] = "off"
+    scale: Literal[2, 4] = 2
+    max_auto_height: int = Field(default=2160, ge=720, le=4320)
+    tile_size: int = Field(default=0, ge=0, le=1024)
+    batch_frames: int = Field(default=0, ge=0, le=120)
+
+
+class RightsConfig(StrictModel):
+    """User-supplied rights basis recorded beside every processed project.
+
+    This is an audit record, not an automated legal conclusion.  Older config files remain
+    valid through the explicit ``unspecified`` value and are marked for human review.
+    """
+
+    basis: Literal[
+        "unspecified",
+        "owned",
+        "written_permission",
+        "cc_by",
+        "cc_by_sa",
+        "cc_by_nc",
+        "public_domain",
+        "other",
+    ] = "unspecified"
+    rights_holder: str = Field(default="", max_length=300)
+    license_url: str = Field(default="", max_length=2000)
+    permission_reference: str = Field(default="", max_length=1000)
+    attribution_text: str = Field(default="", max_length=2000)
+    allow_translation: bool = True
+    allow_redistribution: bool = True
+    commercial_use: bool = False
+
+
 class PublishingConfig(StrictModel):
     generate_metadata: bool = True
     attribution_template: str = (
@@ -245,6 +287,8 @@ class AppConfig(StrictModel):
     translation: TranslationConfig = TranslationConfig()
     subtitles: SubtitleConfig = SubtitleConfig()
     render: RenderConfig = RenderConfig()
+    enhancement: EnhancementConfig = EnhancementConfig()
+    rights: RightsConfig = RightsConfig()
     publishing: PublishingConfig = PublishingConfig()
 
     @model_validator(mode="after")

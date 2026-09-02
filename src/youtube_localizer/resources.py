@@ -150,6 +150,39 @@ def ollama_executable() -> Path | None:
     return None
 
 
+def super_resolution_runtime() -> tuple[Path, Path] | None:
+    """Return the optional portable Waifu2x NCNN/Vulkan runtime and model root."""
+    candidates: list[Path] = []
+    if configured := os.getenv("VIDEO_LOCALIZER_UPSCALER_PATH"):
+        candidates.append(Path(configured).expanduser())
+    if home := os.getenv("YOUTUBE_LOCALIZER_HOME"):
+        candidates.append(
+            Path(home) / "runtime" / "super-resolution" / "waifu2x-ncnn-vulkan.exe"
+        )
+
+    source_root = Path(__file__).resolve().parents[2]
+    candidates.append(
+        source_root / "tools" / "super-resolution" / "waifu2x-ncnn-vulkan.exe"
+    )
+    candidates.extend(
+        parent / "runtime" / "super-resolution" / "waifu2x-ncnn-vulkan.exe"
+        for parent in Path(sys.executable).resolve().parents[:4]
+    )
+    if discovered := shutil.which("waifu2x-ncnn-vulkan"):
+        candidates.append(Path(discovered))
+
+    for candidate in candidates:
+        if not candidate.is_file():
+            continue
+        model_directory = candidate.parent
+        if (
+            (model_directory / "models-upconv_7_photo" / "noise1_scale2.0x_model.param").is_file()
+            and (model_directory / "models-cunet" / "noise1_scale2.0x_model.param").is_file()
+        ):
+            return candidate.resolve(), model_directory.resolve()
+    return None
+
+
 def nvenc_compatibility_ffmpeg() -> Path | None:
     """Return the bundled FFmpeg build that supports older NVIDIA NVENC APIs.
 

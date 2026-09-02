@@ -78,6 +78,26 @@ render:
   output_height: null  # keep original dimensions; use 2160, 1440, 1080, or 720 to cap output
   output_fps: null  # keep original FPS; use 60 or 30 only to cap higher-frame-rate sources
 
+enhancement:
+  # Optional local NCNN/Vulkan restoration. Requires the separate AI super-resolution pack.
+  # general is for camera footage; animation is for animation/line art. Off never re-encodes downloads.
+  mode: off
+  scale: 2
+  max_auto_height: 2160
+  tile_size: 0  # 0 lets the runtime select a safe tile size
+  batch_frames: 0  # 0 keeps bounded batches near 320 MiB
+
+rights:
+  # Record the actual basis for this project. This declaration is not proof of ownership.
+  basis: unspecified  # owned / written_permission / cc_by / cc_by_sa / cc_by_nc / public_domain / other
+  rights_holder: ""
+  license_url: ""
+  permission_reference: ""
+  attribution_text: ""
+  allow_translation: true
+  allow_redistribution: true
+  commercial_use: false
+
 publishing:
   generate_metadata: true
   attribution_template: |

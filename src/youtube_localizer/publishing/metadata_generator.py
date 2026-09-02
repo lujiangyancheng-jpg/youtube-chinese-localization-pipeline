@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ..config import PublishingConfig
+from ..config import PublishingConfig, RightsConfig
 from ..models import SourceMetadata
 from ..utils.files import atomic_write_json, atomic_write_text
+from .rights import attribution_for
 
 
 def _keywords(metadata: SourceMetadata) -> list[str]:
@@ -26,6 +27,7 @@ def generate_publishing_assets(
     metadata: SourceMetadata,
     output_dir: Path,
     config: PublishingConfig,
+    rights: RightsConfig | None = None,
 ) -> list[Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     faithful = f"{metadata.title}（忠实中文标题待人工确认）"
@@ -37,14 +39,21 @@ def generate_publishing_assets(
         if metadata.source_type == "webpage_media"
         else metadata.source_url or metadata.source_input
     )
-    attribution = config.attribution_template.format(
-        channel=metadata.channel or "（请填写原作者）",
-        source_url=source_url,
+    attribution = (
+        attribution_for(metadata, rights)
+        if rights is not None and rights.basis != "unspecified"
+        else config.attribution_template.format(
+            channel=metadata.channel or "（请填写原作者）",
+            source_url=source_url,
+        )
     )
+    permission_note = config.permission_note
+    if rights is not None and rights.permission_reference.strip():
+        permission_note = rights.permission_reference.strip()
     description = (
         f"本视频为《{metadata.title}》的简体中文本地化版本。\n\n"
         f"{attribution}\n\n"
-        f"许可说明：{config.permission_note}\n\n"
+        f"许可说明：{permission_note}\n\n"
         "发布前请人工核对中文标题、许可范围、专有名词及平台规则。"
     )
     tags = _keywords(metadata)
@@ -66,6 +75,7 @@ def generate_publishing_assets(
             },
             "description": description,
             "tags": tags,
+            "rights_basis": rights.basis if rights is not None else "unspecified",
             "platform_variants": {
                 platform: {"title": natural, "description": description, "tags": tags}
                 for platform in ("YouTube", "Bilibili", "Douyin", "Xiaohongshu")
