@@ -18,6 +18,7 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from .config import (
     AppConfig,
+    RightsConfig,
     default_output_directory,
     output_directory_advice,
     requires_local_ai_or_api,
@@ -51,12 +52,14 @@ from .onboarding import (
     setup_status_message,
     user_guide_url,
 )
+from .publishing.rights import RIGHTS_BASIS_LABELS, validate_rights
 from .resource_gate import detected_resource_schedule
 from .resources import (
     application_icon_path,
     installed_whisper_models,
     ollama_executable,
     package_tier,
+    super_resolution_runtime,
 )
 from .review import (
     SubtitleReviewSession,
@@ -119,6 +122,20 @@ TRANSLATION_MODES = {
     "自动翻译并压制字幕（需要 API）": "openai-compatible",
 }
 UPDATE_CHANNELS = {"稳定": "stable", "开发": "development"}
+SUPER_RESOLUTION_MODES = {
+    "关闭（保持原始像素）": "off",
+    "AI 通用画面增强（NCNN/Vulkan）": "general",
+    "AI 动画画面增强（NCNN/Vulkan）": "animation",
+}
+RIGHTS_BASES = {
+    "本人／本团队原创": "owned",
+    "已获权利人书面授权": "written_permission",
+    "CC BY": "cc_by",
+    "CC BY-SA": "cc_by_sa",
+    "CC BY-NC（非商业）": "cc_by_nc",
+    "公共领域": "public_domain",
+    "其他许可／版权例外": "other",
+}
 TASK_STATE_LABELS = {
     "pending": "待分析",
     "analyzing": "分析中",
@@ -439,6 +456,15 @@ def whisper_model_installation_message() -> str | None:
     )
 
 
+def super_resolution_installation_message(mode: str) -> str | None:
+    if mode == "off" or super_resolution_runtime() is not None:
+        return None
+    return (
+        "尚未安装 AI 超分辨率组件。请重新运行 Standard 安装器并勾选 "
+        "“AI 超分辨率组件”，或从当前版本的 Releases 安装对应组件包。"
+    )
+
+
 def friendly_failure_summary(log_text: str) -> str:
     """Translate common terminal failures into one short recovery action."""
     normalized = log_text.casefold()
@@ -522,6 +548,13 @@ def build_process_command(
     output_quality: str | None = None,
     output_fps: int | None = None,
     output_height: int | None = None,
+    super_resolution: str = "off",
+    rights_basis: str = "unspecified",
+    rights_holder: str = "",
+    license_url: str = "",
+    permission_reference: str = "",
+    attribution_text: str = "",
+    commercial_use: bool = False,
     output_directory: str | Path | None = None,
     resume: bool = True,
     python_executable: str | None = None,
@@ -568,6 +601,10 @@ def build_process_command(
         raise ValueError("Output FPS must be between 1 and 240.")
     if output_height is not None and not 144 <= output_height <= 4320:
         raise ValueError("Output height must be between 144 and 4320 pixels.")
+    if super_resolution not in SUPER_RESOLUTION_MODES.values():
+        raise ValueError("未知的 AI 画质增强模式。")
+    if rights_basis not in {"unspecified", *RIGHTS_BASES.values()}:
+        raise ValueError("未知的版权依据。")
     output_path: Path | None = None
     if output_directory is not None:
         raw_output_directory = str(output_directory).strip()
@@ -604,6 +641,17 @@ def build_process_command(
         command.extend(["--output-fps", str(output_fps)])
     if output_height:
         command.extend(["--output-height", str(output_height)])
+    command.extend(["--super-resolution", super_resolution])
+    command.extend(["--rights-basis", rights_basis])
+    if rights_holder.strip():
+        command.extend(["--rights-holder", rights_holder.strip()])
+    if license_url.strip():
+        command.extend(["--license-url", license_url.strip()])
+    if permission_reference.strip():
+        command.extend(["--permission-reference", permission_reference.strip()])
+    if attribution_text.strip():
+        command.extend(["--attribution-text", attribution_text.strip()])
+    command.append("--commercial-use" if commercial_use else "--noncommercial-use")
     if resume:
         command.append("--resume")
     return command
@@ -1488,6 +1536,121 @@ class SubtitleReviewDialog:
         self.window.destroy()
 
 
+class RightsDetailsDialog:
+    """Collect non-secret rights metadata without turning the main screen into a legal form."""
+
+    def __init__(
+        self,
+        parent: tk.Tk,
+        *,
+        basis: str,
+        values: Mapping[str, object],
+        on_apply: Callable[[dict[str, object]], None],
+    ) -> None:
+        self.on_apply = on_apply
+        self.window = tk.Toplevel(parent)
+        self.window.title("版权依据与署名记录")
+        self.window.geometry("690x470")
+        self.window.minsize(620, 430)
+        self.window.transient(parent)
+        self.window.grab_set()
+        self.window.configure(background=APP_BACKGROUND)
+
+        self.rights_holder = tk.StringVar(value=str(values.get("rights_holder", "")))
+        self.license_url = tk.StringVar(value=str(values.get("license_url", "")))
+        self.permission_reference = tk.StringVar(
+            value=str(values.get("permission_reference", ""))
+        )
+        self.attribution_text = tk.StringVar(value=str(values.get("attribution_text", "")))
+        self.allow_translation = tk.BooleanVar(
+            value=bool(values.get("allow_translation", True))
+        )
+        self.allow_redistribution = tk.BooleanVar(
+            value=bool(values.get("allow_redistribution", True))
+        )
+        self.commercial_use = tk.BooleanVar(value=bool(values.get("commercial_use", False)))
+
+        card = ttk.Frame(self.window, style="Card.TFrame", padding=(24, 20))
+        card.pack(fill="both", expand=True, padx=18, pady=18)
+        card.columnconfigure(0, weight=1)
+        ttk.Label(card, text="版权记录", style="SectionTitle.TLabel").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(
+            card,
+            text=(
+                f"当前依据：{RIGHTS_BASIS_LABELS.get(basis, basis)}。"
+                "这里只记录核对信息，不上传授权文件，也不会自动判断法律效力。"
+            ),
+            style="Muted.TLabel",
+            wraplength=620,
+        ).grid(row=1, column=0, sticky="w", pady=(5, 14))
+
+        fields = (
+            ("权利人／原作者", self.rights_holder),
+            ("许可或权利状态链接", self.license_url),
+            ("授权证明索引／日期／说明（不要填写密码）", self.permission_reference),
+            ("自定义署名文字（留空则自动生成）", self.attribution_text),
+        )
+        for index, (label, variable) in enumerate(fields, start=2):
+            ttk.Label(card, text=label, style="Field.TLabel").grid(
+                row=index * 2 - 2, column=0, sticky="w", pady=(5, 4)
+            )
+            ttk.Entry(card, textvariable=variable, style="Modern.TEntry").grid(
+                row=index * 2 - 1, column=0, sticky="ew"
+            )
+
+        checks = ttk.Frame(card, style="Card.TFrame")
+        checks.grid(row=10, column=0, sticky="ew", pady=(14, 0))
+        ttk.Checkbutton(
+            checks,
+            text="许可包含翻译／改编",
+            variable=self.allow_translation,
+            style="Card.TCheckbutton",
+        ).pack(side="left")
+        ttk.Checkbutton(
+            checks,
+            text="许可包含重新发布／分发",
+            variable=self.allow_redistribution,
+            style="Card.TCheckbutton",
+        ).pack(side="left", padx=(14, 0))
+        ttk.Checkbutton(
+            checks,
+            text="计划商业使用",
+            variable=self.commercial_use,
+            style="Card.TCheckbutton",
+        ).pack(side="left", padx=(14, 0))
+
+        actions = ttk.Frame(card, style="Card.TFrame")
+        actions.grid(row=11, column=0, sticky="e", pady=(18, 0))
+        ttk.Button(
+            actions,
+            text="取消",
+            style="Secondary.TButton",
+            command=self.window.destroy,
+        ).pack(side="left")
+        ttk.Button(
+            actions,
+            text="保存记录",
+            style="Primary.TButton",
+            command=self._apply,
+        ).pack(side="left", padx=(8, 0))
+
+    def _apply(self) -> None:
+        self.on_apply(
+            {
+                "rights_holder": self.rights_holder.get().strip(),
+                "license_url": self.license_url.get().strip(),
+                "permission_reference": self.permission_reference.get().strip(),
+                "attribution_text": self.attribution_text.get().strip(),
+                "allow_translation": self.allow_translation.get(),
+                "allow_redistribution": self.allow_redistribution.get(),
+                "commercial_use": self.commercial_use.get(),
+            }
+        )
+        self.window.destroy()
+
+
 class LocalizerWindow:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -1597,6 +1760,13 @@ class LocalizerWindow:
                 "保持原视频分辨率（推荐）",
             )
         )
+        self.enhancement_label = tk.StringVar(
+            value=label_for_value(
+                SUPER_RESOLUTION_MODES,
+                saved_settings.enhancement_mode,
+                "关闭（保持原始像素）",
+            )
+        )
         self.output_directory = tk.StringVar(value=saved_settings.output_directory)
         self.endpoint = tk.StringVar(value=endpoint or "https://api.openai.com/v1")
         self.model = tk.StringVar(value=model)
@@ -1605,6 +1775,15 @@ class LocalizerWindow:
             value=label_for_value(UPDATE_CHANNELS, saved_settings.update_channel, "稳定")
         )
         self.authorized = tk.BooleanVar(value=False)
+        self.rights_basis_label = tk.StringVar(value="本人／本团队原创")
+        self.rights_holder = tk.StringVar(value="")
+        self.rights_license_url = tk.StringVar(value="")
+        self.rights_permission_reference = tk.StringVar(value="")
+        self.rights_attribution_text = tk.StringVar(value="")
+        self.rights_allow_translation = tk.BooleanVar(value=True)
+        self.rights_allow_redistribution = tk.BooleanVar(value=True)
+        self.rights_commercial_use = tk.BooleanVar(value=False)
+        self.rights_summary = tk.StringVar(value="版权记录：本人／本团队原创")
         self.resume = tk.BooleanVar(value=saved_settings.resume)
         self.status = tk.StringVar(value="等待粘贴链接")
         self.mode_hint = tk.StringVar()
@@ -1626,6 +1805,7 @@ class LocalizerWindow:
         self._build_layout()
         self._update_translation_fields()
         self._update_output_settings()
+        self._update_rights_summary()
         self.input_value.trace_add("write", self._update_input_state)
         self.output_directory.trace_add("write", self._update_output_directory_hint)
         self._update_input_state()
@@ -2244,7 +2424,7 @@ class LocalizerWindow:
         )
         self.preview_button.grid(row=3, column=3, sticky="e", pady=(8, 0))
 
-        ttk.Label(options, text="智能加速", style="Field.TLabel").grid(
+        ttk.Label(options, text="AI 画质增强", style="Field.TLabel").grid(
             row=4, column=0, sticky="w", pady=(12, 5), padx=(0, 6)
         )
         ttk.Label(options, text="输出画质", style="Field.TLabel").grid(
@@ -2256,11 +2436,17 @@ class LocalizerWindow:
         ttk.Label(options, text="输出分辨率", style="Field.TLabel").grid(
             row=4, column=3, sticky="w", pady=(12, 5), padx=(6, 0)
         )
-        ttk.Label(
+        self.enhancement_combo = ttk.Combobox(
             options,
-            text="自动识别显卡；不可用时自动改用 CPU",
-            style="Muted.TLabel",
-        ).grid(row=5, column=0, sticky="w", padx=(0, 6))
+            textvariable=self.enhancement_label,
+            values=list(SUPER_RESOLUTION_MODES),
+            state="readonly",
+            style="Modern.TCombobox",
+        )
+        self.enhancement_combo.grid(row=5, column=0, sticky="ew", padx=(0, 6))
+        self.enhancement_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_output_settings()
+        )
         self.output_quality_combo = ttk.Combobox(
             options,
             textvariable=self.output_quality_label,
@@ -2348,18 +2534,45 @@ class LocalizerWindow:
             outer, style="Card.TFrame", padding=(22, 10, 22, 12)
         )
         confirmation.grid(row=4, column=0, sticky="ew", padx=24, pady=(10, 0))
+        confirmation.columnconfigure(1, weight=1)
+        ttk.Label(confirmation, text="版权依据", style="Field.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 8)
+        )
+        self.rights_basis_combo = ttk.Combobox(
+            confirmation,
+            textvariable=self.rights_basis_label,
+            values=list(RIGHTS_BASES),
+            state="readonly",
+            style="Modern.TCombobox",
+            width=25,
+        )
+        self.rights_basis_combo.grid(row=0, column=1, sticky="w")
+        self.rights_basis_combo.bind(
+            "<<ComboboxSelected>>", lambda _event: self._update_rights_summary()
+        )
+        ttk.Button(
+            confirmation,
+            text="填写版权详情",
+            style="Secondary.TButton",
+            command=self._show_rights_details,
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
+        ttk.Label(
+            confirmation,
+            textvariable=self.rights_summary,
+            style="Muted.TLabel",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(5, 3))
         ttk.Checkbutton(
             confirmation,
             text="我确认拥有该视频，或已取得下载、翻译和再发布所需的授权/许可。",
             variable=self.authorized,
             style="Card.TCheckbutton",
-        ).grid(row=0, column=0, sticky="w")
+        ).grid(row=2, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(
             confirmation,
             text="若项目已存在，继续上次未完成的处理",
             variable=self.resume,
             style="Card.TCheckbutton",
-        ).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(4, 0))
 
         actions = self.actions_frame = ttk.Frame(
             outer,
@@ -3062,6 +3275,18 @@ class LocalizerWindow:
             return
         self.input_value.set("")
         self.authorized.set(False)
+        self.rights_basis_label.set("本人／本团队原创")
+        for variable in (
+            self.rights_holder,
+            self.rights_license_url,
+            self.rights_permission_reference,
+            self.rights_attribution_text,
+        ):
+            variable.set("")
+        self.rights_allow_translation.set(True)
+        self.rights_allow_redistribution.set(True)
+        self.rights_commercial_use.set(False)
+        self._update_rights_summary()
 
     def _paste(self) -> None:
         if self._has_active_processes() or (self.worker and self.worker.is_alive()):
@@ -3172,17 +3397,18 @@ class LocalizerWindow:
             subtitle_mode = "chinese"
         provider = TRANSLATION_MODES[self.translation_label.get()]
         download_only = subtitle_mode == "download_only"
+        enhancement_mode = SUPER_RESOLUTION_MODES[self.enhancement_label.get()]
         selection_state = "disabled" if download_only else "readonly"
         self.direction_combo.configure(state=selection_state)
         self.font_size_combo.configure(state=selection_state)
         self.preview_button.configure(state="disabled" if download_only else "normal")
         self.translation_combo.configure(state=selection_state)
-        for combo in (
-            self.output_quality_combo,
-            self.output_fps_combo,
-            self.output_height_combo,
-        ):
-            combo.configure(state=selection_state)
+        render_controls_state = (
+            "readonly" if not download_only or enhancement_mode != "off" else "disabled"
+        )
+        for combo in (self.output_quality_combo, self.output_fps_combo, self.output_height_combo):
+            combo.configure(state=render_controls_state)
+        self.enhancement_combo.configure(state="readonly")
         self.start_button.configure(text="开始下载" if download_only else "开始本地化")
         hint = mode_description(subtitle_mode, provider)
         if requires_capable_translator and not download_only:
@@ -3201,6 +3427,9 @@ class LocalizerWindow:
                 f"当前方案：{self.direction_label.get()} · {self.subtitle_label.get()} · "
                 f"{provider_names[provider]} · 自动硬件加速 · {self.output_quality_label.get()}"
             )
+        if enhancement_mode != "off":
+            enhancement_name = "通用实拍" if enhancement_mode == "general" else "动画"
+            summary += f" · AI {enhancement_name}超分（本地 Vulkan）"
         queue_count = len(queue_input_values(self.input_value.get()))
         if queue_count > 1:
             parallel = gui_parallel_job_limit(queue_count)
@@ -3216,9 +3445,16 @@ class LocalizerWindow:
             entry.configure(state=state)
 
     def _update_output_settings(self) -> None:
-        self.output_hint.set(
-            "保持原始表示不降分辨率或帧率；选择 60/30 FPS 只会降低更高帧率，绝不补帧。"
-        )
+        enhancement_mode = SUPER_RESOLUTION_MODES[self.enhancement_label.get()]
+        if enhancement_mode == "off":
+            self.output_hint.set(
+                "保持原始表示不降分辨率或帧率；选择 60/30 FPS 只会降低更高帧率，绝不补帧。"
+            )
+        else:
+            self.output_hint.set(
+                "AI 超分会逐帧恢复并放大，默认 2 倍且最高 4K；耗时和磁盘占用会明显增加，"
+                "无法凭空恢复原视频从未记录的真实细节。"
+            )
         self._update_output_directory_hint()
         self._update_translation_fields()
 
@@ -3229,11 +3465,68 @@ class LocalizerWindow:
             return
         self.output_directory_hint.set(output_directory_status_hint(Path(raw_directory)))
 
+    def _rights_config(self) -> RightsConfig:
+        return RightsConfig(
+            basis=RIGHTS_BASES[self.rights_basis_label.get()],
+            rights_holder=self.rights_holder.get().strip(),
+            license_url=self.rights_license_url.get().strip(),
+            permission_reference=self.rights_permission_reference.get().strip(),
+            attribution_text=self.rights_attribution_text.get().strip(),
+            allow_translation=self.rights_allow_translation.get(),
+            allow_redistribution=self.rights_allow_redistribution.get(),
+            commercial_use=self.rights_commercial_use.get(),
+        )
+
+    def _show_rights_details(self) -> None:
+        RightsDetailsDialog(
+            self.root,
+            basis=RIGHTS_BASES[self.rights_basis_label.get()],
+            values={
+                "rights_holder": self.rights_holder.get(),
+                "license_url": self.rights_license_url.get(),
+                "permission_reference": self.rights_permission_reference.get(),
+                "attribution_text": self.rights_attribution_text.get(),
+                "allow_translation": self.rights_allow_translation.get(),
+                "allow_redistribution": self.rights_allow_redistribution.get(),
+                "commercial_use": self.rights_commercial_use.get(),
+            },
+            on_apply=self._apply_rights_details,
+        )
+
+    def _apply_rights_details(self, values: dict[str, object]) -> None:
+        self.rights_holder.set(str(values.get("rights_holder", "")))
+        self.rights_license_url.set(str(values.get("license_url", "")))
+        self.rights_permission_reference.set(str(values.get("permission_reference", "")))
+        self.rights_attribution_text.set(str(values.get("attribution_text", "")))
+        self.rights_allow_translation.set(bool(values.get("allow_translation", True)))
+        self.rights_allow_redistribution.set(bool(values.get("allow_redistribution", True)))
+        self.rights_commercial_use.set(bool(values.get("commercial_use", False)))
+        self._update_rights_summary()
+
+    def _update_rights_summary(self) -> None:
+        basis = RIGHTS_BASES[self.rights_basis_label.get()]
+        if basis == "cc_by_nc" and self.rights_commercial_use.get():
+            self.rights_commercial_use.set(False)
+        config = self._rights_config()
+        issues = validate_rights(config, strict=True)
+        if issues:
+            self.rights_summary.set("版权记录待补充：" + " ".join(issues))
+        else:
+            self.rights_summary.set(
+                f"版权记录已填写：{RIGHTS_BASIS_LABELS[basis]}；处理后会随项目生成可审计记录。"
+            )
+
     def _validate(self) -> tuple[list[list[str]], dict[str, str], str]:
         if not self.authorized.get():
             raise ValueError("开始前请确认你拥有视频或已取得所需授权。")
         subtitle_mode = SUBTITLE_MODES[self.subtitle_label.get()]
         provider = TRANSLATION_MODES[self.translation_label.get()]
+        enhancement_mode = SUPER_RESOLUTION_MODES[self.enhancement_label.get()]
+        rights = self._rights_config()
+        if rights_issues := validate_rights(rights, strict=True):
+            raise ValueError("版权记录不完整：" + " ".join(rights_issues))
+        if message := super_resolution_installation_message(enhancement_mode):
+            raise ValueError(message)
         if subtitle_mode != "download_only" and (whisper_message := whisper_model_installation_message()):
             raise ValueError(whisper_message)
         values = queue_input_values(self.input_value.get())
@@ -3253,6 +3546,13 @@ class LocalizerWindow:
                 output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
                 output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],
                 output_height=OUTPUT_HEIGHTS[self.output_height_label.get()],
+                super_resolution=enhancement_mode,
+                rights_basis=rights.basis,
+                rights_holder=rights.rights_holder,
+                license_url=rights.license_url,
+                permission_reference=rights.permission_reference,
+                attribution_text=rights.attribution_text,
+                commercial_use=rights.commercial_use,
                 output_directory=self.output_directory.get(),
                 resume=self.resume.get(),
             )
@@ -3316,6 +3616,7 @@ class LocalizerWindow:
                     output_quality=OUTPUT_QUALITIES[self.output_quality_label.get()],
                     output_fps=OUTPUT_FRAME_RATES[self.output_fps_label.get()],
                     output_height=OUTPUT_HEIGHTS[self.output_height_label.get()],
+                    enhancement_mode=SUPER_RESOLUTION_MODES[self.enhancement_label.get()],
                     output_directory=(
                         self.output_directory.get().strip() or str(default_output_directory())
                     ),

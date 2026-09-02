@@ -22,6 +22,7 @@ def test_settings_round_trip_without_secrets(tmp_path) -> None:
         output_quality="high",
         output_fps=60,
         output_height=2160,
+        enhancement_mode="animation",
         output_directory="D:/Localized",
         update_channel="stable",
         resume=False,
@@ -43,6 +44,7 @@ def test_invalid_settings_are_safely_normalized(tmp_path) -> None:
                 "subtitle_y_percent": "bottom",
                 "output_fps": 144,
                 "output_height": 900,
+                "enhancement_mode": "magic",
                 "resume": "yes",
             }
         ),
@@ -57,6 +59,7 @@ def test_invalid_settings_are_safely_normalized(tmp_path) -> None:
     assert settings.subtitle_y_percent == 96
     assert settings.output_fps is None
     assert settings.output_height is None
+    assert settings.enhancement_mode == "off"
     assert settings.resume is True
 
 

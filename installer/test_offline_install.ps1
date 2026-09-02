@@ -116,6 +116,12 @@ if ($LASTEXITCODE -ne 0) { throw "Installed desktop interface loading failed." }
 & $Python -c "import os; from pathlib import Path; from youtube_localizer import __version__; from youtube_localizer.resources import application_icon_path, bundled_fonts_directory; from youtube_localizer.translation.offline import validate_offline_model; models=Path(os.environ['YOUTUBE_LOCALIZER_MODELS']); fonts=Path(os.environ['YOUTUBE_LOCALIZER_FONTS']).resolve(); assert __version__ == os.environ['YOUTUBE_LOCALIZER_EXPECTED_VERSION']; assert application_icon_path(); assert bundled_fonts_directory() == fonts; assert validate_offline_model(models/'translate-en_zh-1_9'); assert validate_offline_model(models/'translate-zh_en-1_9', source_code='zh', target_code='en'); print('installed base offline models, font, and icon: ok')"
 if ($LASTEXITCODE -ne 0) { throw "Installed model loading failed." }
 
+$SuperResolutionExecutable = Join-Path $Root "runtime\super-resolution\waifu2x-ncnn-vulkan.exe"
+if (Test-Path -LiteralPath $SuperResolutionExecutable) {
+    & $Python -c "from youtube_localizer.resources import super_resolution_runtime; assert super_resolution_runtime(); print('optional AI super-resolution runtime and models: ok')"
+    if ($LASTEXITCODE -ne 0) { throw "Installed AI super-resolution component is incomplete." }
+}
+
 & $Python (Join-Path $Root "app\main.py") --help | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Installed command-line interface loading failed." }
 

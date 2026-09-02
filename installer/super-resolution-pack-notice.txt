@@ -1,0 +1,11 @@
+AI Super Resolution is optional and runs entirely on this computer.
+
+It installs the portable waifu2x-ncnn-vulkan runtime and two curated 2x restoration model sets:
+- photo/general video
+- animation/line-art video
+
+The application processes frames in bounded batches and probes available Vulkan devices in turn.
+NVIDIA, AMD, Intel, and a slower CPU fallback are supported when the runtime can initialize them.
+
+AI restoration estimates plausible detail; it cannot recover information that was never captured.
+Keep the original source and review the result before publishing.

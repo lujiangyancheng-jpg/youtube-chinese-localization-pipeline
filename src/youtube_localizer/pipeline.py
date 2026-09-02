@@ -25,12 +25,14 @@ from .download.youtube import (
     save_thumbnail,
     youtube_video_id,
 )
+from .enhancement.super_resolution import enhance_video, super_resolution_target_height
 from .errors import InputValidationError, LocalizerError, ProjectExistsError
 from .inspection_cache import cached_raw_metadata, load_cached_inspection
 from .logging_config import configure_logging
 from .models import ProjectPaths, SourceMetadata, SubtitleCue
 from .preflight import build_job_preflight
 from .publishing.metadata_generator import generate_publishing_assets
+from .publishing.rights import generate_rights_assets, validate_rights
 from .rendering.ffmpeg import render_hardsub, render_softsub
 from .rendering.media_warnings import rendering_media_warnings
 from .rendering.validation import validate_rendered_video
@@ -87,6 +89,7 @@ FORCE_STEPS = {
     "chinese_subtitles",
     "transcribe",
     "translate",
+    "enhance",
     "render",
 }
 
@@ -297,6 +300,12 @@ def _target_ass(project: ProjectPaths, config: AppConfig) -> Path:
 def rendered_output(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
     return project.hardsub_output(target_code)
+
+
+def render_source(project: ProjectPaths, config: AppConfig) -> Path:
+    if config.enhancement.mode != "off" and project.enhanced_source.is_file():
+        return project.enhanced_source
+    return find_source_video(project)
 
 
 def softsub_output(project: ProjectPaths, config: AppConfig) -> Path:
@@ -619,7 +628,7 @@ def render_project(project: ProjectPaths, config: AppConfig) -> Path:
     source_code, target_code = _language_pair(config)
     for warning in rendering_media_warnings(metadata):
         LOGGER.warning("%s", warning)
-    source = find_source_video(project)
+    source = render_source(project, config)
     if config.subtitle_mode == "chinese":
         subtitle = _target_ass(project, config)
         if not subtitle.is_file():
@@ -683,7 +692,7 @@ def render_softsub_project(project: ProjectPaths, config: AppConfig) -> Path:
     _, target_code = _language_pair(config)
     output = softsub_output(project, config)
     render_softsub(
-        find_source_video(project),
+        render_source(project, config),
         subtitle,
         output,
         language=FFMPEG_LANGUAGE_CODES[target_code],
@@ -884,8 +893,79 @@ def process_pipeline(
                 step_outputs.extend([source_video, project.metadata])
         source_video = find_source_video(project)
 
+        rights_outputs = generate_rights_assets(metadata, project.publishing, config.rights)
+        outputs.extend(rights_outputs)
+        rights_issues = validate_rights(config.rights, strict=True)
+        if rights_issues:
+            remember_warnings(
+                [
+                    "Rights record requires human review before publishing: "
+                    + " ".join(rights_issues)
+                ]
+            )
+
+        processing_video = source_video
+        if config.enhancement.mode != "off":
+            if not metadata.width or not metadata.height or not metadata.frame_rate:
+                raise LocalizerError(
+                    "AI super resolution needs source width, height, and frame-rate metadata."
+                )
+            target_height = super_resolution_target_height(
+                metadata.height,
+                config.render,
+                config.enhancement,
+            )
+            if target_height <= metadata.height:
+                remember_warnings(
+                    [
+                        "AI super resolution was selected, but the requested output is not "
+                        "larger than the source; the original pixels were kept."
+                    ]
+                )
+            else:
+                enhance_input_hash = hash_file(source_video)
+                enhance_config_hash = stable_hash(
+                    {
+                        "enhancement": config.enhancement,
+                        "target_height": target_height,
+                        "render": config.render,
+                    }
+                )
+                if not state.can_skip(
+                    "enhance",
+                    input_hash=enhance_input_hash,
+                    config_hash=enhance_config_hash,
+                    output_files=[project.enhanced_source],
+                    force="enhance" in force_steps,
+                ):
+                    with state.step(
+                        "enhance",
+                        input_hash=enhance_input_hash,
+                        config_hash=enhance_config_hash,
+                    ) as step_outputs:
+                        step_outputs.append(
+                            enhance_video(
+                                source_video,
+                                project.enhanced_source,
+                                source_width=metadata.width,
+                                source_height=metadata.height,
+                                frame_rate=metadata.frame_rate,
+                                duration=metadata.duration,
+                                source_audio_codec=metadata.audio_codec,
+                                render=config.render,
+                                enhancement=config.enhancement,
+                                working_directory=project.temp / "super_resolution",
+                            )
+                        )
+                        validate_rendered_video(
+                            project.enhanced_source,
+                            expected_duration=metadata.duration,
+                        )
+                processing_video = project.enhanced_source
+                outputs.append(processing_video)
+
         if config.subtitle_mode == "download_only":
-            outputs = [source_video, project.metadata]
+            outputs = [processing_video, project.metadata, *rights_outputs]
             for optional_output in (
                 project.source / "metadata.raw.json",
                 project.source / "thumbnail.jpg",
@@ -1125,7 +1205,7 @@ def process_pipeline(
 
         if config.publishing.generate_metadata:
             metadata_outputs = generate_publishing_assets(
-                metadata, project.publishing, config.publishing
+                metadata, project.publishing, config.publishing, config.rights
             )
             outputs.extend(metadata_outputs)
 
@@ -1154,7 +1234,7 @@ def process_pipeline(
 
         render_hash = stable_hash(
             {
-                "video": hash_file(source_video),
+                "video": hash_file(render_source(project, config)),
                 "subtitles": hash_file(
                     _target_ass(project, config)
                     if config.subtitle_mode == "chinese"

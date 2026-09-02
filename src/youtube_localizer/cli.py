@@ -32,6 +32,7 @@ from .pipeline import (
     process_pipeline,
     render_project,
     render_softsub_project,
+    render_source,
     rendered_output,
     save_project_config,
     translate_with_api,
@@ -124,6 +125,13 @@ def _configured(
     output_quality: OutputQuality | None = None,
     output_height: int | None = None,
     output_fps: int | None = None,
+    super_resolution: str | None = None,
+    rights_basis: str | None = None,
+    rights_holder: str | None = None,
+    license_url: str | None = None,
+    permission_reference: str | None = None,
+    attribution_text: str | None = None,
+    commercial_use: bool | None = None,
 ) -> AppConfig:
     config = load_config(config_path)
     changes = {}
@@ -174,6 +182,42 @@ def _configured(
         render_changes["output_fps"] = output_fps
     if render_changes:
         changes["render"] = config.render.model_copy(update=render_changes)
+    if super_resolution is not None:
+        if super_resolution not in {"off", "general", "animation"}:
+            raise LocalizerError("--super-resolution must be off, general, or animation.")
+        changes["enhancement"] = config.enhancement.model_copy(
+            update={"mode": super_resolution}
+        )
+    rights_changes: dict[str, str | bool] = {}
+    if rights_basis is not None:
+        valid_rights = {
+            "unspecified",
+            "owned",
+            "written_permission",
+            "cc_by",
+            "cc_by_sa",
+            "cc_by_nc",
+            "public_domain",
+            "other",
+        }
+        if rights_basis not in valid_rights:
+            raise LocalizerError(
+                "--rights-basis must be owned, written_permission, cc_by, cc_by_sa, "
+                "cc_by_nc, public_domain, other, or unspecified."
+            )
+        rights_changes["basis"] = rights_basis
+    for value, key in (
+        (rights_holder, "rights_holder"),
+        (license_url, "license_url"),
+        (permission_reference, "permission_reference"),
+        (attribution_text, "attribution_text"),
+    ):
+        if value is not None:
+            rights_changes[key] = value.strip()
+    if commercial_use is not None:
+        rights_changes["commercial_use"] = commercial_use
+    if rights_changes:
+        changes["rights"] = config.rights.model_copy(update=rights_changes)
     translation_changes: dict[str, str] = {}
     if translation_provider:
         if translation_provider not in {"manual", "offline", "ollama", "openai-compatible"}:
@@ -314,6 +358,34 @@ def process_command(
         int | None,
         typer.Option("--output-fps", help="Cap rendered-video FPS without adding frames."),
     ] = None,
+    super_resolution: Annotated[
+        str | None,
+        typer.Option(
+            "--super-resolution",
+            help="off, general, or animation. Requires the optional AI super-resolution pack.",
+        ),
+    ] = None,
+    rights_basis: Annotated[
+        str | None,
+        typer.Option("--rights-basis", help="Rights basis recorded with the project."),
+    ] = None,
+    rights_holder: Annotated[
+        str | None, typer.Option("--rights-holder", help="Creator or rights holder name.")
+    ] = None,
+    license_url: Annotated[
+        str | None, typer.Option("--license-url", help="Public license or evidence URL.")
+    ] = None,
+    permission_reference: Annotated[
+        str | None,
+        typer.Option("--permission-reference", help="Non-secret permission reference or note."),
+    ] = None,
+    attribution_text: Annotated[
+        str | None, typer.Option("--attribution-text", help="Custom publication attribution.")
+    ] = None,
+    commercial_use: Annotated[
+        bool | None,
+        typer.Option("--commercial-use/--noncommercial-use"),
+    ] = None,
     resume: Annotated[bool, typer.Option("--resume", help="Resume a matching project.")] = False,
     overwrite: Annotated[
         bool, typer.Option("--overwrite", help="Replace an existing matching project.")
@@ -324,7 +396,7 @@ def process_command(
             "--force-step",
             help=(
                 "Repeat one stage: acquire, english_subtitles, chinese_subtitles, "
-                "transcribe, translate, or render."
+                "transcribe, translate, enhance, or render."
             ),
         ),
     ] = None,
@@ -345,6 +417,13 @@ def process_command(
         output_quality=output_quality,
         output_height=output_height,
         output_fps=output_fps,
+        super_resolution=super_resolution,
+        rights_basis=rights_basis,
+        rights_holder=rights_holder,
+        license_url=license_url,
+        permission_reference=permission_reference,
+        attribution_text=attribution_text,
+        commercial_use=commercial_use,
     )
     console.print(
         "[yellow]Legal notice:[/] process only content you own, public-domain/CC content, or "
@@ -370,7 +449,7 @@ def process_command(
     )
     console.print(f"[bold green]Project:[/] {result.project.root}")
     if result.status == "downloaded":
-        console.print(f"[bold green]Downloaded:[/] {find_source_video(result.project)}")
+        console.print(f"[bold green]Downloaded:[/] {render_source(result.project, config)}")
     elif result.status == "awaiting_manual_translation":
         source_code, target_code = _language_pair(config)
         console.print(
@@ -776,7 +855,7 @@ def metadata_command(
     project = _project(project_path)
     config = load_config(config_path) if config_path else load_project_config(project)
     outputs = generate_publishing_assets(
-        load_project_metadata(project), project.publishing, config.publishing
+        load_project_metadata(project), project.publishing, config.publishing, config.rights
     )
     console.print(
         f"[green]Publishing drafts created:[/] {project.publishing}\n"

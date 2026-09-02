@@ -75,6 +75,23 @@ def test_cli_configuration_supports_download_only_mode() -> None:
     assert config.subtitle_mode == "download_only"
 
 
+def test_cli_configuration_supports_super_resolution_and_rights_record() -> None:
+    config = _configured(
+        None,
+        super_resolution="general",
+        rights_basis="written_permission",
+        rights_holder="Rights Holder",
+        permission_reference="Agreement 2026-09-02",
+        commercial_use=True,
+    )
+
+    assert config.enhancement.mode == "general"
+    assert config.rights.basis == "written_permission"
+    assert config.rights.rights_holder == "Rights Holder"
+    assert config.rights.permission_reference == "Agreement 2026-09-02"
+    assert config.rights.commercial_use is True
+
+
 def test_cli_configuration_applies_processing_profile() -> None:
     config = _configured(None, processing_profile="fast")
 

@@ -5,7 +5,7 @@
   #define OutputDir "..\dist"
 #endif
 #ifndef AppVersion
-  #define AppVersion "0.7.0.12"
+  #define AppVersion "0.7.0.13"
 #endif
 #ifndef ModelPackVersion
   #define ModelPackVersion "0.7.0"
@@ -41,6 +41,9 @@
   #endif
   #ifndef LocalAIBin3Sha256
     #error Missing LocalAIBin3Sha256. Build Standard with build_offline_installer.ps1.
+  #endif
+  #ifndef SuperResolutionSetupSha256
+    #error Missing SuperResolutionSetupSha256. Build Standard with build_offline_installer.ps1.
   #endif
 #endif
 
@@ -132,6 +135,7 @@ const
   LocalAIBin1 = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup-1.bin';
   LocalAIBin2 = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup-2.bin';
   LocalAIBin3 = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-Local-AI-Model-Setup-3.bin';
+  SuperResolutionSetup = 'YouTube-Chinese-Localizer-{#ModelPackVersion}-AI-Super-Resolution-Setup.exe';
 
 var
   OptionalModelsPage: TInputOptionWizardPage;
@@ -139,6 +143,7 @@ var
   InstallWhisperSmall: Boolean;
   InstallWhisperMedium: Boolean;
   InstallLocalAI: Boolean;
+  InstallSuperResolution: Boolean;
   ModelDefaultsInitialized: Boolean;
 
 function InstalledWhisperModelExists(const InstallDir: String): Boolean;
@@ -153,11 +158,12 @@ begin
   OptionalModelsPage := CreateInputOptionPage(wpSelectTasks,
     '选择本地模型', '按需下载，随时可补装',
     '基础程序已经包含下载、视频处理和快速中英离线翻译。勾选的模型会在安装时从本项目的兼容模型 GitHub Release 下载，并逐个校验 SHA-256。' + #13#10 + #13#10 +
-    'Whisper 是制作字幕必需的语音识别模型；本地 AI 模型可带来更自然的段落翻译和更多目标语种。',
+    'Whisper 是制作字幕必需的语音识别模型；本地 AI 模型可带来更自然的段落翻译和更多目标语种；超分辨率组件用于修复并放大低清视频。',
     False, False);
   OptionalModelsPage.Add('Whisper Small（推荐多数电脑；字幕识别）');
   OptionalModelsPage.Add('Whisper Medium（更高识别质量；占用更多磁盘和内存/显存）');
   OptionalModelsPage.Add('本地 AI 段落翻译：Qwen3:4b + Ollama（多语种与更自然翻译；体积较大）');
+  OptionalModelsPage.Add('AI 超分辨率：通用实拍 + 动画模型（NVIDIA / AMD / Intel，按需安装）');
   ModelDefaultsInitialized := False;
 
   DownloadPage := CreateDownloadPage('下载已选模型',
@@ -178,7 +184,7 @@ end;
 
 function AnyOptionalModelSelected: Boolean;
 begin
-  Result := InstallWhisperSmall or InstallWhisperMedium or InstallLocalAI;
+  Result := InstallWhisperSmall or InstallWhisperMedium or InstallLocalAI or InstallSuperResolution;
 end;
 
 procedure QueueDownload(const FileName, ExpectedSha256: String);
@@ -209,6 +215,8 @@ begin
     QueueDownload(LocalAIBin2, '{#LocalAIBin2Sha256}');
     QueueDownload(LocalAIBin3, '{#LocalAIBin3Sha256}');
   end;
+  if InstallSuperResolution then
+    QueueDownload(SuperResolutionSetup, '{#SuperResolutionSetupSha256}');
 
   DownloadPage.Show;
   try
@@ -235,6 +243,7 @@ begin
     InstallWhisperSmall := OptionalModelsPage.Values[0];
     InstallWhisperMedium := OptionalModelsPage.Values[1];
     InstallLocalAI := OptionalModelsPage.Values[2];
+    InstallSuperResolution := OptionalModelsPage.Values[3];
     if not WizardSilent and
        not InstallWhisperSmall and not InstallWhisperMedium and
        not InstalledWhisperModelExists(WizardDirValue) then begin
@@ -270,6 +279,8 @@ begin
       RaiseException('Whisper Medium model-pack installation failed.');
     if InstallLocalAI and not InstallModelPack(LocalAISetup, '本地 AI 模型') then
       RaiseException('Local AI model-pack installation failed.');
+    if InstallSuperResolution and not InstallModelPack(SuperResolutionSetup, 'AI 超分辨率组件') then
+      RaiseException('AI super-resolution pack installation failed.');
   end;
 end;
 #endif

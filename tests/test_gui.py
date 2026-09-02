@@ -60,8 +60,36 @@ def test_build_process_command_uses_argument_array_and_resume() -> None:
         "en-to-zh",
         "--subtitle-font",
         "Noto Sans CJK SC",
+        "--super-resolution",
+        "off",
+        "--rights-basis",
+        "unspecified",
+        "--noncommercial-use",
         "--resume",
     ]
+
+
+def test_build_process_command_passes_enhancement_and_rights_record() -> None:
+    command = build_process_command(
+        "video.mp4",
+        subtitle_mode="download_only",
+        translation_provider="offline",
+        super_resolution="animation",
+        rights_basis="cc_by",
+        rights_holder="Example Creator",
+        license_url="https://creativecommons.org/licenses/by/4.0/",
+        permission_reference="Source description",
+        attribution_text="Example attribution",
+        commercial_use=True,
+    )
+
+    assert command[command.index("--super-resolution") + 1] == "animation"
+    assert command[command.index("--rights-basis") + 1] == "cc_by"
+    assert command[command.index("--rights-holder") + 1] == "Example Creator"
+    assert command[command.index("--license-url") + 1].startswith("https://")
+    assert command[command.index("--permission-reference") + 1] == "Source description"
+    assert command[command.index("--attribution-text") + 1] == "Example attribution"
+    assert "--commercial-use" in command
 
 
 def test_build_process_command_rejects_invalid_values() -> None:

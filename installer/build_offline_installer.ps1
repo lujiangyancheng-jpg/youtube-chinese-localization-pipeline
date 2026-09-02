@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "0.7.0.12",
+    [string]$Version = "0.7.0.13",
     [string]$ModelPackVersion = "0.7.0",
     [ValidateSet("Complete", "Standard")]
     [string]$PackageTier = "Complete",
@@ -158,7 +158,16 @@ New-Item -ItemType Directory -Path $AppRoot, $RuntimeRoot, $ModelsRoot, $FontsRo
 $PackageTierNormalized | Set-Content -LiteralPath (Join-Path $StageRoot "package-tier.txt") -Encoding ascii
 
 Write-Host "[1/9] Staging application source..."
-foreach ($file in @("main.py", "localizer_gui.pyw", "config.example.yaml", "LICENSE", "README.md")) {
+foreach ($file in @(
+    "main.py",
+    "localizer_gui.pyw",
+    "config.example.yaml",
+    "LICENSE",
+    "README.md",
+    "TERMS_OF_USE.md",
+    "COPYRIGHT_POLICY.md",
+    "THIRD_PARTY_NOTICES.md"
+)) {
     Copy-Item -LiteralPath (Join-Path $ProjectRoot $file) -Destination $AppRoot -Force
 }
 Copy-Item -LiteralPath (Join-Path $ProjectRoot "glossary.example.yaml") -Destination (Join-Path $AppRoot "glossary.yaml") -Force
@@ -543,7 +552,8 @@ if (-not $SkipInstaller) {
             @{ Define = "LocalAISetupSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup.exe" },
             @{ Define = "LocalAIBin1Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-1.bin" },
             @{ Define = "LocalAIBin2Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-2.bin" },
-            @{ Define = "LocalAIBin3Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-3.bin" }
+            @{ Define = "LocalAIBin3Sha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-Local-AI-Model-Setup-3.bin" },
+            @{ Define = "SuperResolutionSetupSha256"; Name = "YouTube-Chinese-Localizer-$ModelPackVersion-AI-Super-Resolution-Setup.exe" }
         )
         foreach ($asset in $optionalAssets) {
             $isccArguments += "/D$($asset.Define)=$(Get-RequiredReleaseAssetHash $asset.Name)"

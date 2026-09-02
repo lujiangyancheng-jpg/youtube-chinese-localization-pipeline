@@ -19,6 +19,66 @@ def escape_filter_path(path: Path) -> str:
     return value
 
 
+def video_codec_arguments(config: RenderConfig) -> list[str]:
+    """Return quality arguments shared by subtitle rendering and AI enhancement."""
+    if config.codec in {"libx264", "libx265"}:
+        return ["-crf", str(config.crf), "-preset", config.preset]
+    if config.codec in {"h264_nvenc", "hevc_nvenc"}:
+        return ["-cq", str(config.crf), "-preset", config.preset]
+    if config.codec == "h264_qsv":
+        return ["-global_quality", str(config.crf), "-preset", config.preset]
+    if config.codec == "h264_amf":
+        amf_quality = {
+            "ultrafast": "speed",
+            "superfast": "speed",
+            "veryfast": "speed",
+            "faster": "balanced",
+            "fast": "balanced",
+            "medium": "balanced",
+            "slow": "quality",
+            "slower": "quality",
+            "veryslow": "quality",
+        }.get(config.preset, "balanced")
+        return [
+            "-rc",
+            "cqp",
+            "-qp_i",
+            str(config.crf),
+            "-qp_p",
+            str(min(51, config.crf + 2)),
+            "-qp_b",
+            str(min(51, config.crf + 3)),
+            "-quality",
+            amf_quality,
+        ]
+    if config.codec == "h264_videotoolbox":
+        return ["-q:v", str(config.crf)]
+    return []
+
+
+def resolve_render_backend(
+    config: RenderConfig, ffmpeg: str = "ffmpeg"
+) -> tuple[str, RenderConfig]:
+    """Resolve a verified hardware encoder, with the same safe CPU fallback everywhere."""
+    if config.codec != "auto" and config.codec not in HARDWARE_H264_CODECS:
+        return ffmpeg, config
+    hardware_encoder = select_h264_encoder(
+        ffmpeg,
+        preferred=config.codec if config.codec != "auto" else "auto",
+    )
+    if hardware_encoder.ffmpeg is None:
+        LOGGER.warning(
+            "Skipping unavailable hardware encoding before the full render: %s "
+            "Using fast CPU encoding at the same visual-quality setting.",
+            hardware_encoder.detail,
+        )
+        return ffmpeg, config.model_copy(update={"codec": "libx264", "preset": "fast"})
+    LOGGER.info("Using verified hardware H.264 encoder: %s.", hardware_encoder.codec)
+    if hardware_encoder.uses_compatibility_build:
+        LOGGER.info("Using the bundled NVENC compatibility encoder for this driver.")
+    return hardware_encoder.ffmpeg, config.model_copy(update={"codec": hardware_encoder.codec})
+
+
 def build_hardsub_command(
     source_video: Path,
     subtitle_file: Path,
@@ -76,42 +136,7 @@ def build_hardsub_command(
         "-c:v",
         config.codec,
     ]
-    if config.codec in {"libx264", "libx265"}:
-        command += ["-crf", str(config.crf), "-preset", config.preset]
-    elif config.codec in {"h264_nvenc", "hevc_nvenc"}:
-        command += ["-cq", str(config.crf), "-preset", config.preset]
-    elif config.codec == "h264_qsv":
-        # QSV's global quality scale is 1 (best) to 51 (lowest), closely matching the CRF
-        # values exposed by the rest of the application.
-        command += ["-global_quality", str(config.crf), "-preset", config.preset]
-    elif config.codec == "h264_amf":
-        # AMF uses explicit quantizers rather than CRF. Keeping the I-frame value equal to the
-        # requested CRF gives users the same quality slider across GPU vendors.
-        amf_quality = {
-            "ultrafast": "speed",
-            "superfast": "speed",
-            "veryfast": "speed",
-            "faster": "balanced",
-            "fast": "balanced",
-            "medium": "balanced",
-            "slow": "quality",
-            "slower": "quality",
-            "veryslow": "quality",
-        }.get(config.preset, "balanced")
-        command += [
-            "-rc",
-            "cqp",
-            "-qp_i",
-            str(config.crf),
-            "-qp_p",
-            str(min(51, config.crf + 2)),
-            "-qp_b",
-            str(min(51, config.crf + 3)),
-            "-quality",
-            amf_quality,
-        ]
-    elif config.codec == "h264_videotoolbox":
-        command += ["-q:v", str(config.crf)]
+    command += video_codec_arguments(config)
     if config.copy_audio_when_possible and source_audio_codec.lower() == "aac":
         command += ["-c:a", "copy"]
     else:
@@ -168,26 +193,7 @@ def _render_hardsub(
     fonts_directory = bundled_fonts_directory()
     if fonts_directory is not None:
         LOGGER.info("Using bundled subtitle fonts from %s.", fonts_directory)
-    active_config = config
-    active_ffmpeg = ffmpeg
-    if config.codec == "auto" or config.codec in HARDWARE_H264_CODECS:
-        hardware_encoder = select_h264_encoder(
-            ffmpeg,
-            preferred=config.codec if config.codec != "auto" else "auto",
-        )
-        if hardware_encoder.ffmpeg is None:
-            LOGGER.warning(
-                "Skipping unavailable hardware encoding before the full render: %s "
-                "Using fast CPU encoding at the same visual-quality setting.",
-                hardware_encoder.detail,
-            )
-            active_config = config.model_copy(update={"codec": "libx264", "preset": "fast"})
-        else:
-            active_ffmpeg = hardware_encoder.ffmpeg
-            active_config = config.model_copy(update={"codec": hardware_encoder.codec})
-            LOGGER.info("Using verified hardware H.264 encoder: %s.", hardware_encoder.codec)
-            if hardware_encoder.uses_compatibility_build:
-                LOGGER.info("Using the bundled NVENC compatibility encoder for this driver.")
+    active_ffmpeg, active_config = resolve_render_backend(config, ffmpeg)
     command = build_hardsub_command(
         source_video,
         subtitle_file,

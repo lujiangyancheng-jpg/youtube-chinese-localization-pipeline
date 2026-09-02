@@ -15,7 +15,7 @@ from .hardware import (
     recommended_cpu_threads,
 )
 from .models import SourceMetadata
-from .resources import find_bundled_model, package_tier
+from .resources import find_bundled_model, package_tier, super_resolution_runtime
 
 _GIB = 1024**3
 
@@ -81,6 +81,11 @@ def _estimated_source_bytes(metadata: SourceMetadata) -> int:
 def estimate_working_bytes(metadata: SourceMetadata, config: AppConfig) -> int:
     """Return a conservative workspace estimate for a high-quality localized job."""
     source_bytes = _estimated_source_bytes(metadata)
+    if config.enhancement.mode != "off":
+        # Frame restoration uses bounded batches, but the original, enhanced intermediate,
+        # optional hard-sub encode, and safety headroom can coexist until validation completes.
+        multiplier = 3.2 if config.subtitle_mode == "download_only" else 5.0
+        return max(12 * _GIB, int(source_bytes * multiplier) + 2 * _GIB)
     if config.subtitle_mode == "download_only":
         return max(4 * _GIB, int(source_bytes * 1.35) + 512 * 1024**2)
     # The project temporarily holds a source copy, extracted audio, subtitles, and a final
@@ -191,7 +196,11 @@ def build_job_preflight(metadata: SourceMetadata, config: AppConfig) -> JobPrefl
     """Build a hardware-aware, offline-safe processing plan without changing source files."""
     warnings: list[str] = []
     resources = detect_system_resources()
-    gpus = [] if config.subtitle_mode == "download_only" else query_nvidia_gpus()
+    gpus = (
+        []
+        if config.subtitle_mode == "download_only" and config.enhancement.mode == "off"
+        else query_nvidia_gpus()
+    )
     effective_config = _with_safe_bundled_models(config, warnings)
     effective_config = _with_resource_safe_fallback(effective_config, resources, gpus, warnings)
     estimated = estimate_working_bytes(metadata, effective_config)
@@ -199,6 +208,11 @@ def build_job_preflight(metadata: SourceMetadata, config: AppConfig) -> JobPrefl
     blockers: list[str] = []
     if missing_whisper_model := _missing_whisper_model_blocker(effective_config):
         blockers.append(missing_whisper_model)
+    if effective_config.enhancement.mode != "off" and super_resolution_runtime() is None:
+        blockers.append(
+            "AI super resolution is selected but the optional enhancement pack is not "
+            "installed. Re-run the Standard installer and select that optional pack."
+        )
     if available is not None and available < estimated:
         blockers.append(
             "Insufficient free space for this high-quality job: "
@@ -208,19 +222,30 @@ def build_job_preflight(metadata: SourceMetadata, config: AppConfig) -> JobPrefl
     if "OneDrive" in advice or "20 GiB" in advice:
         warnings.append(advice)
 
-    if effective_config.subtitle_mode == "download_only":
+    if (
+        effective_config.subtitle_mode == "download_only"
+        and effective_config.enhancement.mode == "off"
+    ):
         transcription_plan = "Not needed for direct download."
         encoding_plan = "Not needed; original streams remain un-reencoded."
     else:
-        gpu_detail = "NVIDIA CUDA when the bundled runtime passes its safety check"
-        if not gpus:
-            gpu_detail = f"CPU int8 using up to {recommended_cpu_threads(resources)} thread(s)"
-        transcription_plan = (
-            f"Whisper {effective_config.transcription.model} on {gpu_detail}; CPU fallback is automatic."
+        if effective_config.subtitle_mode == "download_only":
+            transcription_plan = "Not needed for enhanced direct download."
+        else:
+            gpu_detail = "NVIDIA CUDA when the bundled runtime passes its safety check"
+            if not gpus:
+                gpu_detail = f"CPU int8 using up to {recommended_cpu_threads(resources)} thread(s)"
+            transcription_plan = (
+                f"Whisper {effective_config.transcription.model} on {gpu_detail}; CPU fallback is automatic."
+            )
+        enhancement_detail = (
+            f" AI {effective_config.enhancement.mode} restoration runs locally through NCNN/Vulkan."
+            if effective_config.enhancement.mode != "off"
+            else ""
         )
         encoding_plan = (
             f"{effective_config.render.codec} output; automatic mode verifies NVIDIA, Intel, and AMD "
-            "hardware encoding before using fast CPU H.264 fallback."
+            f"hardware encoding before using fast CPU H.264 fallback.{enhancement_detail}"
         )
     tier = package_tier() or "source checkout"
     return JobPreflight(

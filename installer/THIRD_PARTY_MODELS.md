@@ -15,6 +15,7 @@ this file in the installed `licenses` directory.
 | FFmpeg Gyan full build | Audio extraction and subtitle rendering | GPLv3 build; build notice and documentation included |
 | Python 3.12 runtime and Python packages | Application runtime | Individual notices are retained in their distributions |
 | Noto Sans CJK SC | Modern Simplified Chinese subtitle font | SIL Open Font License 1.1 |
+| waifu2x-ncnn-vulkan 20250915 + photo/CUNet models | Optional cross-vendor AI video super resolution | MIT; Copyright nihui and contributors; upstream model notices retained |
 
 Model sources:
 
@@ -24,3 +25,4 @@ Model sources:
 - <https://ollama.com/library/qwen3:4b>
 - <https://github.com/ollama/ollama>
 - <https://github.com/notofonts/noto-cjk/tree/main/Sans>
+- <https://github.com/nihui/waifu2x-ncnn-vulkan/tree/20250915>

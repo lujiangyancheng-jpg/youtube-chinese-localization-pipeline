@@ -15,7 +15,7 @@ from .config import default_output_directory
 from .onboarding import onboarding_state_directory
 from .utils.files import atomic_write_json, load_json
 
-SETTINGS_SCHEMA_VERSION = 1
+SETTINGS_SCHEMA_VERSION = 2
 VALID_DIRECTIONS = frozenset(
     f"{source}-to-{target}"
     for source in ("en", "zh")
@@ -31,6 +31,7 @@ VALID_TRANSLATION_PROVIDERS = frozenset(
 VALID_OUTPUT_QUALITIES = frozenset({"best", "high", "standard"})
 VALID_OUTPUT_FPS = frozenset({None, 30, 60})
 VALID_OUTPUT_HEIGHTS = frozenset({None, 480, 720, 1080, 1440, 2160, 4320})
+VALID_ENHANCEMENT_MODES = frozenset({"off", "general", "animation"})
 VALID_UPDATE_CHANNELS = frozenset({"stable", "development"})
 
 
@@ -46,6 +47,7 @@ class DesktopSettings:
     output_quality: str = "best"
     output_fps: int | None = None
     output_height: int | None = None
+    enhancement_mode: str = "off"
     output_directory: str = ""
     update_channel: str = "stable"
     resume: bool = True
@@ -109,6 +111,11 @@ def _settings_from_mapping(data: Mapping[str, Any]) -> DesktopSettings:
         output_fps=_supported(data.get("output_fps"), VALID_OUTPUT_FPS, defaults.output_fps),
         output_height=_supported(
             data.get("output_height"), VALID_OUTPUT_HEIGHTS, defaults.output_height
+        ),
+        enhancement_mode=_supported(
+            data.get("enhancement_mode"),
+            VALID_ENHANCEMENT_MODES,
+            defaults.enhancement_mode,
         ),
         output_directory=output_directory.strip(),
         update_channel=_supported(

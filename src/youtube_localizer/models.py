@@ -112,6 +112,10 @@ class ProjectPaths:
         return self.root / "rendered"
 
     @property
+    def enhanced_source(self) -> Path:
+        return self.rendered / "enhanced_source.mp4"
+
+    @property
     def publishing(self) -> Path:
         return self.root / "publishing"
 
